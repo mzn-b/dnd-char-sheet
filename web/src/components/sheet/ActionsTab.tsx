@@ -3,7 +3,7 @@ import { uid } from "../../lib/defaults";
 import { featureRolls } from "../../lib/featureRolls";
 import { d20 } from "../../lib/dice";
 import {
-  ABILITY_NAMES, STANDARD_ACTIONS, armorClass, fmt, initiative, saveBonus, spellAttack, spellLevelLabel, spellModel, spellSaveDC,
+  ABILITY_NAMES, STANDARD_ACTIONS, armorClass, fmt, hpMax, initiative, speed, saveBonus, spellAttack, spellLevelLabel, spellModel, spellSaveDC,
 } from "../../lib/rules";
 import type { Character, Companion, SpellEntry } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
@@ -45,13 +45,13 @@ export function ActionsTab({ c, update, endedEffects }: { c: Character; update: 
     <div className="grid gap-4 lg:grid-cols-[1fr_22rem]">
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Vital label="Hit points" value={`${c.hp.current}${c.hp.temp ? `+${c.hp.temp}` : ""} / ${c.hp.max}`} tone={c.hp.current <= c.hp.max / 4 ? "text-blood-500" : ""} />
+          <Vital label="Hit points" value={`${c.hp.current}${c.hp.temp ? `+${c.hp.temp}` : ""} / ${hpMax(c)}`} tone={c.hp.current <= hpMax(c) / 4 ? "text-blood-500" : ""} />
           <Vital label="Armor class" value={String(armorClass(c))} />
           <div className="panel p-2 text-center">
             <RollButton expression={d20(initiative(c))} label="Initiative" className="font-display text-2xl">{fmt(initiative(c))}</RollButton>
             <div className="label">Initiative</div>
           </div>
-          <Vital label="Speed" value={`${c.speed} ft`} />
+          <Vital label="Speed" value={`${speed(c)} ft`} />
         </div>
         {(c.concentration || c.conditions.length > 0 || c.exhaustion > 0) && (
           <div className="flex flex-wrap gap-2 text-xs">

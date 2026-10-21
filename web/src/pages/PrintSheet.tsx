@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { classResources } from "../lib/resources";
 import {
-  ABILITY_NAMES, SKILLS, abilityMod, armorClass, classSummary, fmt, initiative, passivePerception, profBonus, saveBonus, skillBonus,
+  ABILITY_NAMES, SKILLS, abilityMod, abilityScore, armorClass, classSummary, fmt, hpMax, initiative, passiveScore, speed, profBonus, saveBonus, skillBonus,
   spellAttack, spellLevelLabel, spellSaveDC, totalLevel,
 } from "../lib/rules";
 import { ABILITIES, type Character } from "../lib/types";
@@ -43,7 +43,7 @@ export default function PrintSheet() {
               <Box key={a} className="text-center">
                 <div className="text-[10px] font-bold uppercase">{a}</div>
                 <div className="text-xl font-bold">{fmt(abilityMod(c, a))}</div>
-                <div className="text-xs">{c.abilities[a]}</div>
+                <div className="text-xs">{abilityScore(c, a)}</div>
               </Box>
             ))}
           </div>
@@ -54,7 +54,7 @@ export default function PrintSheet() {
           <Box title="Skills">
             {SKILLS.map((s) => <Row key={s.key} on={(c.skills[s.key] ?? 0) >= 1} expert={c.skills[s.key] === 2} n={skillBonus(c, s.key)} label={`${s.name} (${s.ability})`} />)}
           </Box>
-          <Box>Passive Perception <b>{passivePerception(c)}</b> · Insight <b>{10 + skillBonus(c, "insight")}</b> · Investigation <b>{10 + skillBonus(c, "investigation")}</b>{c.senses ? <div>{c.senses}</div> : null}</Box>
+          <Box>Passive Perception <b>{passiveScore(c, "perception")}</b> · Insight <b>{passiveScore(c, "insight")}</b> · Investigation <b>{passiveScore(c, "investigation")}</b>{c.senses ? <div>{c.senses}</div> : null}</Box>
           <Box title="Proficiencies & languages"><Pre text={c.proficienciesAndLanguages} /></Box>
         </div>
 
@@ -62,8 +62,8 @@ export default function PrintSheet() {
           <div className="grid grid-cols-4 gap-1.5 text-center">
             <Box><div className="text-xl font-bold">{armorClass(c)}</div><div className="text-[10px] uppercase">Armor class</div></Box>
             <Box><div className="text-xl font-bold">{fmt(initiative(c))}</div><div className="text-[10px] uppercase">Initiative</div></Box>
-            <Box><div className="text-xl font-bold">{c.speed} ft</div><div className="text-[10px] uppercase">Speed</div></Box>
-            <Box><div className="text-xl font-bold">{c.hp.max}</div><div className="text-[10px] uppercase">HP max</div></Box>
+            <Box><div className="text-xl font-bold">{speed(c)} ft</div><div className="text-[10px] uppercase">Speed</div></Box>
+            <Box><div className="text-xl font-bold">{hpMax(c)}</div><div className="text-[10px] uppercase">HP max</div></Box>
           </div>
           <Box>
             <b>Current HP</b> ______ · <b>Temp</b> ______ · <b>Hit dice</b>{" "}

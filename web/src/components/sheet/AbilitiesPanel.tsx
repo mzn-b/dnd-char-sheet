@@ -1,4 +1,4 @@
-import { ABILITY_NAMES, SKILLS, abilityMod, fmt, passivePerception, profBonus, saveBonus, skillBonus } from "../../lib/rules";
+import { ABILITY_NAMES, SKILLS, abilityCheckBonus, abilityScore, fmt, passiveScore, profBonus, saveBonus, skillBonus } from "../../lib/rules";
 import { d20 } from "../../lib/dice";
 import { RollButton } from "../dice";
 import { ABILITIES, type Character, type ProfLevel } from "../../lib/types";
@@ -21,8 +21,8 @@ export function AbilitiesPanel({ c, update }: { c: Character; update: Update }) 
         {ABILITIES.map((a) => (
           <div key={a} className="panel flex flex-col items-center p-2 text-center">
             <span className="label">{ABILITY_NAMES[a].slice(0, 3)}</span>
-            <RollButton expression={d20(abilityMod(c, a))} label={`${ABILITY_NAMES[a]} check`} className="font-display text-3xl leading-tight text-ink-200">
-              {fmt(abilityMod(c, a))}
+            <RollButton expression={d20(abilityCheckBonus(c, a))} label={`${ABILITY_NAMES[a]} check`} className="font-display text-3xl leading-tight text-ink-200">
+              {fmt(abilityCheckBonus(c, a))}
             </RollButton>
             <NumberField
               className="field w-12 rounded-full border-ink-700 bg-ink-850 text-center text-sm"
@@ -32,6 +32,9 @@ export function AbilitiesPanel({ c, update }: { c: Character; update: Update }) 
               aria-label={`${ABILITY_NAMES[a]} score`}
               onChange={(n) => update((d) => void (d.abilities[a] = n))}
             />
+            {abilityScore(c, a) !== c.abilities[a] && (
+              <span className="mt-0.5 text-[10px] text-emerald-400" title="Changed by an item">→ {abilityScore(c, a)}</span>
+            )}
           </div>
         ))}
       </div>
@@ -99,7 +102,7 @@ export function AbilitiesPanel({ c, update }: { c: Character; update: Update }) 
 
       <Section title="Passive Scores & Senses">
         <div className="grid grid-cols-3 gap-2 text-center">
-          {[["Perception", passivePerception(c)], ["Insight", 10 + skillBonus(c, "insight")], ["Investigation", 10 + skillBonus(c, "investigation")]].map(([label, n]) => (
+          {[["Perception", passiveScore(c, "perception")], ["Insight", passiveScore(c, "insight")], ["Investigation", passiveScore(c, "investigation")]].map(([label, n]) => (
             <div key={label} className="rounded-lg bg-ink-850 py-1.5">
               <div className="font-display text-xl">{n}</div>
               <div className="text-[10px] uppercase tracking-wider text-ink-400">{label}</div>

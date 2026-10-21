@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { abilityMod, totalLevel } from "../../lib/rules";
+import { abilityMod, hpMax, totalLevel } from "../../lib/rules";
 import { classResources, resetResources } from "../../lib/resources";
 import type { Character } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
@@ -16,7 +16,7 @@ export function applyRest(d: Character, rest: "short" | "long") {
   }
   d.spellcasting.pactSlots.used = 0;
   if (rest === "long") {
-    d.hp.current = d.hp.max;
+    d.hp.current = hpMax(d);
     d.hp.temp = 0;
     d.deathSaves = { successes: 0, failures: 0 };
     d.exhaustion = Math.max(0, d.exhaustion - 1);
@@ -45,7 +45,7 @@ export function RestDialog({ c, update, kind, onClose }: { c: Character; update:
     setHealed((h) => h + gain);
     update((d) => {
       d.hitDiceUsed[die] = (d.hitDiceUsed[die] ?? 0) + 1;
-      d.hp.current = Math.min(d.hp.max, d.hp.current + gain);
+      d.hp.current = Math.min(hpMax(d), d.hp.current + gain);
     });
   };
 
@@ -69,14 +69,14 @@ export function RestDialog({ c, update, kind, onClose }: { c: Character; update:
       <div className="space-y-4 text-sm">
         {kind === "short" ? (
           <>
-            <p className="text-ink-400">Spend hit dice to heal (each die + Con {con >= 0 ? `+${con}` : con}). HP {c.hp.current} / {c.hp.max}{healed ? <span className="text-emerald-400"> (+{healed} this rest)</span> : null}.</p>
+            <p className="text-ink-400">Spend hit dice to heal (each die + Con {con >= 0 ? `+${con}` : con}). HP {c.hp.current} / {hpMax(c)}{healed ? <span className="text-emerald-400"> (+{healed} this rest)</span> : null}.</p>
             <div className="space-y-2">
               {dice.map(([die, total]) => {
                 const left = total - (c.hitDiceUsed[die] ?? 0);
                 return (
                   <div key={die} className="flex items-center justify-between rounded-lg bg-ink-850 px-3 py-2">
                     <span><b>d{die}</b> <span className="text-ink-400">{left} of {total} left</span></span>
-                    <button className="btn px-3 py-1" disabled={!left || c.hp.current >= c.hp.max} onClick={() => spend(die)}>Spend 1</button>
+                    <button className="btn px-3 py-1" disabled={!left || c.hp.current >= hpMax(c)} onClick={() => spend(die)}>Spend 1</button>
                   </div>
                 );
               })}

@@ -2,7 +2,8 @@ import { useState } from "react";
 import { api } from "../../lib/api";
 import { uid } from "../../lib/defaults";
 import { attackFromItem, itemFromDetail } from "../../lib/items";
-import { attunedCount } from "../../lib/rules";
+import { attunedCount, carrying } from "../../lib/rules";
+import { itemActive, targetLabel } from "../../lib/modifiers";
 import type { Character, ContentSummary, Item } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
 import { ContentDetailView, ContentPicker } from "../ContentBrowser";
@@ -14,9 +15,9 @@ const COIN_VALUE_CP = { cp: 1, sp: 10, ep: 50, gp: 100, pp: 1000 };
 export function InventoryTab({ c, update }: { c: Character; update: Update }) {
   const [picking, setPicking] = useState(false);
   const [viewing, setViewing] = useState<Item | null>(null);
-  const coinWeight = Object.values(c.currency).reduce((s, n) => s + n, 0) / 50;
-  const totalWeight = c.equipment.reduce((s, i) => s + i.qty * i.weight, 0) + coinWeight;
-  const capacity = c.abilities.str * 15;
+  const load = carrying(c);
+  const totalWeight = load.weight;
+  const capacity = load.capacity;
   const attuned = attunedCount(c);
   const wealthGp = COINS.reduce((s, k) => s + c.currency[k] * COIN_VALUE_CP[k], 0) / 100;
   const edit = (id: string, patch: Partial<Item>) => update((d) => void Object.assign(d.equipment.find((i) => i.id === id)!, patch));
@@ -105,7 +106,12 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
           </div>
         ))}
         <div className="mt-3 flex flex-wrap justify-end gap-x-4 text-xs text-ink-400">
-          <span className={totalWeight > capacity ? "text-blood-500" : ""}>Carrying {totalWeight.toFixed(1)} / {capacity} lb</span>
+          {load.mode === "variant" && (
+            <span className={load.encumbered ? "text-blood-500" : ""} title={`Encumbered over ${load.light} lb (−10 ft), heavily over ${load.heavy} lb (−20 ft, disadvantage on Str/Dex/Con rolls)`}>
+              {load.encumbered === 2 ? "Heavily encumbered" : load.encumbered === 1 ? "Encumbered" : "Unencumbered"}
+            </span>
+          )}
+          <span className={totalWeight > capacity && load.mode !== "off" ? "text-blood-500" : ""}>Carrying {totalWeight.toFixed(1)} / {capacity} lb</span>
           <span title="Push, drag or lift">Push/drag/lift {capacity * 2} lb</span>
         </div>
       </Section>
@@ -132,6 +138,11 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
         <Modal title={viewing.name} onClose={() => setViewing(null)}>
           <div className="space-y-4">
             {viewing.ref && <ContentDetailView type="item" item={viewing.ref} />}
+            <ItemBonusInfo item={c.equipment.find((i) => i.id === viewing.id) ?? viewing} onRefresh={async () => {
+              if (!viewing.ref) return;
+              const det = await api.detail("item", viewing.ref.source, viewing.ref.key);
+              edit(viewing.id, { data: det.item, attunement: det.item?.attunement || viewing.attunement });
+            }} />
             <div className="grid gap-3 border-t border-ink-800 pt-3 text-sm sm:grid-cols-2">
               <label className="flex items-center gap-2">
                 <input type="checkbox" className="accent-accent-500" checked={!!viewing.attunement} onChange={(e) => { edit(viewing.id, { attunement: e.target.checked }); setViewing({ ...viewing, attunement: e.target.checked }); }} />
@@ -164,5 +175,36 @@ function CoinQuickAdd({ update }: { update: Update }) {
       <input className="field-boxed text-sm" placeholder="+25 gp or -3 sp" value={text} onChange={(e) => setText(e.target.value)} />
       <button className="btn px-2 text-xs">Apply</button>
     </form>
+  );
+}
+
+/** What an item adds automatically, and a way to re-fetch its rules data (for items added before bonuses existed). */
+function ItemBonusInfo({ item, onRefresh }: { item: Item; onRefresh: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const b = item.data?.bonuses;
+  const rows = Object.entries(b ?? {}).flatMap(([k, v]) =>
+    typeof v === "number" ? [`${targetLabel(k === "save" ? "save" : k)} ${v >= 0 ? "+" : ""}${v}`] : Object.entries(v ?? {}).map(([a, n]) => `${a.toUpperCase()} ${k === "abilitySet" ? `becomes ${n}` : `+${n}`}`),
+  );
+  return (
+    <div className="rounded-lg border border-ink-800 p-2 text-sm">
+      <div className="flex items-center gap-2">
+        <span className="label">Automatic bonuses</span>
+        {item.ref && (
+          <button className="btn-ghost ml-auto px-2 py-0.5 text-xs" disabled={busy} onClick={async () => { setBusy(true); await onRefresh().finally(() => setBusy(false)); }}>
+            {busy ? "Refreshing…" : "↻ Refresh rules data"}
+          </button>
+        )}
+      </div>
+      {rows.length ? (
+        <>
+          <p className="mt-1">{rows.join(" · ")}</p>
+          <p className={`mt-1 text-xs ${itemActive(item) ? "text-emerald-400" : "text-ink-600"}`}>
+            {itemActive(item) ? "Active — applied to your sheet." : item.attunement && !item.attuned ? "Inactive until you attune to it." : "Inactive until equipped."}
+          </p>
+        </>
+      ) : (
+        <p className="mt-1 text-xs text-ink-600">None detected. Add a custom modifier on the Features tab if this item grants one.</p>
+      )}
+    </div>
   );
 }

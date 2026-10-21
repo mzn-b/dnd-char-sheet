@@ -6,7 +6,7 @@ import {
 } from "../../lib/apply";
 import { uid } from "../../lib/defaults";
 import { applyDetectedUses } from "../../lib/uses";
-import { ABILITY_NAMES, abilityMod, fmt, meetsRequirements, mod, requirementText, skillName, totalLevel } from "../../lib/rules";
+import { ABILITY_NAMES, baseAbilityMod, fmt, meetsRequirements, mod, requirementText, skillName, totalLevel } from "../../lib/rules";
 import {
   ABILITIES, type Ability, type Character, type Choice, type ClassEntry, type ClassRules, type ContentDetail,
   type ContentRef, type ContentSummary, type Feature, type Selections,
@@ -118,7 +118,7 @@ export function LevelUpWizard({
   }, [plan, queue]);
   const currentStep = steps.includes(step) ? step : steps[0];
 
-  const conMod = abilityMod(c, "con");
+  const conMod = baseAbilityMod(c, "con");
   const hitDie = rules?.hitDie ?? 8;
   const featCon = asiMode === "feat" ? (featDetail?.effects?.find((e) => e.kind === "ability" && e.ability === "con") as { amount: number } | undefined)?.amount ?? (featSel.ability?.includes("con") ? 1 : 0) : 0;
   const conGain = asiMode === "asi" ? asi.con ?? 0 : featCon;

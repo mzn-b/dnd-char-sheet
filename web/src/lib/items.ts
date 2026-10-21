@@ -1,6 +1,7 @@
 import { api } from "./api";
 import { uid } from "./defaults";
 import { blankAttackFields } from "./attacks";
+import { abilityScore } from "./rules";
 import type { Attack, Character, ContentDetail, Item } from "./types";
 
 /** Inventory entry from rules content, keeping its armor/weapon data for AC and attacks. */
@@ -39,12 +40,15 @@ export async function resolveItem(name: string, qty: number): Promise<Item> {
 export async function attackFromItem(c: Character, item: Item, assumeProficient = false): Promise<Attack> {
   let w = item.data?.weapon;
   if (!w && item.ref) w = (await api.detail("item", item.ref.source, item.ref.key).catch(() => null))?.item?.weapon;
-  const useDex = !!w && (w.ranged || (w.finesse && c.abilities.dex > c.abilities.str));
+  const useDex = !!w && (w.ranged || (w.finesse && abilityScore(c, "dex") > abilityScore(c, "str")));
   const profs = c.proficienciesAndLanguages.toLowerCase();
   const proficient = assumeProficient || !w?.category || /simple/i.test(w.category) || profs.includes("martial") || profs.includes(item.name.toLowerCase());
   return {
     ...blankAttackFields(),
     name: item.name,
+    itemId: item.id,
+    ranged: !!w?.ranged,
+    twoHanded: !!w?.properties.some((p) => /two-handed/i.test(p)),
     ability: useDex ? "dex" : "str",
     proficient,
     damage: w?.damage ?? "",

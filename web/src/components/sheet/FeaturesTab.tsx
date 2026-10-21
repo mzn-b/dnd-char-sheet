@@ -1,3 +1,4 @@
+import { ModifiersPanel } from "./ModifiersPanel";
 import { useState } from "react";
 import { applySubfeatureMechanics, buildFeature, grantFeature, resolveSubfeatures } from "../../lib/apply";
 import { uid } from "../../lib/defaults";
@@ -54,6 +55,7 @@ export function FeaturesTab({ c, update }: { c: Character; update: Update }) {
           + Custom feature
         </button>
       </div>
+      <ModifiersPanel c={c} update={update} />
       {GROUPS.map((g) => {
         const items = c.features.filter((f) => g.kind.includes(f.kind));
         if (!items.length) return null;

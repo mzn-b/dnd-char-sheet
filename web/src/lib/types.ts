@@ -86,6 +86,29 @@ export interface ItemData {
   attunement?: boolean;
   rarity?: string;
   charges?: number;
+  bonuses?: ItemBonuses;
+}
+
+/** Numeric bonuses a magic item grants (applied automatically while equipped/attuned). */
+export interface ItemBonuses {
+  ac?: number;
+  weaponAttack?: number;
+  weaponDamage?: number;
+  save?: number;
+  spellAttack?: number;
+  spellDc?: number;
+  abilitySet?: Partial<Record<Ability, number>>;
+  abilityBonus?: Partial<Record<Ability, number>>;
+  speed?: number;
+  check?: number;
+}
+
+/** A user-defined bonus (Bless-like permanent boons, DM rewards…). */
+export interface CustomModifier {
+  id: string;
+  label: string;
+  target: string;
+  value: number;
 }
 
 /** What to roll for a spell (damage or healing), with scaling. */
@@ -141,6 +164,10 @@ export interface Attack {
   damage: string;
   damageType: string;
   notes: string;
+  /** The inventory weapon this attack uses (for magic weapon bonuses). */
+  itemId?: string;
+  ranged?: boolean;
+  twoHanded?: boolean;
 }
 
 export interface Item {
@@ -319,6 +346,28 @@ export interface Character {
   progression?: "xp" | "milestone";
   /** Round tracker, action economy and active effects while in combat. */
   combat?: CombatState;
+  /** Extra bonuses typed in by the player. */
+  customModifiers?: CustomModifier[];
+  /** Ids of automatic modifiers the player switched off. */
+  disabledModifiers?: string[];
+  /** Optional rules for this character. */
+  options?: RuleOptions;
+}
+
+/** Optional rules (PHB/DMG/Tasha's variants) a table may or may not use. */
+export interface RuleOptions {
+  /** Tasha's "Customizing Your Origin": move racial ability increases freely. */
+  customOrigin?: boolean;
+  /** Tasha's optional class features offered at level-up (default on). */
+  optionalClassFeatures?: boolean;
+  /** Feats available instead of Ability Score Improvements (default on). */
+  feats?: boolean;
+  /** "off", PHB "standard" (carrying capacity only) or the PHB "variant" (speed penalties). */
+  encumbrance?: "off" | "standard" | "variant";
+  /** Enforce multiclass ability score prerequisites (default on). */
+  strictMulticlass?: boolean;
+  /** How HP is gained at level-up: player's choice, always average, or always rolled. */
+  hpMethod?: "choose" | "average" | "roll";
 }
 
 export interface CharacterSummary {

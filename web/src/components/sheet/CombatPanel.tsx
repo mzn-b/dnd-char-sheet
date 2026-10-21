@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { CONDITIONS, CONDITION_TEXT, EXHAUSTION_TEXT, armorClassBreakdown, fmt, initiative, saveBonus } from "../../lib/rules";
+import { CONDITIONS, CONDITION_TEXT, EXHAUSTION_TEXT, armorClassBreakdown, fmt, hpMax, hpMaxParts, initiative, saveBonus, speedBreakdown } from "../../lib/rules";
+import { describe } from "../../lib/modifiers";
 import { d20 } from "../../lib/dice";
 import { RollButton, useRoll } from "../dice";
 import { ResourcesPanel } from "./ResourcesPanel";
@@ -19,6 +20,9 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
   const { roll } = useRoll();
   const ac = armorClassBreakdown(c);
   const auto = c.acMode === "auto";
+  const maxHp = hpMax(c);
+  const hpParts = hpMaxParts(c);
+  const spd = speedBreakdown(c);
 
   const rollDeathSave = () => {
     const r = roll("1d20", { label: "Death saving throw", kind: "save" });
@@ -31,7 +35,7 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
       else d.deathSaves.failures = Math.min(3, d.deathSaves.failures + 1);
     });
   };
-  const hpPct = c.hp.max ? Math.max(0, Math.min(100, (c.hp.current / c.hp.max) * 100)) : 0;
+  const hpPct = maxHp ? Math.max(0, Math.min(100, (c.hp.current / maxHp) * 100)) : 0;
   const hitDice = Object.entries(
     c.classes.reduce<Record<string, number>>((acc, k) => ({ ...acc, [k.hitDie]: (acc[k.hitDie] ?? 0) + k.level }), {}),
   );
@@ -42,7 +46,7 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
     update((d) => {
       if (kind === "temp") d.hp.temp = Math.max(d.hp.temp, n);
       else if (kind === "heal") {
-        d.hp.current = Math.min(d.hp.max, Math.max(0, d.hp.current) + n);
+        d.hp.current = Math.min(hpMax(d), Math.max(0, d.hp.current) + n);
         d.deathSaves = { successes: 0, failures: 0 };
       } else {
         const absorbed = Math.min(d.hp.temp, n);
@@ -75,7 +79,7 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
             )}
           </div>
         </Stat>
-        <Stat label="Initiative" hint={`Dex ${fmt(initiative(c) - c.initiativeBonus)} + misc`}>
+        <Stat label="Initiative" hint={`Dex and bonuses ${fmt(initiative(c) - c.initiativeBonus)} + misc`}>
           <div className="flex items-baseline justify-center gap-1">
             <RollButton expression={d20(initiative(c))} label="Initiative" className="font-display text-3xl">{fmt(initiative(c))}</RollButton>
           </div>
@@ -84,11 +88,21 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
             <NumberField className="field w-8 py-0 text-center text-xs" value={c.initiativeBonus} onChange={(n) => update((d) => void (d.initiativeBonus = n))} />
           </label>
         </Stat>
-        <Stat label="Speed">
+        <Stat label="Speed" hint={spd.parts.join(" · ")}>
           <div className="flex items-baseline justify-center">
-            <NumberField className={`field w-16 text-center font-display text-3xl ${ac.tooHeavy ? "text-blood-500" : ""}`} value={c.speed} onChange={(n) => update((d) => void (d.speed = n))} title={ac.tooHeavy ? "Your armor's Strength requirement isn't met: speed −10 ft" : undefined} />
+            {spd.total !== c.speed ? (
+              <span className={`font-display text-3xl ${spd.total < c.speed ? "text-blood-500" : "text-emerald-400"}`}>{spd.total}</span>
+            ) : (
+              <NumberField className="field w-16 text-center font-display text-3xl" value={c.speed} onChange={(n) => update((d) => void (d.speed = n))} />
+            )}
             <span className="text-xs text-ink-400">ft</span>
           </div>
+          {spd.total !== c.speed && (
+            <label className="flex items-center justify-center gap-1 text-[10px] text-ink-600" title="Base walking speed">
+              base
+              <NumberField className="field w-8 py-0 text-center text-xs" value={c.speed} onChange={(n) => update((d) => void (d.speed = n))} />
+            </label>
+          )}
         </Stat>
       </div>
 
@@ -102,7 +116,12 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
               aria-label="Current HP"
             />
             <span className="text-2xl text-ink-600">/</span>
-            <NumberField className="field w-16 font-display text-2xl text-ink-400" value={c.hp.max} min={0} onChange={(n) => update((d) => void (d.hp.max = n))} aria-label="Max HP" />
+            <NumberField className="field w-16 font-display text-2xl text-ink-400" value={c.hp.max} min={0} onChange={(n) => update((d) => void (d.hp.max = n))} aria-label="Max HP" title={maxHp !== c.hp.max ? "Base maximum (before Tough, items, exhaustion)" : undefined} />
+            {maxHp !== c.hp.max && (
+              <span className="chip text-xs" title={[describe(hpParts), c.exhaustion >= 4 ? "halved by exhaustion" : ""].filter(Boolean).join(" · ")}>
+                → max {maxHp}
+              </span>
+            )}
           </div>
           <div className="text-right">
             <span className="label">Temp</span>

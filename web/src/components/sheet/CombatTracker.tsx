@@ -5,7 +5,7 @@ import {
 } from "../../lib/combat";
 import { uid } from "../../lib/defaults";
 import { d20 } from "../../lib/dice";
-import { fmt, initiative } from "../../lib/rules";
+import { fmt, initiative, speed } from "../../lib/rules";
 import type { Character } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
 import { useRoll } from "../dice";
@@ -55,7 +55,7 @@ export function CombatBar({ c, update, onEnded }: { c: Character; update: Update
       <span className="flex items-center gap-1 text-xs text-ink-400">
         Move
         <button className="btn px-1.5 py-0 text-xs" onClick={() => update((d) => void (d.combat!.economy.movement = Math.max(0, d.combat!.economy.movement - 5)))}>−</button>
-        <span className={econ.movement >= c.speed ? "text-blood-500" : ""}>{econ.movement}/{c.speed} ft</span>
+        <span className={econ.movement >= speed(c) ? "text-blood-500" : ""}>{econ.movement}/{speed(c)} ft</span>
         <button className="btn px-1.5 py-0 text-xs" onClick={() => update((d) => void (d.combat!.economy.movement += 5))}>+5</button>
       </span>
       {s.effects.length > 0 && (

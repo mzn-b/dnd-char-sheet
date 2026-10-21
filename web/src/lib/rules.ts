@@ -1,4 +1,5 @@
 import type { Ability, CasterType, Character, ClassEntry, ProfLevel, SpellModel } from "./types";
+import { effectiveScore, hasModifier, modifiersFor, sumFor, type Modifier } from "./modifiers";
 
 export const ABILITY_NAMES: Record<Ability, string> = {
   str: "Strength",
@@ -55,19 +56,97 @@ export const totalLevel = (c: Character) => c.classes.reduce((sum, k) => sum + k
 export const profBonus = (c: Character) =>
   c.profBonusOverride ?? Math.ceil(Math.max(totalLevel(c), 1) / 4) + 1;
 
-export const abilityMod = (c: Character, a: Ability) => mod(c.abilities[a]);
+/** Ability score including items (Belt of Giant Strength…). The stored score is the base. */
+export const abilityScore = (c: Character, a: Ability) => effectiveScore(c, a);
+export const abilityMod = (c: Character, a: Ability) => mod(effectiveScore(c, a));
+/** Modifier from the stored score only (for level-up maths that shouldn't count items). */
+export const baseAbilityMod = (c: Character, a: Ability) => mod(c.abilities[a]);
 
 export const saveBonus = (c: Character, a: Ability) =>
-  abilityMod(c, a) + (c.saveProficiencies.includes(a) ? profBonus(c) : 0);
+  abilityMod(c, a) + (c.saveProficiencies.includes(a) ? profBonus(c) : 0) + sumFor(c, "save", `save:${a}`);
+
+/** Half proficiency on an unproficient check: Jack of All Trades (round down) or Remarkable Athlete (round up). */
+export function unproficientBonus(c: Character, a: Ability): number {
+  const pb = profBonus(c);
+  if (["str", "dex", "con"].includes(a) && hasModifier(c, "halfProfPhysical")) return Math.ceil(pb / 2);
+  if (hasModifier(c, "halfProf")) return Math.floor(pb / 2);
+  return 0;
+}
 
 export const skillBonus = (c: Character, skill: string) => {
   const s = SKILLS.find((x) => x.key === skill)!;
   const prof: ProfLevel = c.skills[skill] ?? 0;
-  return abilityMod(c, s.ability) + Math.floor(prof * profBonus(c));
+  const profPart = prof ? Math.floor(prof * profBonus(c)) : unproficientBonus(c, s.ability);
+  return abilityMod(c, s.ability) + profPart + sumFor(c, "check", `skill:${skill}`);
 };
 
-export const passivePerception = (c: Character) => 10 + skillBonus(c, "perception");
-export const initiative = (c: Character) => abilityMod(c, "dex") + c.initiativeBonus;
+/** Raw ability check (no skill): ability mod + Jack of All Trades + check bonuses. */
+export const abilityCheckBonus = (c: Character, a: Ability) => abilityMod(c, a) + unproficientBonus(c, a) + sumFor(c, "check");
+
+export const passiveScore = (c: Character, skill: string) => 10 + skillBonus(c, skill) + sumFor(c, `passive:${skill}`);
+export const passivePerception = (c: Character) => passiveScore(c, "perception");
+export const initiative = (c: Character) =>
+  abilityMod(c, "dex") + c.initiativeBonus + unproficientBonus(c, "dex") + sumFor(c, "initiative", "check");
+
+/** Hit point maximum: the stored base plus Tough & co., item Constitution changes and exhaustion 4+. */
+export function hpMax(c: Character): number {
+  const conDiff = abilityMod(c, "con") - baseAbilityMod(c, "con");
+  const max = c.hp.max + sumFor(c, "hp") + conDiff * totalLevel(c);
+  return c.exhaustion >= 4 ? Math.floor(max / 2) : max;
+}
+
+export const hpMaxParts = (c: Character): Modifier[] => {
+  const conDiff = abilityMod(c, "con") - baseAbilityMod(c, "con");
+  return [
+    ...modifiersFor(c, "hp"),
+    ...(conDiff ? [{ id: "con", target: "hp", value: conDiff * totalLevel(c), source: "Constitution change", kind: "item" as const }] : []),
+  ];
+};
+
+/** PHB carrying capacity and the variant encumbrance thresholds. */
+export function carrying(c: Character) {
+  const str = abilityScore(c, "str");
+  const weight = c.equipment.reduce((s, i) => s + i.weight * i.qty, 0) + Object.values(c.currency).reduce((s, n) => s + n, 0) / 50;
+  const capacity = str * 15;
+  const mode = c.options?.encumbrance ?? "standard";
+  const level = mode !== "variant" ? (weight > capacity ? 3 : 0) : weight > str * 10 ? 2 : weight > str * 5 ? 1 : 0;
+  return { weight, capacity, mode, encumbered: level, light: str * 5, heavy: str * 10 };
+}
+
+/** Walking speed after items, features, heavy armor, encumbrance and exhaustion. */
+export function speedBreakdown(c: Character): { total: number; parts: string[] } {
+  let total = c.speed;
+  const parts = [`Base ${c.speed}`];
+  for (const m of modifiersFor(c, "speed")) {
+    total += m.value;
+    parts.push(`${m.source} ${fmt(m.value)}`);
+  }
+  if (armorClassBreakdown(c).tooHeavy) {
+    total -= 10;
+    parts.push("Armor too heavy −10");
+  }
+  const load = carrying(c);
+  if (load.mode === "variant" && load.encumbered) {
+    const pen = load.encumbered === 2 ? 20 : 10;
+    total -= pen;
+    parts.push(`${load.encumbered === 2 ? "Heavily encumbered" : "Encumbered"} −${pen}`);
+  } else if (load.mode === "standard" && load.encumbered) {
+    parts.push("Over carrying capacity");
+  }
+  if (c.exhaustion >= 5) {
+    total = 0;
+    parts.push("Exhaustion 5: speed 0");
+  } else if (c.exhaustion >= 2) {
+    total = Math.floor(total / 2);
+    parts.push("Exhaustion 2: halved");
+  }
+  if (c.conditions.some((x) => x === "Grappled" || x === "Restrained")) {
+    total = 0;
+    parts.push("Grappled/Restrained: speed 0");
+  }
+  return { total: Math.max(0, total), parts };
+}
+export const speed = (c: Character) => speedBreakdown(c).total;
 
 export const classSummary = (classes: ClassEntry[] | null | undefined) =>
   classes?.length
@@ -102,8 +181,8 @@ export function maxPrepared(c: Character, k: ClassEntry): number | null {
   return Math.max(1, abilityMod(c, k.spellcastingAbility) + Math.floor(k.level / divisor));
 }
 
-export const spellSaveDC = (c: Character, a: Ability) => 8 + profBonus(c) + abilityMod(c, a);
-export const spellAttack = (c: Character, a: Ability) => profBonus(c) + abilityMod(c, a);
+export const spellSaveDC = (c: Character, a: Ability) => 8 + profBonus(c) + abilityMod(c, a) + sumFor(c, "spellDc");
+export const spellAttack = (c: Character, a: Ability) => profBonus(c) + abilityMod(c, a) + sumFor(c, "spellAttack");
 
 /** PHB multiclass spellcaster table (index = caster level - 1). */
 const MULTICLASS_SLOTS: number[][] = [
@@ -187,7 +266,7 @@ export function armorClassBreakdown(c: Character): AcBreakdown {
   let total: number;
   if (armor) {
     const a = armor.data!.armor!;
-    const dexPart = a.type === "light" ? dex : a.type === "medium" ? Math.min(dex, 2) : 0;
+    const dexPart = a.type === "light" ? dex : a.type === "medium" ? Math.min(dex, hasModifier(c, "medArmorDex") && dex >= 3 ? 3 : 2) : 0;
     total = a.base + dexPart;
     parts.push(`${armor.name} ${a.base}`, ...(a.type !== "heavy" ? [`Dex ${fmt(dexPart)}`] : []));
   } else {
@@ -203,10 +282,9 @@ export function armorClassBreakdown(c: Character): AcBreakdown {
     total += shield.data!.armor!.base;
     parts.push(`${shield.name} +${shield.data!.armor!.base}`);
   }
-  const defenseStyle = c.features.some((f) => f.subfeatures?.some((s) => /^defen[cs]e$/i.test(s.name)));
-  if (armor && defenseStyle) {
-    total += 1;
-    parts.push("Defense style +1");
+  for (const m of modifiersFor(c, "ac", ...(armor ? ["ac:armored"] : []))) {
+    total += m.value;
+    parts.push(`${m.source} ${fmt(m.value)}`);
   }
   if (c.acBonus) {
     total += c.acBonus;
@@ -216,7 +294,7 @@ export function armorClassBreakdown(c: Character): AcBreakdown {
     total,
     parts,
     stealthDisadvantage: !!armor?.data?.armor?.stealthDisadvantage,
-    tooHeavy: !!armor?.data?.armor?.strength && c.abilities.str < armor.data!.armor!.strength!,
+    tooHeavy: !!armor?.data?.armor?.strength && abilityScore(c, "str") < armor.data!.armor!.strength!,
   };
 }
 

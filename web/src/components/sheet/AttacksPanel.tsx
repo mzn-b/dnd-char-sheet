@@ -1,4 +1,5 @@
 import { abilityMod, fmt, profBonus } from "../../lib/rules";
+import { attackModifiers, describe, isRangedAttack } from "../../lib/modifiers";
 import { ABILITIES, type Attack, type Character } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
 import { NumberField, Section, TextField } from "../ui";
@@ -7,10 +8,19 @@ import { blankAttackFields } from "../../lib/attacks";
 import { activeRollBonus } from "../../lib/combat";
 import { RollButton, useRoll } from "../dice";
 
-export const attackBonus = (c: Character, a: Attack) =>
-  (a.ability === "none" ? 0 : abilityMod(c, a.ability)) + (a.proficient ? profBonus(c) : 0) + a.bonus;
+const sum = (mods: { value: number }[]) => mods.reduce((s, m) => s + m.value, 0);
 
-export const damageBonus = (c: Character, a: Attack) => (a.ability === "none" ? 0 : abilityMod(c, a.ability));
+/** To-hit: ability + proficiency + typed bonus + magic weapon, Archery and other modifiers. */
+export const attackBonus = (c: Character, a: Attack) =>
+  (a.ability === "none" ? 0 : abilityMod(c, a.ability)) + (a.proficient ? profBonus(c) : 0) + a.bonus + sum(attackModifiers(c, a).attack);
+
+export const damageBonus = (c: Character, a: Attack) => (a.ability === "none" ? 0 : abilityMod(c, a.ability)) + sum(attackModifiers(c, a).damage);
+
+/** Tooltip text naming the automatic bonuses on an attack. */
+export const attackHint = (c: Character, a: Attack) => {
+  const m = attackModifiers(c, a);
+  return [m.attack.length ? `To hit: ${describe(m.attack)}` : "", m.damage.length ? `Damage: ${describe(m.damage)}` : ""].filter(Boolean).join("\n") || undefined;
+};
 
 /** To-hit and damage roll buttons. Damage doubles its dice if the last roll was a crit with this attack. */
 export function AttackRolls({ c, a, size = "text-sm" }: { c: Character; a: Attack; size?: string }) {
@@ -92,6 +102,8 @@ export function AttacksPanel({ c, update }: { c: Character; update: Update }) {
                 <label className="space-y-0.5"><span className="label">Damage type</span><TextField className="field-boxed" value={a.damageType} placeholder="slashing" onChange={(v) => edit(a.id, { damageType: v })} /></label>
                 <label className="space-y-0.5"><span className="label">Extra bonus</span><NumberField className="field-boxed" value={a.bonus} onChange={(n) => edit(a.id, { bonus: n })} /></label>
                 <label className="flex items-end gap-2 pb-2"><input type="checkbox" className="accent-accent-500" checked={a.proficient} onChange={(e) => edit(a.id, { proficient: e.target.checked })} />Proficient</label>
+                <label className="flex items-end gap-2 pb-2"><input type="checkbox" className="accent-accent-500" checked={isRangedAttack(c, a)} onChange={(e) => edit(a.id, { ranged: e.target.checked })} />Ranged</label>
+                {attackHint(c, a) && <p className="col-span-full whitespace-pre-line text-xs text-emerald-400">Automatic: {attackHint(c, a)}</p>}
                 <label className="col-span-full space-y-0.5"><span className="label">Notes</span><TextField className="field-boxed" value={a.notes} placeholder="Versatile (1d10), finesse…" onChange={(v) => edit(a.id, { notes: v })} /></label>
                 <button className="btn-danger col-span-full justify-self-end py-0.5 text-xs" onClick={() => update((d) => void (d.attacks = d.attacks.filter((x) => x.id !== a.id)))}>Remove</button>
               </div>
