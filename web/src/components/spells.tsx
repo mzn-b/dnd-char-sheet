@@ -6,6 +6,7 @@ import { describeDice, diceAt, scalingNote } from "../lib/spellDice";
 import { describeRoll, extractRolls, resolveRoll } from "../lib/rollText";
 import { withModifier } from "./rolls";
 import { addEffect, effectForSpell } from "../lib/combat";
+import { rollKey, useCorrections } from "../lib/corrections";
 import { RollButton } from "./dice";
 import { d20 } from "../lib/dice";
 import type { Ability, Character, ContentDetail, SpellDice, SpellEntry } from "../lib/types";
@@ -165,12 +166,22 @@ function castingAbility(c: Character, spell: SpellEntry): Ability | undefined {
  * how it scales, and the save DC or attack bonus. The dice are clickable but meant for reading.
  */
 export function SpellRollInfo({ c, spell, detail }: { c: Character; spell: SpellEntry; detail?: ContentDetail }) {
-  const all = detail ? extractRolls(detail.description, { spellLevel: spell.level }) : [];
+  const corrections = useCorrections();
+  const all = detail ? extractRolls(detail.description, { spellLevel: spell.level }).filter((r) => !corrections.isRollHidden(rollKey(spell.ref.name, r))) : [];
+  // If the main roll found in the text was marked incorrect, don't show the structured copy of it either.
+  const primaryHidden = !!detail && extractRolls(detail.description, { spellLevel: spell.level }).some(
+    (r) => (r.kind === "damage" || r.kind === "healing") && corrections.isRollHidden(rollKey(spell.ref.name, r)) && !!detail.spell?.dice?.base && r.dice.startsWith(detail.spell.dice.base),
+  );
   // Spells without structured dice (Open5e, homebrew) use the first roll found in their text.
   const first = all.find((r) => r.kind === "damage" || r.kind === "healing");
-  const dice: SpellDice | undefined =
-    detail?.spell?.dice ??
-    (first ? { kind: first.kind === "healing" ? "heal" : "damage", base: first.dice.replace(/ [+−] mod$/, ""), types: first.type ? [first.type] : undefined, addModifier: / [+−] mod$/.test(first.dice) } : undefined);
+  const structured = detail?.spell?.dice;
+  const fromText: SpellDice | undefined = first
+    ? { kind: first.kind === "healing" ? "heal" : "damage", base: first.dice.replace(/ [+−] mod$/, ""), types: first.type ? [first.type] : undefined, addModifier: / [+−] mod$/.test(first.dice) }
+    : undefined;
+  // A hidden main roll keeps the save DC / attack bonus but drops its dice.
+  const dice: SpellDice | undefined = primaryHidden
+    ? fromText ? { ...fromText, save: structured?.save, attack: structured?.attack } : structured && { kind: structured.kind, save: structured.save, attack: structured.attack }
+    : structured ?? fromText;
   if (!dice) return null;
   // Structured data often omits "+ your spellcasting modifier"; the text says it.
   const withMod = !!first && / [+−] mod$/.test(first.dice) && !!dice.base && first.dice.startsWith(dice.base) ? { ...dice, addModifier: true } : dice;

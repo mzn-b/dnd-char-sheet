@@ -47,7 +47,7 @@ export default function CharacterCreator() {
   const [raceSel, setRaceSel] = useState<Selections>({});
   const [background, setBackground] = useState<ContentSummary | null>(null);
   const [bgSel, setBgSel] = useState<Selections>({});
-  const [method, setMethod] = useState<Method>("standard");
+  const [method, setMethod] = useState<Method>("pointbuy");
   const [base, setBase] = useState<Record<Ability, number>>({ str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 });
   /** Standard array / rolled scores: which pool index each ability got. */
   const [assigned, setAssigned] = useState<Partial<Record<Ability, number>>>({});
@@ -105,6 +105,7 @@ export default function CharacterCreator() {
     abilities: [
       method === "pointbuy" && pointsSpent > POINT_BUY_BUDGET && "Point buy is over budget",
       (method === "standard" || method === "roll") && Object.keys(assigned).length < 6 && "Assign all six scores",
+      method === "pointbuy" && pointsSpent < POINT_BUY_BUDGET && `${POINT_BUY_BUDGET - pointsSpent} point-buy points unspent`,
     ].filter(Boolean) as string[],
     classes: [
       !rows[0].cls && "Choose a class",
@@ -218,14 +219,14 @@ export default function CharacterCreator() {
         {step === "abilities" && (
           <div className="space-y-5">
             <div className="flex flex-wrap gap-1">
-              {([["standard", "Standard array"], ["pointbuy", "Point buy"], ["roll", "Roll 4d6"], ["manual", "Manual"]] as const).map(([m, label]) => (
+              {([["pointbuy", "Point buy (27)"], ["standard", "Standard array"], ["roll", "Roll 4d6"], ["manual", "Manual"]] as const).map(([m, label]) => (
                 <button key={m} className={`rounded-lg px-3 py-1.5 text-sm ${method === m ? "bg-ink-800 text-accent-400" : "text-ink-400 hover:text-ink-200"}`} onClick={() => { setMethod(m); setAssigned({}); if (m === "pointbuy") setBase({ str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 }); }}>
                   {label}
                 </button>
               ))}
             </div>
             {method === "pointbuy" && (
-              <p className={`text-sm ${pointsSpent > POINT_BUY_BUDGET ? "text-blood-500" : "text-ink-400"}`}>Points spent: {pointsSpent} / {POINT_BUY_BUDGET} (scores 8–15 before racial bonuses)</p>
+              <PointBuy base={base} bonuses={bonuses} onChange={setBase} />
             )}
             {method === "roll" && (
               <div className="flex items-center gap-3">
@@ -233,7 +234,7 @@ export default function CharacterCreator() {
                 {rolled.length > 0 && <span className="font-display text-xl tracking-widest">{rolled.join(" · ")}</span>}
               </div>
             )}
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {method !== "pointbuy" && <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {ABILITIES.map((a) => {
                 const taken = new Set(Object.entries(assigned).filter(([k]) => k !== a).map(([, v]) => v));
                 return (
@@ -263,18 +264,11 @@ export default function CharacterCreator() {
                         {pool.map((v, i) => <option key={i} value={i} disabled={taken.has(i)}>{v}</option>)}
                       </select>
                     )}
-                    {method === "pointbuy" && (
-                      <div className="flex items-center gap-1">
-                        <button className="btn px-2" disabled={base[a] <= 8} onClick={() => setBase({ ...base, [a]: base[a] - 1 })}>−</button>
-                        <span className="w-6 text-center">{base[a]}</span>
-                        <button className="btn px-2" disabled={base[a] >= 15 || pointsSpent + (POINT_BUY_COST[base[a] + 1] - POINT_BUY_COST[base[a]]) > POINT_BUY_BUDGET} onClick={() => setBase({ ...base, [a]: base[a] + 1 })}>+</button>
-                      </div>
-                    )}
                     {method === "manual" && <NumberField className="field-boxed w-16 text-center" value={base[a]} min={1} max={30} onChange={(n) => setBase({ ...base, [a]: n })} />}
                   </div>
                 );
               })}
-            </div>
+            </div>}
           </div>
         )}
 
@@ -525,4 +519,89 @@ function pickRandom<T>(list: T[], n: number): T[] {
   const out: T[] = [];
   while (out.length < n && pool.length) out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
   return out;
+}
+
+/**
+ * 5e point buy (PHB p. 13): every score starts at 8; raising it costs points from a budget of 27.
+ * 9–13 cost 1 point per step, 14 and 15 cost 2 each; nothing above 15 before racial bonuses.
+ */
+function PointBuy({
+  base, bonuses, onChange,
+}: { base: Record<Ability, number>; bonuses: Partial<Record<Ability, number>>; onChange: (b: Record<Ability, number>) => void }) {
+  const spent = ABILITIES.reduce((s, a) => s + (POINT_BUY_COST[base[a]] ?? 0), 0);
+  const left = POINT_BUY_BUDGET - spent;
+  const stepCost = (score: number) => (score >= 15 ? null : POINT_BUY_COST[score + 1] - POINT_BUY_COST[score]);
+  const set = (a: Ability, score: number) => onChange({ ...base, [a]: score });
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-ink-800 bg-ink-850/60 p-3">
+        <div className="flex items-baseline justify-between">
+          <span className="label">Points remaining</span>
+          <span className={`font-display text-3xl ${left < 0 ? "text-blood-500" : left === 0 ? "text-emerald-400" : "text-accent-400"}`}>
+            {left} <span className="text-base text-ink-400">/ {POINT_BUY_BUDGET}</span>
+          </span>
+        </div>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-ink-800">
+          <div className={`h-full transition-all ${left < 0 ? "bg-blood-500" : "bg-accent-500"}`} style={{ width: `${Math.min(100, (spent / POINT_BUY_BUDGET) * 100)}%` }} />
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-1 text-xs text-ink-400">
+          <span className="mr-1">Cost:</span>
+          {Object.entries(POINT_BUY_COST).map(([score, cost]) => (
+            <span key={score} className="rounded border border-ink-700 px-1.5 py-0.5">{score} = {cost}</span>
+          ))}
+          <button className="btn-ghost ml-auto px-2 py-0.5 text-xs" onClick={() => onChange({ str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 })}>Reset to 8s</button>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[34rem] text-sm">
+          <thead>
+            <tr className="text-left text-[11px] uppercase tracking-wider text-ink-600">
+              <th className="py-1 font-normal">Ability</th>
+              <th className="py-1 text-center font-normal">Base score</th>
+              <th className="py-1 text-center font-normal">Cost</th>
+              <th className="py-1 text-center font-normal">Racial</th>
+              <th className="py-1 text-center font-normal">Final</th>
+              <th className="py-1 text-center font-normal">Modifier</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ABILITIES.map((a) => {
+              const next = stepCost(base[a]);
+              const final = base[a] + (bonuses[a] ?? 0);
+              return (
+                <tr key={a} className="border-t border-ink-800">
+                  <td className="py-2 font-semibold">{ABILITY_NAMES[a]}</td>
+                  <td className="py-2">
+                    <div className="flex items-center justify-center gap-1">
+                      <button className="btn px-2 py-0.5" aria-label={`Lower ${ABILITY_NAMES[a]}`} disabled={base[a] <= 8} onClick={() => set(a, base[a] - 1)}>−</button>
+                      <span className="w-8 text-center font-display text-xl">{base[a]}</span>
+                      <button
+                        className="btn px-2 py-0.5"
+                        aria-label={`Raise ${ABILITY_NAMES[a]}`}
+                        disabled={next == null || next > left}
+                        title={next == null ? "15 is the maximum before racial bonuses" : next > left ? `Needs ${next} points, ${left} left` : `Costs ${next} point${next > 1 ? "s" : ""}`}
+                        onClick={() => set(a, base[a] + 1)}
+                      >
+                        +
+                      </button>
+                    </div>
+                    <div className="mt-0.5 text-center text-[10px] text-ink-600">{next == null ? "max" : `next: ${next} pt${next > 1 ? "s" : ""}`}</div>
+                  </td>
+                  <td className="py-2 text-center text-ink-400">{POINT_BUY_COST[base[a]]}</td>
+                  <td className="py-2 text-center text-emerald-400">{bonuses[a] ? `+${bonuses[a]}` : "—"}</td>
+                  <td className="py-2 text-center font-display text-xl">{final}</td>
+                  <td className="py-2 text-center">{fmt(mod(final))}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-ink-600">
+        Every score starts at 8. Raising a score to 9–13 costs 1 point per step; 14 and 15 cost 2 points each. No score can go above 15 before racial bonuses.
+        Racial bonuses from the Race step are already included in the final score.
+      </p>
+    </div>
+  );
 }

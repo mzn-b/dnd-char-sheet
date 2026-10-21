@@ -250,11 +250,11 @@ export function DetailBody({ detail, rollContext }: { detail: ContentDetail; rol
         </dl>
       )}
       {detail.type === "spell" ? (
-        <SpellRollBreakdown description={detail.description} spellLevel={detail.level ?? 0} characterLevel={rollContext?.characterLevel ?? 1} mod={rollContext?.mod} />
+        <SpellRollBreakdown description={detail.description} spellLevel={detail.level ?? 0} characterLevel={rollContext?.characterLevel ?? 1} mod={rollContext?.mod} source={detail.name} />
       ) : otherRolls.length > 0 ? (
         <div className="rounded-lg border border-ink-800 bg-ink-850/40 p-3">
           <div className="label mb-1">What to roll</div>
-          <RollList rolls={otherRolls} at={{ characterLevel: rollContext?.characterLevel ?? 1 }} mod={rollContext?.mod} />
+          <RollList rolls={otherRolls} at={{ characterLevel: rollContext?.characterLevel ?? 1 }} mod={rollContext?.mod} source={detail.name} />
         </div>
       ) : null}
       {detail.classes?.length ? <p className="text-xs text-ink-400">Classes: {detail.classes.join(", ")}</p> : null}

@@ -69,3 +69,22 @@ sources.put("/open5e/documents", async (req, res) => {
   await setExcludedDocuments(excluded);
   res.json({ excluded });
 });
+
+/**
+ * Corrections: rolls and reminders the user marked as incorrect, hidden everywhere.
+ * Stored app-wide because a misread rule text is wrong for every character.
+ */
+sources.get("/corrections", async (_req, res) => {
+  const { rows } = await pool.query("SELECT value FROM settings WHERE key = 'corrections'");
+  res.json({ hiddenRolls: [], hiddenReminders: [], ...rows[0]?.value });
+});
+
+sources.put("/corrections", async (req, res) => {
+  const list = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 5000) : []);
+  const value = { hiddenRolls: list(req.body?.hiddenRolls), hiddenReminders: list(req.body?.hiddenReminders) };
+  await pool.query(
+    "INSERT INTO settings (key, value) VALUES ('corrections', $1) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+    [JSON.stringify(value)],
+  );
+  res.json(value);
+});

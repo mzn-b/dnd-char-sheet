@@ -5,6 +5,7 @@ import { RollButton, useRoll } from "../dice";
 import { ResourcesPanel } from "./ResourcesPanel";
 import { endEffect, reminders } from "../../lib/combat";
 import { useSpellDetails } from "../spells";
+import { useCorrections } from "../../lib/corrections";
 import type { Character } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
 import { NumberField, Pips, Section } from "../ui";
@@ -14,6 +15,7 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
   const [concentrationDc, setConcentrationDc] = useState<number | null>(null);
   const [damageReminders, setDamageReminders] = useState<string[]>([]);
   const spellDetails = useSpellDetails(c.spellcasting.spells);
+  const corrections = useCorrections();
   const { roll } = useRoll();
   const ac = armorClassBreakdown(c);
   const auto = c.acMode === "auto";
@@ -49,7 +51,7 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
       }
     });
     if (kind === "damage" && c.concentration) setConcentrationDc(Math.max(10, Math.floor(n / 2)));
-    if (kind === "damage" && c.combat?.active) setDamageReminders(reminders(c, spellDetails).filter((r) => r.when === "damaged").map((r) => r.text));
+    if (kind === "damage" && c.combat?.active) setDamageReminders(reminders(c, spellDetails).filter((r) => r.when === "damaged" && !corrections.isReminderHidden(r.text)).map((r) => r.text));
     setAmount("");
   };
 

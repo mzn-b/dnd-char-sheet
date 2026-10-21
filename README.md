@@ -8,7 +8,7 @@ A dark-mode web app for keeping multiple D&D 5e characters. It covers every fiel
   - [Open5e](https://open5e.com): free OGL expansions, with each book toggled individually: Kobold Press (Deep Magic, Deep Magic Extended, Tome of Heroes, Vault of Magic, Warlock Archives), EN Publishing's Level Up A5E, Green Ronin's Tal'Dorei and Open5e originals. Covers spells, subclasses, races, backgrounds, feats, magic items, weapons and armor.
   - [5etools](https://5e.tools) data (2014 rules only): every book's subclasses, races, feats, spells, items and optional features, plus any files from the 5etools **homebrew repository** (Blood Hunter, etc.)
 - **Source filter**: every picker can be narrowed to a single book.
-- **Character creator** for a level 1 character or any higher level: race, background, ability scores (standard array, point buy, 4d6 or manual), class plan with multiclassing, and starting equipment. A higher-level build is then walked through level by level with the wizard.
+- **Character creator** for a level 1 character or any higher level: race, background, ability scores (**point buy** by the PHB rules is the default: 27 points, scores 8–15, 14 and 15 cost 2. It shows a points-left meter, the cost of each score and its next step, the cost table, and racial bonuses with final scores and modifiers. Standard array, 4d6 or manual are also available), class plan with multiclassing, and starting equipment. A higher-level build is then walked through level by level with the wizard.
 - **Guided level-up**: class or multiclass (prerequisites checked), class proficiencies and skill picks, HP (average or roll), new features, subclass choice, ASI or feat, cantrips/spells to learn, spell swaps, then a review step. Slot tables are recalculated: single class, PHB multiclass table, pact magic, and subclass casters (Eldritch Knight, Arcane Trickster).
 - **Features with built-in choices** (Fighting Style, Expertise, Metamagic, Invocations, Maneuvers, Favored Enemy, a feat's ability or save pick, Half-Elf's +1/+1…) open a picker. Each pick is stored as a **sub-feature** with its full text. Skills, expertise, saves and ability increases are applied automatically, and picks can be changed later.
 - **Flexible editing**: the rules give hints (e.g. *Spells known 5/6*), not hard locks. Add, swap or remove spells, feats or features any time, or fix class levels by hand.
@@ -21,6 +21,8 @@ A dark-mode web app for keeping multiple D&D 5e characters. It covers every fiel
     - conditional extras ("+1d8 if the target is undead or a fiend")
     - per-turn effects, area triggers, half damage on a save, temporary HP, flat bonuses (−5/+10)
     - scaling per slot or every two slots, cantrip tiers, caps ("max 5d8") and cantrip upgrades that unlock at 5th level
+
+    Anything misread can be **marked as incorrect** (✕ on hover) and stops being shown everywhere. Hidden values are listed under "Show N marked incorrect" with a restore link. The same works for combat reminders.
 
     Spell details show a "What to roll" list with a slot-level picker, and spell rows show "+N more" with a tooltip. Features and feats show their rolls too, with class-table values for Sneak Attack, Martial Arts, Bardic Inspiration and Rage.
   - **What to roll**: every spell shows its damage or healing dice and type (cantrips at your character level), how it scales, and its save DC or attack bonus. The Cast menu shows the dice for each slot level, and the spell details include a full table by slot level. Handy if you roll physical dice.

@@ -11,6 +11,8 @@ import type { Update } from "../../lib/useCharacter";
 import { useRoll } from "../dice";
 import { useSpellDetails } from "../spells";
 import { NumberField, Section } from "../ui";
+import { HideButton } from "../rolls";
+import { useCorrections } from "../../lib/corrections";
 
 const ORDER: ReminderWhen[] = ["turnStart", "attack", "hit", "damaged", "turnEnd", "always"];
 
@@ -79,6 +81,8 @@ export function CombatPanel({ c, update, endedNotice }: { c: Character; update: 
   const [initText, setInitText] = useState("");
   const [custom, setCustom] = useState<{ name: string; rounds: number; text: string; when: ReminderWhen } | null>(null);
   const details = useSpellDetails(c.spellcasting.spells);
+  const corrections = useCorrections();
+  const [showHidden, setShowHidden] = useState(false);
   const s = c.combat;
 
   if (!s?.active) {
@@ -105,7 +109,9 @@ export function CombatPanel({ c, update, endedNotice }: { c: Character; update: 
     );
   }
 
-  const all = reminders(c, details);
+  const everything = reminders(c, details);
+  const hiddenReminders = dedupe(everything.filter((r) => corrections.isReminderHidden(r.text)));
+  const all = everything.filter((r) => !corrections.isReminderHidden(r.text));
   const grouped = ORDER.map((w) => ({ when: w, items: all.filter((r) => r.when === w) })).filter((g) => g.items.length);
   const highlight: ReminderWhen = s.myTurn ? "turnStart" : "damaged";
   const activations = activatableEffects(c);
@@ -123,12 +129,33 @@ export function CombatPanel({ c, update, endedNotice }: { c: Character; update: 
               <h4 className="label mb-1">{REMINDER_LABELS[g.when]}{g.when === highlight && <span className="ml-2 normal-case tracking-normal text-accent-400">← now</span>}</h4>
               <ul className="space-y-1 text-sm">
                 {dedupe(g.items).map((r, i) => (
-                  <li key={i} className="flex gap-2"><span className="text-accent-500">•</span><span>{r.text}</span></li>
+                  <li key={i} className="group flex gap-2">
+                    <span className="text-accent-500">•</span>
+                    <span>{r.text}</span>
+                    <HideButton onClick={() => corrections.hideReminder(r.text)} label="Mark this reminder as incorrect and hide it" />
+                  </li>
                 ))}
               </ul>
             </div>
           ))}
         </div>
+        {hiddenReminders.length > 0 && (
+          <div className="mt-3 text-[11px] text-ink-600">
+            <button className="hover:text-ink-200" onClick={() => setShowHidden(!showHidden)}>
+              {showHidden ? "Hide" : "Show"} {hiddenReminders.length} reminder{hiddenReminders.length > 1 ? "s" : ""} marked incorrect
+            </button>
+            {showHidden && (
+              <ul className="mt-1 space-y-0.5">
+                {hiddenReminders.map((r) => (
+                  <li key={r.text} className="flex items-center gap-2">
+                    <span className="line-through">{r.text}</span>
+                    <button className="text-accent-400 hover:underline" onClick={() => corrections.restoreReminder(r.text)}>restore</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </Section>
 
       <div className="space-y-4">

@@ -218,7 +218,7 @@ export function FeatureRolls({ c, f, compact }: { c: Character; f: Pick<Feature,
   return (
     <div className={compact ? "" : "rounded-lg border border-ink-800 bg-ink-850/40 p-2"}>
       {!compact && <div className="label mb-1">What to roll</div>}
-      <RollList rolls={rolls} at={{ characterLevel: totalLevel(c) }} compact={compact} />
+      <RollList rolls={rolls} at={{ characterLevel: totalLevel(c) }} compact={compact} source={f.name} />
     </div>
   );
 }

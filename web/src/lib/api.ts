@@ -43,6 +43,8 @@ export const api = {
   brewCatalog: (q: string, folder?: string) => request<BrewFile[]>(`/sources/5etools/brew/catalog${qs({ q, folder })}`),
   open5eDocuments: () => request<{ slug: string; title: string; organization: string; enabled: boolean }[]>("/sources/open5e/documents"),
   setOpen5eExcluded: (excluded: string[]) => request<void>("/sources/open5e/documents", { method: "PUT", body: JSON.stringify({ excluded }) }),
+  corrections: () => request<Corrections>("/sources/corrections"),
+  saveCorrections: (c: Corrections) => request<Corrections>("/sources/corrections", { method: "PUT", body: JSON.stringify(c) }),
   brews: () => request<{ path: string; enabled: boolean }[]>("/sources/5etools/brew"),
   addBrew: (path: string) => request<void>("/sources/5etools/brew", { method: "POST", body: JSON.stringify({ path }) }),
   removeBrew: (path: string) => request<void>(`/sources/5etools/brew${qs({ path })}`, { method: "DELETE" }),
@@ -66,4 +68,10 @@ export interface BrewFile {
   path: string;
   folder: string;
   name: string;
+}
+
+/** Rolls and reminders marked as incorrect (hidden everywhere). */
+export interface Corrections {
+  hiddenRolls: string[];
+  hiddenReminders: string[];
 }

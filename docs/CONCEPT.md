@@ -90,6 +90,10 @@ No API structures conditional dice: 5etools and Open5e mark only the primary dam
 
 `resolveRoll` gives the dice for a cast, at a slot level or a character level. `featureRolls` overrides class-table values. The parser is tested against real texts in `lib/__tests__/` and was audited across the spell catalog: of ~200 sampled spells that contain dice, one yielded nothing.
 
+### Corrections
+
+Because the extraction reads prose, any roll or reminder can be marked as incorrect. Corrections are stored app-wide (`settings.corrections` via `/api/sources/corrections`): a misread rule text is wrong for every character. Rolls are keyed by source name + dice + kind + type + condition, so the same roll stays hidden when the text is read again. Reminders are keyed by their text. A hidden main roll also hides the structured copy of it on spell rows, but keeps the save DC or attack bonus.
+
 ## Combat tracker
 
 `Character.combat` holds the round, whose turn it is, the action economy, active effects and a log.
