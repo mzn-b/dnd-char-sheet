@@ -1,3 +1,4 @@
+import { featureDuration } from "../../lib/featureDuration";
 import { withTextChoices } from "../../lib/textChoices";
 import { ActionBadge } from "../ActionBadge";
 import { KIND_LABEL, featureKind } from "../../lib/economy";
@@ -177,6 +178,7 @@ export function FeatureDetail({ c, f }: { c: Character; f: Feature }) {
       <div className="flex flex-wrap items-center gap-2 text-xs text-ink-400">
         {kind && <span className="flex items-center gap-1"><ActionBadge kind={kind} /> {KIND_LABEL[kind]}</span>}
         {f.origin && <span className="chip">{f.origin}</span>}
+        {featureDuration(f) && <span className="chip">Lasts {featureDuration(f)!.label}{featureDuration(f)!.concentration ? " · concentration" : ""}</span>}
         {f.uses && <span>{Math.max(0, usesMax(c, f.uses.formula, f.uses.max) - f.uses.used)} / {usesMax(c, f.uses.formula, f.uses.max)} uses left · resets on a {f.uses.reset} rest</span>}
         {f.ref?.source && <span className="chip">{f.ref.source}</span>}
       </div>

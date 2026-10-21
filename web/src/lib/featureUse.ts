@@ -1,4 +1,5 @@
-import { EFFECTS, activateEffect } from "./combat";
+import { EFFECTS, activateEffect, addEffect, endEffect, type Reminder } from "./combat";
+import { featureDuration } from "./featureDuration";
 import { featureKind, spendEconomy } from "./economy";
 import { startWildShape } from "./extras";
 import { classResources } from "./resources";
@@ -56,9 +57,43 @@ function spendUse(d: Character, f: Pick<Feature, "name">) {
 export function applyFeatureUse(d: Character, f: Feature): string | undefined {
   const warning = spendEconomy(d, featureKind(d, f), f.name);
   const def = EFFECTS.find((e) => e.label && e.activatedBy?.test(f.name));
-  if (def && d.combat?.active) activateEffect(d, def, def.label!); // spends its resource
-  else spendUse(d, f);
+  if (def && d.combat?.active) {
+    activateEffect(d, def, def.label!); // spends its resource
+    return warning;
+  }
+  spendUse(d, f);
+  // Features that last a while (Favored Foe: 1 minute, concentration) become active effects, like spells.
+  const duration = featureDuration(f);
+  if (duration) {
+    if (duration.concentration) d.concentration = { name: f.name };
+    if (d.combat?.active) {
+      const hit = triggerReminders(f);
+      addEffect(d, {
+        id: f.id, name: f.name, source: "feature", startedRound: d.combat.round,
+        rounds: duration.untilNextTurn ? null : duration.rounds, untilNextTurn: duration.untilNextTurn, concentration: duration.concentration,
+        reminders: hit.length ? hit : [{ when: "always", text: `${f.name} is active` }],
+      });
+    }
+  }
   return warning;
+}
+
+/** What to remember while a feature's effect lasts: its "when you hit…" style sentences. */
+function triggerReminders(f: Feature): Omit<Reminder, "source">[] {
+  // Drop the "*1st-level ranger optional feature…*" line, then prefer the sentence with the extra dice.
+  const text = f.description.replace(/^\*[^*\n]+\*\s*/, "").replace(/\*\*?|_/g, "").replace(/\s+/g, " ");
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  const withDice = sentences.find((s) => /\d*d\d+/.test(s) && /\b(?:hit|damage)\b/i.test(s));
+  const trigger = sentences.find((s) => /\b(?:the first time|whenever|when) [^.]{0,60}you hit\b/i.test(s));
+  const hit = withDice ?? trigger;
+  return hit ? [{ when: "hit", text: `${f.name}: ${hit}` }] : [];
+}
+
+/** Stop a feature's effect early (and its concentration). */
+export function endFeatureEffect(d: Character, f: Feature) {
+  const e = d.combat?.effects.find((x) => x.name === f.name);
+  if (e) endEffect(d, e.id);
+  if (d.concentration?.name === f.name) d.concentration = null;
 }
 
 /** Wild Shape into a stored form: costs the action (bonus action for the Moon druid) and a use. */

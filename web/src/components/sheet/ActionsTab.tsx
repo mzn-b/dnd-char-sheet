@@ -13,13 +13,14 @@ import { Modal, NumberField, Section } from "../ui";
 import { AddAttackMenu, AttackRolls, BeastAttacks, attackKind } from "./AttacksPanel";
 import { ActionBadge } from "../ActionBadge";
 import { featureKind, spendEconomy, type ActionKind } from "../../lib/economy";
-import { applyFeatureUse, featureDecision, usesLeft } from "../../lib/featureUse";
+import { applyFeatureUse, endFeatureEffect, featureDecision, usesLeft } from "../../lib/featureUse";
+import { featureDuration } from "../../lib/featureDuration";
 import { useDecision } from "../decisions";
 import type { Feature } from "../../lib/types";
 import { ResourcesPanel } from "./ResourcesPanel";
 import { CombatPanel } from "./CombatTracker";
 import { FeatureDetail, FeatureRolls } from "./FeaturesTab";
-import { EFFECTS, activateEffect, activeRollBonus } from "../../lib/combat";
+import { EFFECTS, activateEffect, activeRollBonus, roundsLeft } from "../../lib/combat";
 import { ContentDetailView } from "../ContentBrowser";
 
 const GROUPS = [
@@ -45,7 +46,7 @@ export function ActionsTab({ c, update, endedEffects }: { c: Character; update: 
   // Features you actively use (they cost an action, bonus action or reaction) or that have dice to roll.
   const usable = c.features.filter((f) => {
     const kind = featureKind(c, f);
-    return (kind && kind !== "other") || (featureRolls(c, f).length > 0 && f.kind !== "race" && f.kind !== "background");
+    return (kind && kind !== "other") || !!f.uses || !!featureDuration(f) || (featureRolls(c, f).length > 0 && f.kind !== "race" && f.kind !== "background");
   });
 
   return (
@@ -212,14 +213,30 @@ function FeatureActions({ c, update, features }: { c: Character; update: Update;
           const kind = featureKind(c, f);
           const left = usesLeft(c, f);
           const decision = featureDecision(f);
-          const active = /^wild shape$/i.test(f.name) && !!c.wildShape;
+          const duration = featureDuration(f);
+          const effect = c.combat?.effects.find((e) => e.name === f.name);
+          const active = (/^wild shape$/i.test(f.name) && !!c.wildShape) || !!effect || (!!duration?.concentration && c.concentration?.name === f.name);
+          const usable = (kind && kind !== "other") || left != null || !!duration;
+          const roundsLeftNow = effect ? roundsLeft(c, effect) : null;
           return (
             <li key={f.id} className="rounded-lg bg-ink-850/60 px-3 py-2">
               <div className="flex flex-wrap items-center gap-2">
                 <ActionBadge kind={kind} />
                 <button className="flex-1 text-left text-sm font-semibold hover:text-accent-400" title="Read the full feature" onClick={() => setReading(f)}>{f.name}</button>
+                {duration && (
+                  <span className="flex items-center gap-1 text-[10px] text-ink-400">
+                    <span className="rounded bg-ink-800 px-1" title="Lasts">{duration.label}</span>
+                    {duration.concentration && <span className="rounded bg-arcane-500/20 px-1 text-arcane-400" title="Concentration">C</span>}
+                  </span>
+                )}
+                {active && effect && (
+                  <span className="text-xs text-arcane-400">{effect.untilNextTurn ? "until your turn" : roundsLeftNow != null ? `${roundsLeftNow} rounds left` : "active"}</span>
+                )}
                 {left != null && <span className="text-xs text-ink-400">{left} left</span>}
-                {kind && kind !== "other" && (
+                {active && (effect || (duration?.concentration && c.concentration?.name === f.name)) && !/^wild shape$/i.test(f.name) && (
+                  <button className="btn-ghost px-2 py-0 text-xs hover:text-blood-500" onClick={() => update((d) => endFeatureEffect(d, f))}>End</button>
+                )}
+                {usable && !(active && !/^wild shape$/i.test(f.name)) && (
                   <button
                     className="btn px-2 py-0 text-xs"
                     disabled={left === 0 || active}

@@ -49,7 +49,7 @@ const KNOWN: { match: RegExp; kind: ActionKind | ((c: Character) => ActionKind) 
   { match: /^channel divinity/i, kind: "action" },
   // Circle of the Moon's Combat Wild Shape makes it a bonus action.
   { match: /^wild shape$/i, kind: (c) => (c.features.some((f) => /^combat wild shape$/i.test(f.name)) || c.classes.some((k) => /moon/i.test(k.subclass?.name ?? "")) ? "bonus" : "action") },
-  { match: /^(divine smite|sneak attack|extra attack|stunning strike)$/i, kind: "free" },
+  { match: /^(divine smite|sneak attack|extra attack|stunning strike|favored foe)$/i, kind: "free" },
 ];
 
 export function featureKind(c: Character, f: Pick<Feature, "name" | "description">): ActionKind | undefined {

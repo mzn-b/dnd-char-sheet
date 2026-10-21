@@ -346,9 +346,12 @@ export function reminders(c: Character, spellDetails: Record<string, ContentDeta
   const handled = new Set<string>();
   // Features, chosen options and the feature sections inside them (Dreadful Strikes inside "Fey Wanderer").
   const parts = featureParts(c);
+  const activeNames = new Set((c.combat?.effects ?? []).map((e) => e.name.toLowerCase()));
   for (const p of PASSIVES) {
     const part = parts.find((x) => p.match.test(x.name));
-    if (part) {
+    // An active effect of the same name (Favored Foe in use) brings its own reminder.
+    if (part && activeNames.has(part.name.toLowerCase())) handled.add(part.name.toLowerCase());
+    else if (part) {
       out.push({ when: p.when, text: p.text(c), source: part.name });
       handled.add(part.name.toLowerCase());
     }
