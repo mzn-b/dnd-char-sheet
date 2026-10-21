@@ -10,7 +10,7 @@ components:
 images:
   - name: ghcr.io/mzn-b/dnd-char-sheet
     # Updated by the "Container image" workflow on every push to the default branch.
-    newTag: latest
+    newTag: sha-f56da84
 patches:
   - target:
       kind: Service
