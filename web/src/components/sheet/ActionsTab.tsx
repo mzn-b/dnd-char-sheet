@@ -7,7 +7,7 @@ import {
 import type { Character, Companion, SpellEntry } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
 import { RollButton } from "../dice";
-import { CastButton, SpellBadges, actionType, useSpellDetails } from "../spells";
+import { CastButton, SpellBadges, SpellRollInfo, actionType, useSpellDetails } from "../spells";
 import { Modal, NumberField, Section, TextField } from "../ui";
 import { AttackRolls } from "./AttacksPanel";
 import { ResourcesPanel } from "./ResourcesPanel";
@@ -94,12 +94,13 @@ export function ActionsTab({ c, update }: { c: Character; update: Update }) {
                   <h4 className="mb-1 font-display text-sm text-accent-400">{g.title}</h4>
                   <ul>
                     {list.sort((a, b) => a.level - b.level || a.ref.name.localeCompare(b.ref.name)).map((s) => (
-                      <li key={s.id} className="flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-ink-850">
+                      <li key={s.id} className="flex flex-wrap items-center gap-2 rounded px-1 py-1 text-sm hover:bg-ink-850">
                         <span className="w-8 text-xs text-ink-600">{s.level === 0 ? "C" : spellLevelLabel(s.level).replace(" level", "")}</span>
                         <button className="min-w-0 flex-1 truncate text-left hover:text-accent-400" onClick={() => setViewing(s)}>
                           {s.ref.name}
                           {s.uses && <span className="ml-1 text-[10px] text-ink-600">({s.uses})</span>}
                         </button>
+                        <SpellRollInfo c={c} spell={s} detail={details[s.id]} />
                         <SpellBadges detail={details[s.id]} />
                         <CastButton c={c} update={update} spell={s} detail={details[s.id]} />
                       </li>

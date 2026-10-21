@@ -22,7 +22,7 @@ export interface ContentDetail extends ContentSummary {
   description: string;
   prerequisite?: string;
   meta: Record<string, string>;
-  spell?: { school?: string; ritual?: boolean; concentration?: boolean };
+  spell?: { school?: string; ritual?: boolean; concentration?: boolean; dice?: SpellDice };
   effects?: Effect[];
   choices?: Choice[];
   item?: ItemData;
@@ -84,6 +84,25 @@ export interface ItemData {
   attunement?: boolean;
   rarity?: string;
   charges?: number;
+}
+
+/** What to roll for a spell (damage or healing), with scaling. */
+export interface SpellDice {
+  kind: "damage" | "heal";
+  base?: string;
+  types?: string[];
+  perSlot?: string;
+  bySlot?: Record<string, string>;
+  byCharacterLevel?: Record<string, string>;
+  addModifier?: boolean;
+  save?: string;
+  attack?: "melee" | "ranged";
+}
+
+/** A spell a subclass adds to its class's list (warlock patrons). */
+export interface ExpandedSpell {
+  spellLevel: number;
+  spell: ContentRef;
 }
 
 /** A spell gained automatically at a character level (races) or class level (subclasses). */
@@ -362,6 +381,7 @@ export interface LevelRules {
 
 export interface SubclassRules {
   grantedSpells?: GrantedSpell[];
+  expandedSpells?: ExpandedSpell[];
   spellcastingAbility: Ability | null;
   casterType: CasterType | null;
   spellModel: SpellModel | null;

@@ -12,7 +12,7 @@ import {
 } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
 import { ChoiceList, ChoicePicker, unfinishedChoices } from "../ChoicePicker";
-import { ContentBrowser, ContentDetailView, contentId } from "../ContentBrowser";
+import { ContentBrowser, ContentDetailView, contentId, expandedEntries } from "../ContentBrowser";
 import { Markdown, Modal, Spinner } from "../ui";
 import { planLevel, recomputeSlots } from "./plan";
 
@@ -141,6 +141,8 @@ export function LevelUpWizard({
     () => ({ ...c, skills: { ...c.skills, ...Object.fromEntries(skillPicks.map((k) => [k, Math.max(1, c.skills[k] ?? 0)])) } }) as Character,
     [c, skillPicks],
   );
+
+  const expanded = activeSubclass ? expandedEntries(activeSubclass.name, subRulesQuery.data?.expandedSpells) : undefined;
 
   const progressionTaken = (name: string) => c.features.find((f) => f.name === name)?.subfeatures?.map((s) => s.key) ?? [];
 
@@ -520,6 +522,7 @@ export function LevelUpWizard({
                 type="spell"
                 filters={{ class: spellListClass(rules, subRulesQuery.data), minLevel: 1, maxLevel: plan.maxSpellLevel }}
                 classLabel={spellListLabel(rules, subRulesQuery.data)}
+                extra={expanded}
                 limit={plan.freeSpellPicks ? undefined : plan.spellPicks}
                 selected={spells}
                 disabledIds={ownedSpells}
@@ -535,7 +538,7 @@ export function LevelUpWizard({
                 {knownForClass.map((s) => <option key={s.id} value={s.id}>{s.ref.name} (level {s.level})</option>)}
               </select>
               {swapOut && (
-                <ContentBrowser type="spell" filters={{ class: spellListClass(rules, subRulesQuery.data), minLevel: 1, maxLevel: plan.maxSpellLevel }} classLabel={spellListLabel(rules, subRulesQuery.data)} limit={1} selected={swapIn} disabledIds={ownedSpells} onToggle={(s) => setSwapIn(swapIn[0] && contentId(swapIn[0]) === contentId(s) ? [] : [s])} />
+                <ContentBrowser type="spell" filters={{ class: spellListClass(rules, subRulesQuery.data), minLevel: 1, maxLevel: plan.maxSpellLevel }} classLabel={spellListLabel(rules, subRulesQuery.data)} extra={expanded} limit={1} selected={swapIn} disabledIds={ownedSpells} onToggle={(s) => setSwapIn(swapIn[0] && contentId(swapIn[0]) === contentId(s) ? [] : [s])} />
               )}
             </div>
           )}

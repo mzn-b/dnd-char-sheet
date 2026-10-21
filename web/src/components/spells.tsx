@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { api } from "../lib/api";
-import { ordinal } from "../lib/rules";
-import type { Character, ContentDetail, SpellEntry } from "../lib/types";
+import { abilityMod, fmt, ordinal, spellAttack, spellSaveDC, totalLevel } from "../lib/rules";
+import { describeDice, diceAt, scalingNote } from "../lib/spellDice";
+import { RollButton } from "./dice";
+import { d20 } from "../lib/dice";
+import type { Ability, Character, ContentDetail, SpellEntry } from "../lib/types";
 import type { Update } from "../lib/useCharacter";
 
 /** Details for every spell on the sheet (cached), keyed by spell entry id. */
@@ -92,15 +95,20 @@ export function CastButton({ c, update, spell, detail }: { c: Character; update:
     <span className="relative">
       <button className="btn px-2 py-0 text-xs" disabled={nothing} title={nothing ? "No slots left" : "Cast"} onClick={() => setOpen(!open)}>Cast</button>
       {open && (
-        <div className="absolute right-0 top-full z-30 mt-1 w-44 rounded-lg border border-ink-700 bg-ink-900 p-1 shadow-xl" onMouseLeave={() => setOpen(false)}>
-          {slots.map((s) => (
-            <button key={s.level} className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-ink-800" onClick={() => castWith(s.level)}>
-              {ordinal(s.level)}-level slot <span className="text-ink-400">({s.left} left){s.level > spell.level ? " · upcast" : ""}</span>
-            </button>
-          ))}
+        <div className="absolute right-0 top-full z-30 mt-1 w-56 rounded-lg border border-ink-700 bg-ink-900 p-1 shadow-xl" onMouseLeave={() => setOpen(false)}>
+          {slots.map((s) => {
+            const roll = diceAt(detail?.spell?.dice, spell.level, s.level, 1);
+            return (
+              <button key={s.level} className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-ink-800" onClick={() => castWith(s.level)}>
+                {ordinal(s.level)}-level slot <span className="text-ink-400">({s.left} left)</span>
+                {roll && <span className={`ml-1 ${s.level > spell.level ? "text-accent-400" : "text-ink-400"}`}>· {roll}</span>}
+              </button>
+            );
+          })}
           {pactOk && (
             <button className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-ink-800" onClick={() => castWith("pact")}>
               Pact slot ({ordinal(pact.level)}) <span className="text-ink-400">({pact.max - pact.used} left)</span>
+              {diceAt(detail?.spell?.dice, spell.level, pact.level, 1) && <span className="ml-1 text-accent-400">· {diceAt(detail?.spell?.dice, spell.level, pact.level, 1)}</span>}
             </button>
           )}
           {detail?.spell?.ritual && (
@@ -111,5 +119,71 @@ export function CastButton({ c, update, spell, detail }: { c: Character; update:
         </div>
       )}
     </span>
+  );
+}
+
+/** Spellcasting ability a spell is cast with: its class's, else the character's best caster ability. */
+function castingAbility(c: Character, spell: SpellEntry): Ability | undefined {
+  const cls = c.classes.find((k) => k.key === spell.classKey);
+  if (cls?.spellcastingAbility) return cls.spellcastingAbility;
+  const casters = c.classes.map((k) => k.spellcastingAbility).filter(Boolean) as Ability[];
+  return casters.sort((a, b) => abilityMod(c, b) - abilityMod(c, a))[0];
+}
+
+/**
+ * "What do I roll?" for a spell: dice at its base level (cantrips at your character level),
+ * how it scales, and the save DC or attack bonus. The dice are clickable but meant for reading.
+ */
+export function SpellRollInfo({ c, spell, detail }: { c: Character; spell: SpellEntry; detail?: ContentDetail }) {
+  const dice = detail?.spell?.dice;
+  if (!dice) return null;
+  const ability = castingAbility(c, spell);
+  const roll = diceAt(dice, spell.level, spell.level, totalLevel(c));
+  const text = describeDice(dice, roll, ability ? abilityMod(c, ability) : undefined);
+  const scaling = scalingNote(dice, spell.level);
+  return (
+    <span className="flex shrink-0 flex-wrap items-center gap-1 text-[11px]">
+      {text && (
+        <RollButton
+          expression={roll!.replace(/\s+/g, "")}
+          label={`${spell.ref.name}${dice.kind === "heal" ? " healing" : " damage"}`}
+          kind={dice.kind === "heal" ? "heal" : "damage"}
+          title={scaling ? `${text} · ${scaling}` : text}
+          className={`rounded border px-1.5 py-0 ${dice.kind === "heal" ? "border-emerald-700 text-emerald-400" : "border-blood-500/50 text-blood-500"}`}
+        >
+          {text}
+        </RollButton>
+      )}
+      {dice.save && ability && <span className="rounded border border-sky-800 px-1.5 text-sky-300" title={`${dice.save} saving throw against your spell save DC`}>DC {spellSaveDC(c, ability)} {dice.save.slice(0, 3).toUpperCase()}</span>}
+      {dice.attack && ability && (
+        <RollButton expression={d20(spellAttack(c, ability))} label={`${spell.ref.name}: spell attack`} kind="attack" className="rounded border border-accent-600/50 px-1.5 py-0 text-accent-400">
+          {fmt(spellAttack(c, ability))} to hit
+        </RollButton>
+      )}
+    </span>
+  );
+}
+
+/** Table of dice by slot level (or character level for cantrips), for the spell detail view. */
+export function SpellDiceTable({ detail }: { detail: ContentDetail }) {
+  const dice = detail.spell?.dice;
+  const level = detail.level ?? 0;
+  if (!dice || (!dice.base && !dice.bySlot && !dice.byCharacterLevel)) return null;
+  const rows: [string, string | undefined][] =
+    level === 0
+      ? Object.keys(dice.byCharacterLevel ?? { 1: dice.base! }).map((l) => [`Character level ${l}+`, diceAt(dice, 0, 0, Number(l))])
+      : Array.from({ length: 10 - level }, (_, i) => [`${ordinal(level + i)}-level slot`, diceAt(dice, level, level + i, 1)]);
+  const distinct = new Set(rows.map((r) => r[1]));
+  return (
+    <div className="rounded-lg border border-ink-800 p-2 text-sm">
+      <div className="label mb-1">What to roll{dice.save ? ` · ${dice.save} save` : ""}{dice.attack ? ` · ${dice.attack} spell attack` : ""}</div>
+      {distinct.size <= 1 ? (
+        <span>{describeDice(dice, rows[0]?.[1])}</span>
+      ) : (
+        <div className="grid grid-cols-2 gap-x-4 sm:grid-cols-3">
+          {rows.map(([l, r]) => <span key={l}><span className="text-ink-400">{l}:</span> {r}</span>)}
+        </div>
+      )}
+    </div>
   );
 }

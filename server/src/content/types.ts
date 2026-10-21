@@ -36,7 +36,7 @@ export interface ContentDetail extends ContentSummary {
   /** Display facts, e.g. { "Casting Time": "1 action", "Range": "60 feet" }. */
   meta: Record<string, string>;
   /** Spell-specific fields used by the sheet. */
-  spell?: { school?: string; ritual?: boolean; concentration?: boolean };
+  spell?: { school?: string; ritual?: boolean; concentration?: boolean; dice?: SpellDice };
   /** Fixed, machine-applicable effects, e.g. +2 Dex from a race. */
   effects?: Effect[];
   /** Decisions the player makes when gaining this (Fighting Style, Expertise, Half-Elf +1/+1…). */
@@ -49,6 +49,30 @@ export interface ContentDetail extends ContentSummary {
   startingEquipment?: EquipmentChoice[];
   /** Spells granted automatically (racial magic, domain/oath/circle spells…). */
   grantedSpells?: GrantedSpell[];
+}
+
+/** What to roll for a spell, so players rolling physical dice can see it at a glance. */
+export interface SpellDice {
+  kind: "damage" | "heal";
+  /** Dice at the spell's own level, e.g. "8d6". */
+  base?: string;
+  types?: string[];
+  /** Added for each slot level above the spell's level, e.g. "1d6". */
+  perSlot?: string;
+  /** Explicit dice by slot level (SRD tables). */
+  bySlot?: Record<string, string>;
+  /** Cantrip dice by character level. */
+  byCharacterLevel?: Record<string, string>;
+  /** Healing that adds the spellcasting modifier. */
+  addModifier?: boolean;
+  save?: string;
+  attack?: "melee" | "ranged";
+}
+
+/** Spells a subclass adds to the class's spell list (warlock patrons, Divine Soul…). */
+export interface ExpandedSpell {
+  spellLevel: number;
+  spell: { source: ContentSource; key: string; name: string };
 }
 
 export interface ItemData {

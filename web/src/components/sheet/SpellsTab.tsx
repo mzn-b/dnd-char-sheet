@@ -3,11 +3,11 @@ import { useQueries } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { uid } from "../../lib/defaults";
 import { ABILITY_NAMES, fmt, maxPrepared, spellAttack, spellLevelLabel, spellModel, spellSaveDC } from "../../lib/rules";
-import type { Character, ClassEntry, ClassRules, ContentSummary, SpellEntry } from "../../lib/types";
+import type { Character, ClassEntry, ClassRules, ContentSummary, SpellEntry, SubclassRules } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
-import { ContentDetailView, ContentPicker, contentId } from "../ContentBrowser";
+import { ContentDetailView, ContentPicker, contentId, expandedEntries } from "../ContentBrowser";
 import { Modal, NumberField, Pips, Section } from "../ui";
-import { CastButton, SpellBadges, useSpellDetails } from "../spells";
+import { CastButton, SpellBadges, SpellRollInfo, useSpellDetails } from "../spells";
 import { RollButton } from "../dice";
 import { d20 } from "../../lib/dice";
 
@@ -25,6 +25,19 @@ export function maxSpellLevel(rules: ClassRules | undefined, level: number): num
   return highest;
 }
 
+/** Subclass rules (expanded spell lists…) for classes that have a subclass, keyed by class key. */
+export function useSubclassRules(classes: ClassEntry[]) {
+  const withSub = classes.filter((k) => k.subclass);
+  const results = useQueries({
+    queries: withSub.map((k) => ({
+      queryKey: ["subclassRules", k.subclass!.source, k.subclass!.key],
+      queryFn: () => api.subclassRules(k.subclass!.source, k.subclass!.key),
+      staleTime: Infinity,
+    })),
+  });
+  return Object.fromEntries(withSub.map((k, i) => [k.key, results[i].data])) as Record<string, SubclassRules | undefined>;
+}
+
 export function useClassRules(classes: ClassEntry[]) {
   const results = useQueries({
     queries: classes.map((k) => ({
@@ -39,6 +52,7 @@ export function useClassRules(classes: ClassEntry[]) {
 export function SpellsTab({ c, update }: { c: Character; update: Update }) {
   const casters = c.classes.filter((k) => k.spellcastingAbility);
   const rules = useClassRules(casters);
+  const subRules = useSubclassRules(casters);
   const [adding, setAdding] = useState<{ cls?: ClassEntry } | null>(null);
   const [viewing, setViewing] = useState<SpellEntry | null>(null);
   const owned = useMemo(() => new Set(c.spellcasting.spells.map((s) => contentId(s.ref))), [c.spellcasting.spells]);
@@ -171,7 +185,7 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
                   const cls = c.classes.find((k) => k.key === s.classKey);
                   const needsPrep = s.level > 0 && cls && spellModel(cls) !== "known";
                   return (
-                    <li key={s.id} className="group flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-ink-850">
+                    <li key={s.id} className="group flex flex-wrap items-center gap-2 rounded px-1 py-1 text-sm hover:bg-ink-850">
                       {needsPrep ? (
                         <button
                           title={s.alwaysPrepared ? "Always prepared" : s.prepared ? "Prepared" : "Not prepared"}
@@ -185,7 +199,8 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
                         {s.ref.name}
                         {s.grantedBy && <span className="ml-1 text-[10px] text-ink-600">({s.uses ?? (s.alwaysPrepared ? "always prepared" : "granted")})</span>}
                       </button>
-                      <SpellBadges detail={details[s.id]} />
+                      <SpellRollInfo c={c} spell={s} detail={details[s.id]} />
+                        <SpellBadges detail={details[s.id]} />
                       {isReady(s) && <CastButton c={c} update={update} spell={s} detail={details[s.id]} />}
                       {s.ref.source === "homebrew" && <span className="chip border-fuchsia-800 text-fuchsia-300">HB</span>}
                       <span className="text-xs text-ink-600">{cls?.name ?? "Other"}</span>
@@ -205,6 +220,7 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
           type="spell"
           classLabel={adding.cls?.name}
           filters={adding.cls ? { class: spellList(adding.cls, rules[adding.cls.key]), maxLevel: maxSpellLevel(rules[adding.cls.key], adding.cls.level) } : {}}
+          extra={adding.cls?.subclass ? expandedEntries(adding.cls.subclass.name, subRules[adding.cls.key]?.expandedSpells) : undefined}
           disabledIds={owned}
           onClose={() => setAdding(null)}
           onConfirm={(p) => addSpells(p, adding.cls)}

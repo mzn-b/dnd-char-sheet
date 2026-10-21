@@ -47,8 +47,9 @@ export default function Settings() {
               on={providers.data.open5e}
               onChange={(v) => setP.mutate({ open5e: v })}
               name="Open5e"
-              desc="Extra OGL feats from third-party publishers (api.open5e.com)."
+              desc="Free OGL expansions from api.open5e.com: Kobold Press (Deep Magic, Tome of Heroes, Vault of Magic, Warlock Archives), Level Up Advanced 5e, Tal'Dorei and more: spells, subclasses, races, backgrounds, feats, magic items, weapons and armor. Choose books below."
             />
+            {providers.data.open5e && <Open5eBooks onChange={refreshContent} />}
             <Provider
               on={providers.data["5etools"]}
               onChange={(v) => setP.mutate({ "5etools": v })}
@@ -124,6 +125,31 @@ function Provider({ on, onChange, name, desc }: { on: boolean; onChange: (v: boo
         <div className="text-sm text-ink-400">{desc}</div>
       </div>
       <Toggle checked={on} onChange={onChange} label="" />
+    </div>
+  );
+}
+
+/** Toggle individual Open5e books (documents). */
+function Open5eBooks({ onChange }: { onChange: () => void }) {
+  const qc = useQueryClient();
+  const docs = useQuery({ queryKey: ["open5eDocs"], queryFn: api.open5eDocuments });
+  const save = useMutation({
+    mutationFn: api.setOpen5eExcluded,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["open5eDocs"] }); onChange(); },
+  });
+  if (!docs.data) return <Spinner label="Loading Open5e books…" />;
+  const toggle = (slug: string, on: boolean) =>
+    save.mutate(docs.data!.filter((d) => (d.slug === slug ? !on : !d.enabled)).map((d) => d.slug));
+  return (
+    <div className="ml-4 grid gap-1 rounded-lg border border-ink-800 p-3 text-sm sm:grid-cols-2">
+      {docs.data.map((d) => (
+        <label key={d.slug} className="flex items-center gap-2">
+          <input type="checkbox" className="accent-accent-500" checked={d.enabled} onChange={(e) => toggle(d.slug, e.target.checked)} />
+          <span className="truncate">{d.title}</span>
+          <span className="truncate text-xs text-ink-600">{d.organization}</span>
+        </label>
+      ))}
+      <p className="col-span-full mt-1 text-xs text-ink-600">"5e Core Rules" is the SRD again; it's off by default because the SRD provider already covers it. Monster books add nothing to character options.</p>
     </div>
   );
 }

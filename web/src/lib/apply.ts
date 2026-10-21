@@ -182,6 +182,6 @@ export const describeSelections = (choices: Choice[], selections: Selections) =>
 /** "Darkvision 60 ft" from a race's data or trait text. */
 export function sensesFromRace(det: ContentDetail): string {
   if (det.meta.Darkvision) return `Darkvision ${det.meta.Darkvision}`;
-  const m = det.description.match(/(superior )?darkvision[^.]*?(\d+) feet/i);
-  return m ? `Darkvision ${m[2]} ft` : "";
+  const m = det.description.match(/darkvision[\s\S]{0,300}?(\d+) feet/i);
+  return m ? `Darkvision ${m[1]} ft` : "";
 }

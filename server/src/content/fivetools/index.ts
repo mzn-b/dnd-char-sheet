@@ -2,8 +2,9 @@ import { HttpError } from "../http.js";
 import {
   ABILITIES, SKILL_KEYS, expertiseChoice, singleClassSlots, skillName, toSkillKey,
   type Ability, type Choice, type ChoiceOption, type ClassRules, type ContentDetail, type ContentSummary,
-  type ContentType, type Effect, type EquipmentChoice, type FeatureRef, type GrantedSpell, type ItemData, type LevelRules, type Progression,
+  type ContentType, type Effect, type EquipmentChoice, type ExpandedSpell, type FeatureRef, type GrantedSpell, type ItemData, type LevelRules, type Progression, type SpellDice,
 } from "../types.js";
+import { diceFromText, mergeDice } from "../spellDice.js";
 import { getDataset, type Dataset } from "./data.js";
 import { plain, renderEntries, renderTags } from "./render.js";
 
@@ -132,8 +133,27 @@ function spellDetail(ds: Dataset, s: any): ContentDetail {
       Components: componentsText(s.components),
       Duration: (conc ? "Concentration, " : "") + (s.duration ?? []).map(durationText).join(" or "),
     },
-    spell: { school: SCHOOLS[s.school], ritual: !!s.meta?.ritual, concentration: conc },
+    spell: { school: SCHOOLS[s.school], ritual: !!s.meta?.ritual, concentration: conc, dice: fivetoolsSpellDice(s) },
   };
+}
+
+function fivetoolsSpellDice(s: any): SpellDice | undefined {
+  const raw = JSON.stringify(s.entries ?? "");
+  const higher = JSON.stringify(s.entriesHigherLevel ?? "");
+  const heal = s.miscTags?.includes("HL") && !s.damageInflict;
+  const scaling = Array.isArray(s.scalingLevelDice) ? s.scalingLevelDice[0] : s.scalingLevelDice;
+  const structured: Partial<SpellDice> = {
+    kind: heal ? "heal" : "damage",
+    types: s.damageInflict,
+    save: s.savingThrow?.[0] ? s.savingThrow[0][0].toUpperCase() + s.savingThrow[0].slice(1) : undefined,
+    attack: s.spellAttack?.[0] ? (s.spellAttack[0] === "M" ? "melee" : "ranged") : undefined,
+    base: (heal ? raw.match(/\{@dice (\d+d\d+)/) : raw.match(/\{@damage (\d+d\d+(?:\s*\+\s*\d+)?)/))?.[1]?.replace(/\s+/g, ""),
+    perSlot: higher.match(/\{@scale(?:damage|dice) [^|}]+\|[^|}]+\|(\d+d\d+)/)?.[1],
+    byCharacterLevel: scaling?.scaling,
+    addModifier: heal && /spellcasting ability modifier/.test(raw) ? true : undefined,
+  };
+  if (scaling?.scaling) structured.base = scaling.scaling["1"];
+  return mergeDice(structured, diceFromText(renderEntries(s.entries), renderEntries(s.entriesHigherLevel ?? "")));
 }
 
 const SCHOOLS: Record<string, string> = {
@@ -284,6 +304,24 @@ function grantedSpells(ds: Dataset, additional: any[] | undefined): GrantedSpell
           else if (k === "will") push(mode, level, inner, "at will");
         }
       }
+    }
+  }
+  return out;
+}
+
+/**
+ * additionalSpells "expanded" lists: keys "s1".."s9" are spell levels; plain numbers are class
+ * levels (the spell's own level is used then).
+ */
+function expandedSpells(ds: Dataset, additional: any[] | undefined): ExpandedSpell[] {
+  const out: ExpandedSpell[] = [];
+  for (const [k, list] of Object.entries(additional?.[0]?.expanded ?? {})) {
+    for (const raw of Array.isArray(list) ? list : []) {
+      if (typeof raw !== "string") continue;
+      const spell = spellRef(ds, raw);
+      if (!spell) continue;
+      const own = ds.spell.find((x) => key(x.name, x.source) === spell.key)?.level ?? 1;
+      out.push({ spellLevel: k.startsWith("s") ? Number(k.slice(1)) || own : own, spell });
     }
   }
   return out;
@@ -684,6 +722,7 @@ export async function subclassLevels5etools(k: string) {
     casterType: casterType ?? null,
     spellModel: sc.spellcastingAbility ? (sc.spellsKnownProgression ? "known" : "prepared") : null,
     grantedSpells: grantedSpells(ds, sc.additionalSpells),
+    expandedSpells: expandedSpells(ds, sc.additionalSpells),
     levels: Array.from({ length: 20 }, (_, i) => {
       const level = i + 1;
       const here = feats.filter((f: any) => f.level === level);

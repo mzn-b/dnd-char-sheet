@@ -2,8 +2,9 @@ import { cachedFetch } from "./http.js";
 import {
   SKILL_KEYS, skillName, toSkillKey, singleClassSlots,
   type Ability, type Choice, type ChoiceOption, type ClassRules, type ContentDetail, type ContentSummary,
-  type ContentType, type Effect, type EquipmentChoice, type GrantedSpell, type ItemData, type LevelRules,
+  type ContentType, type Effect, type EquipmentChoice, type ExpandedSpell, type GrantedSpell, type ItemData, type LevelRules, type SpellDice,
 } from "./types.js";
+import { diceFromText, mergeDice } from "./spellDice.js";
 
 const BASE = (process.env.SRD_API_URL ?? "https://www.dnd5eapi.co") + "/api/2014";
 const LABEL = "SRD 5.1";
@@ -67,7 +68,7 @@ export async function getSrd(type: ContentType, key: string): Promise<ContentDet
           Components: (r.components ?? []).join(", ") + (r.material ? ` (${r.material})` : ""),
           Duration: (r.concentration ? "Concentration, " : "") + r.duration,
         },
-        spell: { school: r.school?.name, ritual: r.ritual, concentration: r.concentration },
+        spell: { school: r.school?.name, ritual: r.ritual, concentration: r.concentration, dice: srdSpellDice(r) },
       };
     case "feat":
       return {
@@ -114,6 +115,27 @@ export async function getSrd(type: ContentType, key: string): Promise<ContentDet
     default:
       return { ...base, description: join(r.desc), meta: {} };
   }
+}
+
+const SAVE_NAMES: Record<string, string> = { STR: "Strength", DEX: "Dexterity", CON: "Constitution", INT: "Intelligence", WIS: "Wisdom", CHA: "Charisma" };
+
+function srdSpellDice(r: any): SpellDice | undefined {
+  const d = r.damage?.[0];
+  const structured: Partial<SpellDice> = {
+    save: r.dc ? SAVE_NAMES[r.dc.dc_type?.name] ?? r.dc.dc_type?.name : undefined,
+    attack: r.attack_type ? (r.attack_type.toLowerCase() as "melee" | "ranged") : undefined,
+  };
+  if (d?.damage_at_slot_level) {
+    Object.assign(structured, { kind: "damage", bySlot: d.damage_at_slot_level, base: d.damage_at_slot_level[String(r.level)] });
+  } else if (d?.damage_at_character_level) {
+    Object.assign(structured, { kind: "damage", byCharacterLevel: d.damage_at_character_level, base: d.damage_at_character_level["1"] });
+  }
+  if (d?.damage_type) structured.types = r.damage.map((x: any) => x.damage_type?.name?.toLowerCase()).filter(Boolean);
+  if (r.heal_at_slot_level) {
+    const bySlot = Object.fromEntries(Object.entries(r.heal_at_slot_level as Record<string, string>).map(([k, v]) => [k, v.replace(/\s*\+\s*MOD/i, "").trim()]));
+    Object.assign(structured, { kind: "heal", bySlot, base: bySlot[String(r.level)], addModifier: JSON.stringify(r.heal_at_slot_level).includes("MOD") });
+  }
+  return mergeDice(structured, diceFromText(join(r.desc), join(r.higher_level)));
 }
 
 /** Translate the SRD API's feature_specific option sets into normalized choices. */
@@ -286,8 +308,20 @@ function startingEquipment(cls: any): EquipmentChoice[] {
   ];
 }
 
+/** Warlock patron spells only widen the spell list; other subclasses' spells are always prepared. */
+const isExpandedList = (r: any) => r.class?.index === "warlock";
+
+function expandedSpells(r: any): ExpandedSpell[] {
+  if (!isExpandedList(r)) return [];
+  return (r.spells ?? []).map((s: any) => {
+    const classLevel = Number(String(s.prerequisites?.find((p: any) => p.type === "level")?.index ?? "-1").split("-").pop()) || 1;
+    return { spellLevel: Math.min(5, Math.ceil(classLevel / 2)), spell: { source: "srd", key: s.spell.index, name: s.spell.name } };
+  });
+}
+
 /** Domain / oath / circle spells: always prepared from the listed class level. */
 function subclassSpells(r: any): GrantedSpell[] {
+  if (isExpandedList(r)) return [];
   return (r.spells ?? []).map((s: any) => ({
     level: Number(String(s.prerequisites?.find((p: any) => p.type === "level")?.index ?? "-1").split("-").pop()) || 1,
     spell: { source: "srd", key: s.spell.index, name: s.spell.name },
@@ -328,6 +362,7 @@ export async function getSubclassLevels(index: string) {
     casterType: null,
     spellModel: null,
     grantedSpells: sub ? subclassSpells(sub) : [],
+    expandedSpells: sub ? expandedSpells(sub) : [],
     levels: levels.map((l) => ({
       level: l.level,
       features: (l.features ?? []).map((f: any) => ({ key: f.index, name: f.name, source: "srd" })),

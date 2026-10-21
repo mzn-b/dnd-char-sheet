@@ -1,4 +1,5 @@
 import { pool } from "../db.js";
+import { diceFromText } from "./spellDice.js";
 import type { ContentDetail, ContentSummary, ContentType } from "./types.js";
 
 interface Row {
@@ -9,6 +10,8 @@ interface Row {
 }
 
 export function toDetail(r: Row): ContentDetail {
+  // Homebrew spells get their dice read from the description, like Open5e spells.
+  const spell = r.type === "spell" ? { ...r.data.spell, dice: r.data.spell?.dice ?? diceFromText(r.data.description ?? "") } : r.data.spell;
   return {
     description: "",
     meta: {},
@@ -18,6 +21,7 @@ export function toDetail(r: Row): ContentDetail {
     type: r.type,
     name: r.name,
     sourceLabel: "Homebrew",
+    ...(spell ? { spell } : {}),
   };
 }
 

@@ -5,8 +5,9 @@ A dark-mode web app for keeping multiple D&D 5e characters. It covers every fiel
 - **All paper-sheet fields** (all three pages: core stats, details/backstory, spellcasting), always editable inline, with autosave.
 - **Rules content from three providers**, toggled on the **Sources** page and cached in Postgres:
   - [5e SRD API](https://www.dnd5eapi.co): the free SRD 5.1
-  - [Open5e](https://open5e.com): extra OGL feats
+  - [Open5e](https://open5e.com): free OGL expansions, with each book toggled individually: Kobold Press (Deep Magic, Deep Magic Extended, Tome of Heroes, Vault of Magic, Warlock Archives), EN Publishing's Level Up A5E, Green Ronin's Tal'Dorei and Open5e originals. Covers spells, subclasses, races, backgrounds, feats, magic items, weapons and armor.
   - [5etools](https://5e.tools) data (2014 rules only): every book's subclasses, races, feats, spells, items and optional features, plus any files from the 5etools **homebrew repository** (Blood Hunter, etc.)
+- **Source filter**: every picker can be narrowed to a single book.
 - **Character creator** for a level 1 character or any higher level: race, background, ability scores (standard array, point buy, 4d6 or manual), class plan with multiclassing, and starting equipment. A higher-level build is then walked through level by level with the wizard.
 - **Guided level-up**: class or multiclass (prerequisites checked), class proficiencies and skill picks, HP (average or roll), new features, subclass choice, ASI or feat, cantrips/spells to learn, spell swaps, then a review step. Slot tables are recalculated: single class, PHB multiclass table, pact magic, and subclass casters (Eldritch Knight, Arcane Trickster).
 - **Features with built-in choices** (Fighting Style, Expertise, Metamagic, Invocations, Maneuvers, Favored Enemy, a feat's ability or save pick, Half-Elf's +1/+1…) open a picker. Each pick is stored as a **sub-feature** with its full text. Skills, expertise, saves and ability increases are applied automatically, and picks can be changed later.
@@ -15,6 +16,8 @@ A dark-mode web app for keeping multiple D&D 5e characters. It covers every fiel
 - **Play features**:
   - **Dice roller**: click any modifier to roll it (checks, saves, skills, initiative, attacks, damage, spell attacks, death saves, hit dice). Shift-click rolls with advantage, Ctrl-click with disadvantage. A natural 20 makes the next damage roll critical. There's a roll log and a custom-dice tray.
   - **Actions tab**: a combat dashboard. Vitals, attacks, spells grouped into action / bonus action / reaction, slot summary, class resources, saving throws, standard actions reference, companions.
+  - **What to roll**: every spell shows its damage or healing dice and type (cantrips at your character level), how it scales, and its save DC or attack bonus. The Cast menu shows the dice for each slot level, and the spell details include a full table by slot level. Handy if you roll physical dice.
+  - **Expanded spell lists**: warlock patron spells (SRD, 5etools and Open5e patrons) appear in the spell pickers with an "expanded" badge, behind a toggle that's remembered.
   - **Spellcasting**: Cast spends the right slot (with upcasting, pact slots or ritual casting) and starts concentration. Taking damage while concentrating prompts the Con save DC. Innate spells track their uses. Spells show casting-time, range, concentration and ritual badges, with search and a "prepared only" filter.
   - **Class resources tracked automatically**: Rage, Bardic Inspiration, Channel Divinity, Wild Shape, Second Wind / Action Surge / Indomitable, Ki, Lay on Hands, Sorcery Points, Superiority Dice, Arcane Recovery, Mystic Arcanum and more. Maximums follow your level and ability scores.
   - **Rests**: short rests spend hit dice with real rolls. Long rests restore HP, slots, resources and half your hit dice, and reduce exhaustion.

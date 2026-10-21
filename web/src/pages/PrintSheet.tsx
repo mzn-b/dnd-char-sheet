@@ -9,6 +9,8 @@ import {
 import { ABILITIES, type Character } from "../lib/types";
 import { attackBonus, damageBonus } from "../components/sheet/AttacksPanel";
 import { withBonus } from "../lib/dice";
+import { describeDice, diceAt, scalingNote } from "../lib/spellDice";
+import { useSpellDetails } from "../components/spells";
 
 /** A printer-friendly, light version of the whole sheet. Use the browser's "Save as PDF". */
 export default function PrintSheet() {
@@ -122,6 +124,7 @@ export default function PrintSheet() {
 }
 
 function SpellPage({ c }: { c: Character }) {
+  const details = useSpellDetails(c.spellcasting.spells);
   const casters = c.classes.filter((k) => k.spellcastingAbility);
   if (!c.spellcasting.spells.length) return null;
   const levels = [...new Set(c.spellcasting.spells.map((s) => s.level))].sort((a, b) => a - b);
@@ -140,7 +143,15 @@ function SpellPage({ c }: { c: Character }) {
             <div key={l} className="mb-3 break-inside-avoid">
               <div className="border-b border-zinc-400 font-bold">{spellLevelLabel(l)}{slot?.max ? ` · slots ${"○".repeat(slot.max)}` : ""}</div>
               {c.spellcasting.spells.filter((s) => s.level === l).map((s) => (
-                <div key={s.id}>{l > 0 ? (s.prepared || s.alwaysPrepared ? "● " : "○ ") : ""}{s.ref.name}{s.uses ? ` (${s.uses})` : ""}</div>
+                <div key={s.id}>
+                  {l > 0 ? (s.prepared || s.alwaysPrepared ? "● " : "○ ") : ""}{s.ref.name}{s.uses ? ` (${s.uses})` : ""}
+                  {(() => {
+                    const dice = details[s.id]?.spell?.dice;
+                    const text = describeDice(dice, diceAt(dice, s.level, s.level, totalLevel(c)));
+                    const extra = [text, scalingNote(dice, s.level), dice?.save && `${dice.save.slice(0, 3)} save`, dice?.attack && "spell attack"].filter(Boolean);
+                    return extra.length ? <span className="text-[11px] text-zinc-500"> · {extra.join(" · ")}</span> : null;
+                  })()}
+                </div>
               ))}
             </div>
           );

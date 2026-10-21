@@ -3,6 +3,7 @@ import { pool } from "../db.js";
 import { getProviders, setProviders } from "../content/settings.js";
 import { brewCatalog, brewFileUrl, invalidateDataset, getDataset, DATA_URL } from "../content/fivetools/data.js";
 import { cachedFetch, HttpError } from "../content/http.js";
+import { excludedDocuments, listDocuments, setExcludedDocuments } from "../content/open5e.js";
 
 /** Content-provider settings and the 5etools homebrew library. */
 export const sources = Router();
@@ -54,4 +55,17 @@ sources.delete("/5etools/brew", async (req, res) => {
   await pool.query("DELETE FROM fivetools_brew WHERE path = $1", [String(req.query.path ?? "")]);
   invalidateDataset();
   res.status(204).end();
+});
+
+/** Open5e books and which ones are hidden. */
+sources.get("/open5e/documents", async (_req, res) => {
+  const [docs, excluded] = await Promise.all([listDocuments(), excludedDocuments()]);
+  res.json(docs.map((d) => ({ ...d, enabled: !excluded.includes(d.slug) })));
+});
+
+sources.put("/open5e/documents", async (req, res) => {
+  const excluded = req.body?.excluded;
+  if (!Array.isArray(excluded) || !excluded.every((x) => typeof x === "string")) throw new HttpError(400, "excluded must be a list of document slugs");
+  await setExcludedDocuments(excluded);
+  res.json({ excluded });
 });

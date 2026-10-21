@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import type { ContentDetail, ContentSummary, ContentType } from "../lib/types";
 import { spellLevelLabel } from "../lib/rules";
 import { Markdown, Modal, SourceBadge, Spinner } from "./ui";
+import { SpellDiceTable } from "./spells";
 
 export const contentId = (c: { source: string; key: string }) => `${c.source}:${c.key}`;
 
@@ -18,9 +19,16 @@ export interface BrowserFilters {
  * Searchable list of rules content (SRD + Open5e + homebrew) with a detail pane.
  * Used inline by the level-up wizard and inside ContentPicker modals.
  */
+/** Extra entries merged into the list behind a toggle, e.g. a warlock patron's expanded spells. */
+export interface ExtraEntries {
+  label: string;
+  items: ContentSummary[];
+}
+
 export function ContentBrowser({
-  type, filters = {}, selected, onToggle, disabledIds = new Set(), limit, classLabel, allowAnyClass = true,
+  type, filters = {}, selected, onToggle, disabledIds = new Set(), limit, classLabel, allowAnyClass = true, extra,
 }: {
+  extra?: ExtraEntries;
   type: ContentType;
   filters?: BrowserFilters;
   selected: ContentSummary[];
@@ -35,6 +43,23 @@ export function ContentBrowser({
   const [classOnly, setClassOnly] = useState(true);
   const [levelFilter, setLevelFilter] = useState<number | null>(filters.level ?? null);
   const [focused, setFocused] = useState<ContentSummary | null>(null);
+  // Remembered per browser: whether expanded (patron) spells are shown in pickers.
+  const [includeExtra, setIncludeExtraState] = useState(() => {
+    try {
+      return localStorage.getItem("showExpandedSpells") !== "false";
+    } catch {
+      return true;
+    }
+  });
+  const setIncludeExtra = (on: boolean) => {
+    setIncludeExtraState(on);
+    try {
+      localStorage.setItem("showExpandedSpells", String(on));
+    } catch {
+      /* storage unavailable */
+    }
+  };
+  const [sourceFilter, setSourceFilter] = useState("");
   const cls = classOnly ? filters.class : undefined;
 
   const { data, isLoading, error } = useQuery({
@@ -43,21 +68,34 @@ export function ContentBrowser({
     staleTime: 5 * 60_000,
   });
 
+  const extraIds = useMemo(() => new Set((extra?.items ?? []).map(contentId)), [extra]);
+  const merged = useMemo(() => {
+    const base = data ?? [];
+    if (!extra?.items.length || !includeExtra) return base;
+    const have = new Set(base.map(contentId));
+    const extras = extra.items.filter(
+      (c) => !have.has(contentId(c)) && (filters.maxLevel == null || (c.level ?? 0) <= filters.maxLevel),
+    );
+    return [...base, ...extras].sort((a, b) => (a.level ?? 0) - (b.level ?? 0) || a.name.localeCompare(b.name));
+  }, [data, extra, includeExtra, filters.maxLevel]);
+  const sources = useMemo(() => [...new Set(merged.map((c) => c.sourceLabel ?? c.source))].sort(), [merged]);
+
   const results = useMemo(() => {
     const term = q.trim().toLowerCase();
-    return (data ?? []).filter(
+    return merged.filter(
       (c) => (!term || c.name.toLowerCase().includes(term)) &&
         (levelFilter == null || c.level === levelFilter) &&
-        (filters.minLevel == null || (c.level ?? 0) >= filters.minLevel),
+        (filters.minLevel == null || (c.level ?? 0) >= filters.minLevel) &&
+        (!sourceFilter || (c.sourceLabel ?? c.source) === sourceFilter),
     );
-  }, [data, q, levelFilter, filters.minLevel]);
+  }, [merged, q, levelFilter, filters.minLevel, sourceFilter]);
 
   const levels = useMemo(
     () =>
       type === "spell"
-        ? [...new Set((data ?? []).map((c) => c.level ?? 0))].filter((l) => l >= (filters.minLevel ?? 0)).sort((a, b) => a - b)
+        ? [...new Set(merged.map((c) => c.level ?? 0))].filter((l) => l >= (filters.minLevel ?? 0)).sort((a, b) => a - b)
         : [],
-    [data, type, filters.minLevel],
+    [merged, type, filters.minLevel],
   );
   const selectedIds = new Set(selected.map(contentId));
   const full = limit != null && selected.length >= limit;
@@ -81,6 +119,21 @@ export function ContentBrowser({
                 </button>
               ))}
             </>
+          )}
+          {extra && extra.items.length > 0 && (
+            <button
+              className={`chip ${includeExtra ? "border-fuchsia-700 text-fuchsia-300" : ""}`}
+              title={includeExtra ? "Click to hide these spells" : "Click to include these spells"}
+              onClick={() => setIncludeExtra(!includeExtra)}
+            >
+              {includeExtra ? "✓ " : ""}{extra.label}
+            </button>
+          )}
+          {sources.length > 1 && (
+            <select className="field-boxed w-auto max-w-[12rem] py-0.5 text-xs" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} title="Filter by book">
+              <option value="">All sources ({sources.length})</option>
+              {sources.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
           )}
           {limit != null && (
             <span className={`ml-auto text-xs ${full ? "text-accent-400" : "text-ink-400"}`}>{selected.length} / {limit} chosen</span>
@@ -109,6 +162,7 @@ export function ContentBrowser({
                   onChange={() => onToggle(c)}
                 />
                 <span className={`flex-1 truncate ${owned ? "text-ink-400" : ""}`}>{c.name}</span>
+                {extraIds.has(id) && <span className="chip border-fuchsia-800 text-fuchsia-300" title={extra?.label}>expanded</span>}
                 {type === "spell" && <span className="text-xs text-ink-400">{c.level === 0 ? "C" : c.level}</span>}
                 <SourceBadge source={c.source} label={c.sourceLabel} />
               </div>
@@ -187,6 +241,7 @@ export function DetailBody({ detail }: { detail: ContentDetail }) {
           ))}
         </dl>
       )}
+      <SpellDiceTable detail={detail} />
       {detail.classes?.length ? <p className="text-xs text-ink-400">Classes: {detail.classes.join(", ")}</p> : null}
       <Markdown text={detail.description || "_No description._"} />
     </>
@@ -195,8 +250,9 @@ export function DetailBody({ detail }: { detail: ContentDetail }) {
 
 /** Modal wrapper around ContentBrowser for picking content outside the level-up flow. */
 export function ContentPicker({
-  title, type, filters, disabledIds, limit, classLabel, onClose, onConfirm, confirmLabel = "Add",
+  title, type, filters, disabledIds, limit, classLabel, onClose, onConfirm, confirmLabel = "Add", extra,
 }: {
+  extra?: ExtraEntries;
   title: string;
   type: ContentType;
   filters?: BrowserFilters;
@@ -232,7 +288,17 @@ export function ContentPicker({
         disabledIds={disabledIds}
         limit={limit}
         classLabel={classLabel}
+        extra={extra}
       />
     </Modal>
   );
+}
+
+/** A subclass's expanded spells as picker entries. */
+export function expandedEntries(subclassName: string, spells: { spellLevel: number; spell: { source: ContentSummary["source"]; key: string; name: string } }[] | undefined): ExtraEntries | undefined {
+  if (!spells?.length) return undefined;
+  return {
+    label: `${subclassName} expanded spells`,
+    items: spells.map((e) => ({ ...e.spell, type: "spell", level: e.spellLevel, sourceLabel: `${subclassName} (expanded)` })),
+  };
 }

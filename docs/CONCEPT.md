@@ -62,6 +62,29 @@
 - **Duplicates.** When 5etools is on, SRD and Open5e entries with the same name are hidden in favour of the full 5etools text.
 - **Opt-in.** The provider is off by default because 5etools mirrors content beyond the SRD.
 
+## Fetching on demand
+
+No rules content ships with the app. Each provider is fetched from its public API or static JSON the first time it's needed. The response is stored in Postgres (`api_cache`) and served from there afterwards, refreshed weekly, with a stale copy used if the source is offline. Open5e endpoints are fetched whole (`?limit=5000`) once. 5etools files are fetched per file.
+
+## Spell dice
+
+`spell.dice` (`SpellDice`) says what to roll: `base` dice at the spell's level, damage `types`, `perSlot` scaling, explicit `bySlot` / `byCharacterLevel` tables, plus `save` and `attack`. It's built from structured data where it exists:
+
+- **SRD**: `damage_at_slot_level`, `damage_at_character_level`, `heal_at_slot_level`, `dc`, `attack_type`.
+- **5etools**: `damageInflict`, `scalingLevelDice`, `savingThrow`, `spellAttack`, `{@damage}` and `{@scaledamage}` tags.
+
+Anything missing is filled in by parsing the text ("8d6 fire damage", "increases by 1d6 for each slot level above 3rd", "5th level (2d10)…"). That's also how Open5e and homebrew spells get their dice.
+
+## Expanded spell lists
+
+Subclass rules include `expandedSpells` (spell level + spell):
+
+- **SRD**: Fiend spells (the SRD lists them by warlock level).
+- **5etools**: `additionalSpells.expanded`.
+- **Open5e**: the "Expanded Spells" markdown table in a patron's text, with spell names resolved across all sources.
+
+The spell pickers merge them in behind a toggle chip.
+
 ## Choices and sub-features
 
 A feature, feat, race or background can carry **choices** (`Choice { kind, count, options }`):
