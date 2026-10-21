@@ -10,6 +10,12 @@ export const DATA_URL =
   process.env.FIVETOOLS_DATA_URL ?? "https://raw.githubusercontent.com/5etools-mirror-3/5etools-src/main/data";
 export const BREW_URL =
   process.env.FIVETOOLS_BREW_URL ?? "https://raw.githubusercontent.com/TheGiddyLimit/homebrew/master";
+/** Unearthed Arcana playtest content, kept by 5etools in its own repository (same format as homebrew). */
+export const UA_URL =
+  process.env.FIVETOOLS_UA_URL ?? "https://raw.githubusercontent.com/TheGiddyLimit/unearthed-arcana/master";
+
+/** Library paths are "folder/File.json" (homebrew) or "ua:folder/File.json" (Unearthed Arcana). */
+const libraryOf = (path: string) => (path.startsWith("ua:") ? { base: UA_URL, path: path.slice(3) } : { base: BREW_URL, path });
 
 const ARRAYS = [
   "spell", "feat", "race", "subrace", "background", "item", "baseitem",
@@ -45,6 +51,14 @@ export function invalidateDataset() {
   cache = null;
 }
 
+const EXTRA_SOURCE_NAMES: Record<string, string> = {
+  PSA: "Plane Shift: Amonkhet", PSD: "Plane Shift: Dominaria", PSI: "Plane Shift: Innistrad", PSK: "Plane Shift: Kaladesh",
+  PSX: "Plane Shift: Ixalan", PSZ: "Plane Shift: Zendikar", TftYP: "Tales from the Yawning Portal",
+  RoTOS: "The Rise of Tiamat Online Supplement", EET: "Elemental Evil: Trinkets", EEPC: "Elemental Evil Player's Companion",
+  MCV2DC: "Monstrous Compendium Vol. 2: Dragonlance Creatures", UATheMysticClass: "Unearthed Arcana: The Mystic Class",
+  AWM: "Adventure with Muk", OGA: "One Grung Above", LR: "Locathah Rising", TTP: "The Tortle Package",
+};
+
 const get = <T = any>(path: string) => cachedFetch<T>(`${DATA_URL}/${path}`);
 
 async function load(): Promise<Dataset> {
@@ -54,10 +68,11 @@ async function load(): Promise<Dataset> {
     brewSources: new Set<string>(),
   }) as Dataset;
 
-  const [classIndex, spellIndex, books, spellSources, ...singles] = await Promise.all([
+  const [classIndex, spellIndex, books, adventures, spellSources, ...singles] = await Promise.all([
     get<Record<string, string>>("class/index.json"),
     get<Record<string, string>>("spells/index.json"),
     get<{ book: any[] }>("books.json"),
+    get<{ adventure: any[] }>("adventures.json").catch(() => ({ adventure: [] })),
     get("spells/sources.json"),
     get("feats.json"),
     get("races.json"),
@@ -70,6 +85,10 @@ async function load(): Promise<Dataset> {
   // Only 2014-era rules: drop the 2024 core books and everything published after them.
   const modern = new Set(books.book.filter((b) => b.published >= "2024-09-17").map((b) => b.id));
   for (const b of books.book) ds.sourceNames[b.id] = b.name;
+  // Adventures and supplements (Curse of Strahd, Plane Shift…) so sources show names, not codes.
+  for (const a of adventures.adventure) ds.sourceNames[a.id] ??= a.name;
+  // Supplements that appear in neither index.
+  for (const [id, name] of Object.entries(EXTRA_SOURCE_NAMES)) ds.sourceNames[id] ??= name;
   ds.spellClasses = spellSources;
 
   const files = await Promise.all([
@@ -77,6 +96,10 @@ async function load(): Promise<Dataset> {
     ...Object.values(spellIndex).map((f) => get(`spells/${f}`)),
   ]);
   for (const file of [...singles, ...files]) merge(ds, file, (e) => e.edition !== "one" && !modern.has(e.source) && !modern.has(e.classSource));
+
+  // "+1 Longsword", "+2 Chain Mail"…: 5etools stores these as templates applied to base items.
+  const variants = await get<{ magicvariant: any[] }>("magicvariants.json").catch(() => ({ magicvariant: [] }));
+  ds.item.push(...expandBonusVariants(variants.magicvariant, ds.baseitem, modern));
 
   for (const brew of await enabledBrews()) {
     try {
@@ -97,18 +120,56 @@ function merge(ds: Dataset, file: any, keep: (e: any) => boolean) {
   for (const k of ARRAYS) if (Array.isArray(file?.[k])) ds[k as ArrayKey].push(...file[k].filter(keep));
 }
 
-export const brewFileUrl = (path: string) => `${BREW_URL}/${path.split("/").map(encodeURIComponent).join("/")}`;
+export const brewFileUrl = (path: string) => {
+  const lib = libraryOf(path);
+  return `${lib.base}/${lib.path.split("/").map(encodeURIComponent).join("/")}`;
+};
 
 async function enabledBrews(): Promise<{ path: string }[]> {
   const { rows } = await pool.query<{ path: string }>("SELECT path FROM fivetools_brew WHERE enabled ORDER BY added_at");
   return rows;
 }
 
-/** Index of all homebrew files in the 5etools homebrew repository, grouped by folder (class, race, …). */
-export async function brewCatalog(): Promise<{ path: string; folder: string; name: string }[]> {
-  const index = await cachedFetch<Record<string, unknown>>(`${BREW_URL}/_generated/index-timestamps.json`);
-  return Object.keys(index).map((path) => {
-    const [folder, file] = path.split("/");
-    return { path, folder, name: file.replace(/\.json$/, "") };
-  });
+/** Index of all files in the 5etools homebrew and Unearthed Arcana repositories, by folder (class, race, …). */
+export async function brewCatalog(): Promise<{ path: string; folder: string; name: string; library: "homebrew" | "ua" }[]> {
+  const [brew, ua] = await Promise.all([
+    cachedFetch<Record<string, unknown>>(`${BREW_URL}/_generated/index-timestamps.json`),
+    cachedFetch<Record<string, unknown>>(`${UA_URL}/_generated/index-timestamps.json`).catch(() => ({})),
+  ]);
+  const entries = (index: Record<string, unknown>, library: "homebrew" | "ua") =>
+    Object.keys(index).map((path) => {
+      const [folder, file] = path.split("/");
+      return { path: library === "ua" ? `ua:${path}` : path, folder, name: file.replace(/\.json$/, ""), library };
+    });
+  return [...entries(ua, "ua"), ...entries(brew, "homebrew")];
+}
+
+/**
+ * Build the numeric-bonus magic variants (+1/+2/+3 weapons, armor, shields, ammunition) for every
+ * 2014 base item they apply to. Other templates (Flame Tongue, Vicious…) stay out to keep lists usable.
+ */
+function expandBonusVariants(variants: any[], bases: any[], modern: Set<string>): any[] {
+  const baseType = (t?: string) => (t ?? "").split("|")[0];
+  const matches = (base: any, cond: Record<string, unknown>) =>
+    Object.entries(cond).every(([k, v]) => (k === "type" ? baseType(base.type) === baseType(String(v)) : base[k] === v));
+  const out: any[] = [];
+  for (const v of variants) {
+    const inh = v.inherits ?? {};
+    if (v.edition === "one" || modern.has(inh.source) || !/^\+\d /.test(inh.namePrefix ?? "")) continue;
+    if (!inh.bonusWeapon && !inh.bonusAc) continue;
+    for (const base of bases) {
+      if (!(v.requires ?? []).some((r: any) => matches(base, r))) continue;
+      if (v.excludes && Object.entries(v.excludes).some(([k, val]) => base[k] === val || (k === "name" && base.name === val))) continue;
+      const fill = (s: string) => s.replace(/\{=bonusWeapon\}/g, inh.bonusWeapon ?? "").replace(/\{=bonusAc\}/g, inh.bonusAc ?? "");
+      out.push({
+        ...base,
+        ...inh,
+        name: `${inh.namePrefix}${base.name}${inh.nameSuffix ?? ""}`,
+        source: inh.source ?? "DMG",
+        baseItem: `${base.name}|${base.source}`,
+        entries: [...(inh.entries ?? []).map((e: unknown) => (typeof e === "string" ? fill(e) : e))],
+      });
+    }
+  }
+  return out;
 }

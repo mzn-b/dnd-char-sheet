@@ -13,7 +13,19 @@ export default function Settings() {
   const brews = useQuery({ queryKey: ["brews"], queryFn: api.brews });
   const [q, setQ] = useState("");
   const [folder, setFolder] = useState("");
-  const catalog = useQuery({ queryKey: ["brewCatalog", q, folder], queryFn: () => api.brewCatalog(q, folder || undefined), enabled: q.length >= 2 || !!folder });
+  const [library, setLibrary] = useState("");
+  const catalog = useQuery({
+    queryKey: ["brewCatalog", q, folder, library],
+    queryFn: () => api.brewCatalog(q, folder || undefined, library || undefined),
+    enabled: q.length >= 2 || !!folder || library === "ua",
+  });
+  const [adding, setAdding] = useState(false);
+  const addAll = async (paths: string[]) => {
+    setAdding(true);
+    for (const path of paths) await api.addBrew(path).catch(() => {});
+    setAdding(false);
+    refreshContent();
+  };
 
   const refreshContent = () => {
     for (const k of ["content", "detail", "classRules", "subclassRules", "5etools-status", "brews"]) qc.invalidateQueries({ queryKey: [k] });
@@ -74,7 +86,7 @@ export default function Settings() {
         )}
       </Section>
 
-      <Section title="5etools homebrew library">
+      <Section title="5etools homebrew & Unearthed Arcana library">
         <p className="mb-3 text-sm text-ink-400">
           Add community content from the 5etools homebrew repository: classes, subclasses, races, spells and more. Enabled files appear in every picker
           {providers.data && !providers.data["5etools"] && <b className="text-accent-400"> once the 5etools provider is turned on</b>}.
@@ -83,26 +95,35 @@ export default function Settings() {
           <ul className="mb-4 space-y-1">
             {brews.data.map((b) => (
               <li key={b.path} className="flex items-center justify-between gap-2 rounded-lg bg-ink-850 px-3 py-1.5 text-sm">
-                <span><span className="chip mr-2">{b.path.split("/")[0]}</span>{b.path.split("/")[1].replace(/\.json$/, "")}</span>
+                <span>
+                  <span className={`chip mr-2 ${b.path.startsWith("ua:") ? "border-sky-800 text-sky-300" : ""}`}>{b.path.startsWith("ua:") ? "UA" : b.path.split("/")[0]}</span>
+                  {b.path.split("/")[1].replace(/\.json$/, "")}
+                </span>
                 <button className="btn-ghost px-2 py-0.5 text-xs hover:text-blood-500" onClick={() => remove.mutate(b.path)}>Remove</button>
               </li>
             ))}
           </ul>
         )}
         <div className="flex flex-wrap gap-2">
-          <input className="field-boxed flex-1" placeholder="Search the homebrew repository (e.g. 'Blood Hunter')…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <select className="field-boxed w-auto" value={library} onChange={(e) => setLibrary(e.target.value)}>
+            <option value="">All libraries</option>
+            <option value="ua">Unearthed Arcana (playtest)</option>
+            <option value="homebrew">Community homebrew</option>
+          </select>
+          <input className="field-boxed flex-1" placeholder="Search (e.g. 'Blood Hunter', 'Artificer')…" value={q} onChange={(e) => setQ(e.target.value)} />
           <select className="field-boxed w-auto" value={folder} onChange={(e) => setFolder(e.target.value)}>
             {FOLDERS.map((f) => <option key={f} value={f}>{f || "All types"}</option>)}
           </select>
         </div>
         <div className="mt-2 max-h-80 overflow-y-auto rounded-lg border border-ink-800">
           {catalog.isLoading && <div className="p-3"><Spinner /></div>}
-          {!catalog.data && !catalog.isLoading && <p className="p-3 text-sm text-ink-600">Type at least two letters to search.</p>}
+          {!catalog.data && !catalog.isLoading && <p className="p-3 text-sm text-ink-600">Type at least two letters to search, or pick the Unearthed Arcana library to see all playtest files.</p>}
           {catalog.data?.length === 0 && <p className="p-3 text-sm text-ink-600">No files found.</p>}
           {catalog.data?.map((b) => (
             <div key={b.path} className="flex items-center gap-2 border-b border-ink-800 px-3 py-1.5 text-sm last:border-0">
-              <span className="chip">{b.folder}</span>
+              <span className={`chip ${b.library === "ua" ? "border-sky-800 text-sky-300" : ""}`}>{b.library === "ua" ? "UA" : b.folder}</span>
               <span className="flex-1 truncate">{b.name}</span>
+              {/20(2[4-9])/.test(b.name) && <span className="chip border-accent-600 text-accent-400" title="Written for the 2024 rules">2024 rules</span>}
               {enabled.has(b.path) ? (
                 <span className="text-xs text-emerald-400">Added</span>
               ) : (
@@ -111,6 +132,18 @@ export default function Settings() {
             </div>
           ))}
         </div>
+        {catalog.data && catalog.data.some((b) => !enabled.has(b.path)) && (
+          <div className="mt-2 flex justify-end">
+            <button
+              className="btn text-xs"
+              disabled={adding}
+              title="Adds every file in the list above (skipping 2024-rules playtests)"
+              onClick={() => addAll(catalog.data!.filter((b) => !enabled.has(b.path) && !/20(2[4-9])/.test(b.name)).map((b) => b.path))}
+            >
+              {adding ? "Adding…" : `Add all shown (${catalog.data.filter((b) => !enabled.has(b.path) && !/20(2[4-9])/.test(b.name)).length})`}
+            </button>
+          </div>
+        )}
         {add.error && <p className="mt-2 text-sm text-blood-500">{(add.error as Error).message}</p>}
       </Section>
     </div>

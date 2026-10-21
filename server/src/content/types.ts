@@ -91,6 +91,24 @@ export interface ItemData {
   attunement?: boolean;
   rarity?: string;
   charges?: number;
+  /** Numeric effects applied automatically while the item is equipped (and attuned, if required). */
+  bonuses?: ItemBonuses;
+}
+
+export interface ItemBonuses {
+  ac?: number;
+  /** Magic weapon bonus to attack and damage rolls with this weapon. */
+  weaponAttack?: number;
+  weaponDamage?: number;
+  save?: number;
+  spellAttack?: number;
+  spellDc?: number;
+  /** Sets an ability score (Belt of Giant Strength); only applies if higher than yours. */
+  abilitySet?: Partial<Record<Ability, number>>;
+  abilityBonus?: Partial<Record<Ability, number>>;
+  speed?: number;
+  /** Bonus to all ability checks (Luckstone). */
+  check?: number;
 }
 
 /**

@@ -28,7 +28,75 @@ export async function setExcludedDocuments(excluded: string[]) {
   );
 }
 
-export const listDocuments = () => all<any>("documents").then((docs) => docs.map((d) => ({ slug: d.slug, title: d.title, organization: d.organization })));
+/**
+ * Books that only exist in Open5e's v2 API (v1 mirrors the rest). Fetched from v2 and shaped
+ * like v1 so the rest of the adapter is shared.
+ */
+const V2_ONLY: { key: string; title: string; organization: string; types: ("spells" | "backgrounds")[] }[] = [
+  { key: "spells-that-dont-suck", title: "Spells That Don't Suck", organization: "Open5e community", types: ["spells"] },
+  { key: "a5e-ddg", title: "Level Up: Dungeon Delver's Guide", organization: "EN Publishing", types: ["backgrounds"] },
+  { key: "a5e-gpg", title: "Level Up: Gate Pass Gazette", organization: "EN Publishing", types: ["backgrounds"] },
+];
+const V2_BASE = (process.env.OPEN5E_API_URL ?? "https://api.open5e.com") + "/v2";
+
+async function v2(endpoint: "spells" | "backgrounds"): Promise<any[]> {
+  const docs = V2_ONLY.filter((d) => d.types.includes(endpoint));
+  const pages = await Promise.all(
+    docs.map((d) =>
+      cachedFetch<{ results: any[] }>(`${V2_BASE}/${endpoint}/?document__key=${d.key}&limit=1000`)
+        .then((r) => r.results.map((x) => ({ ...x, document__slug: d.key, document__title: d.title })))
+        .catch(() => []),
+    ),
+  );
+  return pages.flat().map((x) => (endpoint === "spells" ? v2Spell(x) : v2Background(x)));
+}
+
+/** v2 spell → v1 shape. */
+function v2Spell(x: any) {
+  return {
+    ...x,
+    slug: `v2:${x.key}`,
+    level_int: x.level,
+    spell_lists: (x.classes ?? []).map((c: any) => c.name.toLowerCase()),
+    school: x.school?.name?.toLowerCase(),
+    casting_time: x.casting_time === "action" ? "1 action" : x.casting_time === "bonus_action" ? "1 bonus action" : x.casting_time === "reaction" ? `1 reaction${x.reaction_condition ? `, ${x.reaction_condition}` : ""}` : x.casting_time,
+    range: x.range_text,
+    components: [x.verbal && "V", x.somatic && "S", x.material && "M"].filter(Boolean).join(", "),
+    material: x.material_specified,
+    requires_concentration: x.concentration,
+    can_be_cast_as_ritual: x.ritual,
+  };
+}
+
+/** v2 background (list of "benefits") → v1 shape. */
+function v2Background(x: any) {
+  const benefit = (type: string) => x.benefits?.find((b: any) => b.type === type)?.desc ?? "";
+  const feature = x.benefits?.find((b: any) => b.type === "feature");
+  return {
+    ...x,
+    slug: `v2:${x.key}`,
+    desc: x.desc ?? "",
+    skill_proficiencies: benefit("skill_proficiency"),
+    tool_proficiencies: benefit("tool_proficiency"),
+    languages: benefit("language"),
+    equipment: benefit("equipment"),
+    feature: feature?.name,
+    feature_desc: feature?.desc,
+    suggested_characteristics: benefit("suggested_characteristics") || benefit("connection_and_memento"),
+  };
+}
+
+/** v1 endpoint plus any v2-only books for it. */
+async function allWithV2(endpoint: "spells" | "backgrounds") {
+  const [v1, extra] = await Promise.all([all(endpoint), v2(endpoint)]);
+  return [...v1, ...extra];
+}
+
+export const listDocuments = () =>
+  all<any>("documents").then((docs) => [
+    ...docs.map((d) => ({ slug: d.slug, title: d.title, organization: d.organization })),
+    ...V2_ONLY.map((d) => ({ slug: d.key, title: d.title, organization: d.organization })),
+  ]);
 
 /** Open5e markdown uses ***bold italic*** headings; the client renders **bold**. */
 const md = (s?: string) => (s ?? "").replace(/\*\*\*(.+?)\*\*\*/g, "**$1**").replace(/\r/g, "");
@@ -49,7 +117,7 @@ export async function listOpen5e(type: ContentType, opts: { cls?: string }): Pro
   const keep = (x: any) => !excluded.has(x.document__slug);
   switch (type) {
     case "spell":
-      return (await all("spells"))
+      return (await allWithV2("spells"))
         .filter(keep)
         .map((x) => ({ x, classes: (x.spell_lists ?? []).map((c: string) => c.toLowerCase()) }))
         .filter(({ classes }) => !opts.cls || classes.includes(opts.cls))
@@ -57,7 +125,7 @@ export async function listOpen5e(type: ContentType, opts: { cls?: string }): Pro
     case "feat":
       return (await all("feats")).filter(keep).map((x) => summary(type, x, x.slug));
     case "background":
-      return (await all("backgrounds")).filter(keep).map((x) => summary(type, x, x.slug));
+      return (await allWithV2("backgrounds")).filter(keep).map((x) => summary(type, x, x.slug));
     case "race":
       return (await all("races")).filter(keep).flatMap((r) =>
         r.subraces?.length
@@ -93,7 +161,7 @@ export async function listOpen5e(type: ContentType, opts: { cls?: string }): Pro
 export async function getOpen5e(type: ContentType, key: string): Promise<ContentDetail | undefined> {
   switch (type) {
     case "spell": {
-      const x = (await all("spells")).find((s) => s.slug === key);
+      const x = (await allWithV2("spells")).find((s) => s.slug === key);
       return x && spellDetail(x);
     }
     case "feat": {
@@ -106,7 +174,7 @@ export async function getOpen5e(type: ContentType, key: string): Promise<Content
       };
     }
     case "background": {
-      const b = (await all("backgrounds")).find((x) => x.slug === key);
+      const b = (await allWithV2("backgrounds")).find((x) => x.slug === key);
       return b && backgroundDetail(b);
     }
     case "race": {
@@ -240,6 +308,24 @@ function backgroundDetail(b: any): ContentDetail {
   };
 }
 
+/** Open5e magic items have no structured bonuses; read the common phrasings. */
+function bonusesFromText(text: string): ItemData["bonuses"] {
+  const b: NonNullable<ItemData["bonuses"]> = {};
+  const weapon = text.match(/\+(\d) bonus to attack and damage rolls/i);
+  if (weapon) b.weaponAttack = b.weaponDamage = Number(weapon[1]);
+  const ac = text.match(/\+(\d) bonus to (?:AC|Armor Class)/i);
+  if (ac) b.ac = Number(ac[1]);
+  const save = text.match(/\+(\d) bonus to (?:AC and )?saving throws/i) ?? text.match(/bonus to AC and saving throws[^.]*?\+(\d)/i);
+  if (save) b.save = Number(save[1]);
+  const spell = text.match(/\+(\d) bonus to spell attack rolls/i);
+  if (spell) b.spellAttack = Number(spell[1]);
+  const dc = text.match(/\+(\d) bonus to (?:your )?spell save DC/i) ?? text.match(/spell attack rolls and (?:your )?spell save DC/i);
+  if (dc) b.spellDc = Number(dc[1] ?? b.spellAttack);
+  const set = text.match(/your (Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma) score (?:changes to|is|becomes) (\d+)/i);
+  if (set) b.abilitySet = { [ABILITY_BY_NAME[set[1].toLowerCase()]]: Number(set[2]) };
+  return Object.keys(b).length ? b : undefined;
+}
+
 const lb = (w?: string) => parseFloat(String(w ?? "").replace(/[^\d.]/g, "")) || undefined;
 
 async function itemDetail(key: string): Promise<ContentDetail | undefined> {
@@ -250,7 +336,7 @@ async function itemDetail(key: string): Promise<ContentDetail | undefined> {
       ...summary("item", x, key),
       description: md(x.desc),
       meta: Object.fromEntries(Object.entries({ Category: x.type, Rarity: x.rarity, Attunement: x.requires_attunement || undefined }).filter(([, v]) => v)) as Record<string, string>,
-      item: { attunement: !!x.requires_attunement, rarity: x.rarity },
+      item: { attunement: !!x.requires_attunement, rarity: x.rarity, bonuses: bonusesFromText(x.desc ?? "") },
     };
   }
   if (kind === "weapon") {

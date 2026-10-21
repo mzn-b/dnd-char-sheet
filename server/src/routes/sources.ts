@@ -33,8 +33,13 @@ sources.get("/5etools/status", async (_req, res) => {
 sources.get("/5etools/brew/catalog", async (req, res) => {
   const q = String(req.query.q ?? "").toLowerCase();
   const folder = req.query.folder as string | undefined;
+  const library = req.query.library as string | undefined;
   const all = await brewCatalog();
-  res.json(all.filter((b) => (!folder || b.folder === folder) && (!q || b.name.toLowerCase().includes(q))).slice(0, 200));
+  res.json(
+    all
+      .filter((b) => (!folder || b.folder === folder) && (!library || b.library === library) && (!q || b.name.toLowerCase().includes(q)))
+      .slice(0, library === "ua" ? 500 : 200),
+  );
 });
 
 sources.get("/5etools/brew", async (_req, res) => {
@@ -44,7 +49,7 @@ sources.get("/5etools/brew", async (_req, res) => {
 
 sources.post("/5etools/brew", async (req, res) => {
   const path = String(req.body?.path ?? "");
-  if (!/^[\w-]+\/[^/]+\.json$/.test(path)) throw new HttpError(400, "path must look like 'class/Author; Name.json'");
+  if (!/^(ua:)?[\w-]+\/[^/]+\.json$/.test(path)) throw new HttpError(400, "path must look like 'class/Author; Name.json'");
   await cachedFetch(brewFileUrl(path)); // validate it exists before saving
   await pool.query("INSERT INTO fivetools_brew (path) VALUES ($1) ON CONFLICT (path) DO UPDATE SET enabled = true", [path]);
   invalidateDataset();

@@ -40,7 +40,7 @@ export const api = {
   providers: () => request<Providers>("/sources/providers"),
   setProviders: (p: Partial<Providers>) => request<Providers>("/sources/providers", { method: "PUT", body: JSON.stringify(p) }),
   fivetoolsStatus: () => request<Record<string, number | string[]>>("/sources/5etools/status"),
-  brewCatalog: (q: string, folder?: string) => request<BrewFile[]>(`/sources/5etools/brew/catalog${qs({ q, folder })}`),
+  brewCatalog: (q: string, folder?: string, library?: string) => request<BrewFile[]>(`/sources/5etools/brew/catalog${qs({ q, folder, library })}`),
   open5eDocuments: () => request<{ slug: string; title: string; organization: string; enabled: boolean }[]>("/sources/open5e/documents"),
   setOpen5eExcluded: (excluded: string[]) => request<void>("/sources/open5e/documents", { method: "PUT", body: JSON.stringify({ excluded }) }),
   corrections: () => request<Corrections>("/sources/corrections"),
@@ -68,6 +68,7 @@ export interface BrewFile {
   path: string;
   folder: string;
   name: string;
+  library: "homebrew" | "ua";
 }
 
 /** Rolls and reminders marked as incorrect (hidden everywhere). */

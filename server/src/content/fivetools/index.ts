@@ -428,8 +428,30 @@ function itemDetail(ds: Dataset, it: any): ContentDetail {
   };
 }
 
+const num = (v: unknown) => (v == null ? undefined : Number(String(v).replace(/[^\d-]/g, "")) || undefined);
+
+/** 5etools item bonus fields → ItemBonuses. */
+function itemBonuses(it: any): ItemData["bonuses"] {
+  const b: NonNullable<ItemData["bonuses"]> = {
+    ac: num(it.bonusAc),
+    weaponAttack: num(it.bonusWeaponAttack ?? it.bonusWeapon),
+    weaponDamage: num(it.bonusWeaponDamage ?? it.bonusWeapon),
+    save: num(it.bonusSavingThrow),
+    spellAttack: num(it.bonusSpellAttack),
+    spellDc: num(it.bonusSpellSaveDc),
+    check: num(it.bonusAbilityCheck),
+    speed: num(it.modifySpeed?.bonus?.["*"] ?? it.modifySpeed?.bonus?.walk),
+  };
+  if (it.ability?.static) b.abilitySet = it.ability.static;
+  const plain = Object.fromEntries(Object.entries(it.ability ?? {}).filter(([k, v]) => ABILITIES.includes(k as Ability) && typeof v === "number"));
+  if (Object.keys(plain).length) b.abilityBonus = plain as Partial<Record<Ability, number>>;
+  const clean = Object.fromEntries(Object.entries(b).filter(([, v]) => v !== undefined));
+  return Object.keys(clean).length ? (clean as ItemData["bonuses"]) : undefined;
+}
+
 function itemData(it: any, type: string): ItemData {
   const data: ItemData = {
+    bonuses: itemBonuses(it),
     weight: it.weight,
     attunement: !!it.reqAttune,
     rarity: it.rarity && it.rarity !== "none" ? it.rarity : undefined,
