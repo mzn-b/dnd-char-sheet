@@ -1,21 +1,25 @@
 import { useMemo, useState } from "react";
-import { uid } from "../../lib/defaults";
 import { featureRolls } from "../../lib/featureRolls";
 import { d20 } from "../../lib/dice";
 import {
-  ABILITY_NAMES, STANDARD_ACTIONS, armorClass, fmt, hpMax, initiative, speed, saveBonus, spellAttack, spellLevelLabel, spellModel, spellSaveDC,
+  ABILITY_NAMES, STANDARD_ACTIONS, armorClass, fmt, hpMax, initiative, speed, wildShapeForm, saveBonus, spellAttack, spellLevelLabel, spellModel, spellSaveDC,
 } from "../../lib/rules";
 import type { Character, SpellEntry } from "../../lib/types";
 import { EntryRow } from "../StatBlock";
 import type { Update } from "../../lib/useCharacter";
 import { RollButton } from "../dice";
 import { CastButton, SpellBadges, SpellRollInfo, spellRollContext, actionType, useSpellDetails } from "../spells";
-import { Modal, NumberField, Section, TextField } from "../ui";
-import { AttackRolls } from "./AttacksPanel";
+import { Modal, NumberField, Section } from "../ui";
+import { AttackRolls, BeastAttacks, attackKind } from "./AttacksPanel";
+import { ActionBadge } from "../ActionBadge";
+import { featureKind, spendEconomy, type ActionKind } from "../../lib/economy";
+import { applyFeatureUse, featureDecision, usesLeft } from "../../lib/featureUse";
+import { useDecision } from "../decisions";
+import type { Feature } from "../../lib/types";
 import { ResourcesPanel } from "./ResourcesPanel";
 import { CombatPanel } from "./CombatTracker";
 import { FeatureRolls } from "./FeaturesTab";
-import { activeRollBonus } from "../../lib/combat";
+import { EFFECTS, activateEffect, activeRollBonus } from "../../lib/combat";
 import { ContentDetailView } from "../ContentBrowser";
 
 const GROUPS = [
@@ -38,7 +42,11 @@ export function ActionsTab({ c, update, endedEffects }: { c: Character; update: 
   );
   const details = useSpellDetails(castable);
   const casters = c.classes.filter((k) => k.spellcastingAbility);
-  const featuresWithRolls = c.features.filter((f) => featureRolls(c, f).length > 0 && f.kind !== "race" && f.kind !== "background");
+  // Features you actively use (they cost an action, bonus action or reaction) or that have dice to roll.
+  const usable = c.features.filter((f) => {
+    const kind = featureKind(c, f);
+    return (kind && kind !== "other") || (featureRolls(c, f).length > 0 && f.kind !== "race" && f.kind !== "background");
+  });
 
   return (
     <div className="space-y-4">
@@ -46,7 +54,11 @@ export function ActionsTab({ c, update, endedEffects }: { c: Character; update: 
     <div className="grid gap-4 lg:grid-cols-[1fr_22rem]">
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Vital label="Hit points" value={`${c.hp.current}${c.hp.temp ? `+${c.hp.temp}` : ""} / ${hpMax(c)}`} tone={c.hp.current <= hpMax(c) / 4 ? "text-blood-500" : ""} />
+          {wildShapeForm(c) ? (
+            <Vital label={`🐾 ${wildShapeForm(c)!.name} HP`} value={`${wildShapeForm(c)!.hp.current} / ${wildShapeForm(c)!.hp.max}`} tone="text-emerald-400" />
+          ) : (
+            <Vital label="Hit points" value={`${c.hp.current}${c.hp.temp ? `+${c.hp.temp}` : ""} / ${hpMax(c)}`} tone={c.hp.current <= hpMax(c) / 4 ? "text-blood-500" : ""} />
+          )}
           <Vital label="Armor class" value={String(armorClass(c))} />
           <div className="panel p-2 text-center">
             <RollButton expression={d20(initiative(c))} label="Initiative" className="font-display text-2xl">{fmt(initiative(c))}</RollButton>
@@ -63,12 +75,14 @@ export function ActionsTab({ c, update, endedEffects }: { c: Character; update: 
         )}
 
         <Section title="Attacks">
-          {c.attacks.length === 0 && <p className="text-sm text-ink-600">Add attacks on the Overview tab or from a weapon in your inventory (+Atk).</p>}
-          <ul className="space-y-1.5">
+          <BeastAttacks c={c} update={update} />
+          {!wildShapeForm(c) && c.attacks.length === 0 && <p className="text-sm text-ink-600">Add attacks on the Overview tab or from a weapon in your inventory (+Atk).</p>}
+          <ul className={`space-y-1.5 ${wildShapeForm(c) ? "hidden" : ""}`}>
             {c.attacks.map((a) => (
               <li key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded-lg bg-ink-850/60 px-3 py-2">
+                <ActionBadge kind={attackKind(a)} detail={attackKind(a) === "action" ? "part of the Attack action" : undefined} />
                 <span className="min-w-[8rem] flex-1 font-semibold">{a.name || "Attack"}</span>
-                <AttackRolls c={c} a={a} />
+                <AttackRolls c={c} a={a} update={update} />
                 {a.damageType && <span className="text-xs text-ink-400">{a.damageType}</span>}
                 {a.notes && <span className="w-full text-xs text-ink-600">{a.notes}</span>}
               </li>
@@ -77,18 +91,7 @@ export function ActionsTab({ c, update, endedEffects }: { c: Character; update: 
           <p className="mt-2 text-[11px] text-ink-600">Click the bonus to attack, then the damage. A natural 20 makes the next damage roll a critical.</p>
         </Section>
 
-        {featuresWithRolls.length > 0 && (
-          <Section title="Feature & feat rolls">
-            <div className="space-y-2">
-              {featuresWithRolls.map((f) => (
-                <div key={f.id}>
-                  <div className="text-sm font-semibold">{f.name}</div>
-                  <FeatureRolls c={c} f={f} compact />
-                </div>
-              ))}
-            </div>
-          </Section>
-        )}
+        {usable.length > 0 && <FeatureActions c={c} update={update} features={usable} />}
 
         {(castable.length > 0 || casters.length > 0) && (
           <Section
@@ -135,12 +138,32 @@ export function ActionsTab({ c, update, endedEffects }: { c: Character; update: 
 
         <Section title="Standard actions">
           <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-            {STANDARD_ACTIONS.map(([name, text]) => (
-              <div key={name}>
-                <dt className="font-semibold">{name}</dt>
-                <dd className="text-xs text-ink-400">{text}</dd>
-              </div>
-            ))}
+            {STANDARD_ACTIONS.map(([name, text]) => {
+              const kind: ActionKind = /\(reaction\)/.test(name) ? "reaction" : /\(bonus\)/.test(name) ? "bonus" : "action";
+              const label = name.replace(/\s*\((reaction|bonus)\)/, "");
+              return (
+                <div key={name}>
+                  <dt className="flex items-center gap-1.5 font-semibold">
+                    <ActionBadge kind={kind} />
+                    {label}
+                    {c.combat?.active && !["Attack", "Cast a Spell", "Two-Weapon Fighting", "Opportunity Attack"].includes(label) && (
+                      <button
+                        className="btn-ghost ml-auto px-1.5 py-0 text-[11px]"
+                        title={`Take the ${label} action (marks your ${kind === "action" ? "action" : kind === "bonus" ? "bonus action" : "reaction"} as used)`}
+                        onClick={() => update((d) => {
+                          spendEconomy(d, kind, label);
+                          const def = EFFECTS.find((e) => e.always && e.match.test(label));
+                          if (def) activateEffect(d, def, def.label!);
+                        })}
+                      >
+                        Take
+                      </button>
+                    )}
+                  </dt>
+                  <dd className="text-xs text-ink-400">{text}</dd>
+                </div>
+              );
+            })}
           </dl>
         </Section>
       </div>
@@ -171,6 +194,52 @@ export function ActionsTab({ c, update, endedEffects }: { c: Character; update: 
         </Modal>
       )}
     </div>
+  );
+}
+
+/** Features you use on your turn: what each costs, uses left, a Use button and its dice. */
+function FeatureActions({ c, update, features }: { c: Character; update: Update; features: Feature[] }) {
+  const ask = useDecision();
+  const [warning, setWarning] = useState<string>();
+  const order: ActionKind[] = ["action", "bonus", "reaction", "free", "other"];
+  const sorted = [...features].sort((a, b) => order.indexOf(featureKind(c, a) ?? "other") - order.indexOf(featureKind(c, b) ?? "other"));
+  return (
+    <Section title="Features & abilities">
+      {warning && <p className="mb-2 rounded border border-accent-600/50 px-2 py-1 text-xs text-accent-400">⚠ {warning}</p>}
+      <ul className="space-y-2">
+        {sorted.map((f) => {
+          const kind = featureKind(c, f);
+          const left = usesLeft(c, f);
+          const decision = featureDecision(f);
+          const active = /^wild shape$/i.test(f.name) && !!c.wildShape;
+          return (
+            <li key={f.id} className="rounded-lg bg-ink-850/60 px-3 py-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <ActionBadge kind={kind} />
+                <span className="flex-1 text-sm font-semibold">{f.name}</span>
+                {left != null && <span className="text-xs text-ink-400">{left} left</span>}
+                {kind && kind !== "other" && (
+                  <button
+                    className="btn px-2 py-0 text-xs"
+                    disabled={left === 0 || active}
+                    title={decision ? "Choose how to use it" : "Use it: marks the action economy in combat and spends a use"}
+                    onClick={() => {
+                      if (decision) return ask(decision);
+                      let w: string | undefined;
+                      update((d) => void (w = applyFeatureUse(d, d.features.find((x) => x.id === f.id) ?? f)));
+                      setWarning(w);
+                    }}
+                  >
+                    {active ? "Active" : decision ? "Use…" : "Use"}
+                  </button>
+                )}
+              </div>
+              <FeatureRolls c={c} f={f} compact />
+            </li>
+          );
+        })}
+      </ul>
+    </Section>
   );
 }
 
@@ -216,7 +285,7 @@ function Companions({ c, update }: { c: Character; update: Update }) {
                 HP<NumberField className="field-boxed w-12 py-0.5 text-center" value={p.hp.current} onChange={(n) => setHp(p.id, n)} />/ {p.hp.max}
               </label>
             </div>
-            {p.monster?.actions.filter((a) => /to hit|saving throw|\d+d\d+/.test(a.text)).slice(0, 3).map((a, i) => <EntryRow key={i} e={a} name={p.name} />)}
+            {p.monster?.actions.filter((a) => /to hit|saving throw|\d+d\d+/.test(a.text)).slice(0, 3).map((a, i) => <EntryRow key={i} e={a} name={p.name} kind="action" />)}
           </div>
         ))}
       </div>

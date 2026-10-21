@@ -35,22 +35,52 @@ export interface Dataset {
   brewSources: Set<string>;
   /** 2024-rules books (excluded) */
   modernSources: Set<string>;
+  /** Files that couldn't be fetched (the rest still loads). */
+  failures: string[];
 }
 
 let cache: { at: number; data: Promise<Dataset> } | null = null;
+/** The last dataset that finished loading, served while a refresh runs. */
+let ready: Dataset | null = null;
+let lastError: string | null = null;
+let failedAt = 0;
 const TTL_MS = 60 * 60 * 1000;
+/** After a failed first load, wait this long before trying again (searches answer at once meanwhile). */
+const RETRY_MS = 60 * 1000;
 
 export function getDataset(): Promise<Dataset> {
+  if (!ready && !cache && lastError && Date.now() - failedAt < RETRY_MS) return Promise.reject(new Error(lastError));
   if (!cache || Date.now() - cache.at > TTL_MS) {
+    const started = Date.now();
     const data = load();
-    cache = { at: Date.now(), data };
-    data.catch(() => (cache = null));
+    cache = { at: started, data };
+    data.then(
+      (ds) => {
+        ready = ds;
+        lastError = null;
+        console.log(`5etools data loaded in ${((Date.now() - started) / 1000).toFixed(1)}s${ds.failures.length ? ` (${ds.failures.length} files failed)` : ""}`);
+      },
+      (err) => {
+        lastError = (err as Error).message;
+        failedAt = Date.now();
+        console.warn("5etools data failed to load:", lastError);
+        // Keep serving the previous copy and retry in five minutes; with nothing loaded yet, retry on the next request.
+        cache = ready ? { at: Date.now() - TTL_MS + 5 * 60_000, data: Promise.resolve(ready) } : null;
+      },
+    );
+    // Stale-while-revalidate: keep answering from the previous copy during an hourly refresh.
+    if (ready) return Promise.resolve(ready);
   }
-  return cache.data;
+  return ready && cache ? Promise.resolve(ready) : cache!.data;
 }
+
+/** Whether the dataset is loaded, still downloading, or failed (for status displays and search warnings). */
+export const datasetState = () => ({ loaded: !!ready, loading: !!cache && !ready, error: lastError, failures: ready?.failures ?? [] });
 
 export function invalidateDataset() {
   cache = null;
+  ready = null;
+  lastError = null;
 }
 
 const EXTRA_SOURCE_NAMES: Record<string, string> = {
@@ -71,20 +101,27 @@ async function load(): Promise<Dataset> {
     sourceNames: {},
     brewSources: new Set<string>(),
     modernSources: new Set<string>(),
-  }) as Dataset;
+    failures: [] as string[],
+  }) as unknown as Dataset;
+  // One unreachable file shouldn't lose everything else: note it and carry on.
+  const optional = <T>(path: string, fallback: T) =>
+    get<T>(path).catch((err) => {
+      ds.failures.push(`${path}: ${(err as Error).message}`);
+      return fallback;
+    });
 
   const [classIndex, spellIndex, books, adventures, spellSources, ...singles] = await Promise.all([
     get<Record<string, string>>("class/index.json"),
     get<Record<string, string>>("spells/index.json"),
     get<{ book: any[] }>("books.json"),
-    get<{ adventure: any[] }>("adventures.json").catch(() => ({ adventure: [] })),
-    get("spells/sources.json"),
-    get("feats.json"),
-    get("races.json"),
-    get("backgrounds.json"),
-    get("items.json"),
-    get("items-base.json"),
-    get("optionalfeatures.json"),
+    optional<{ adventure: any[] }>("adventures.json", { adventure: [] }),
+    optional("spells/sources.json", {}),
+    optional("feats.json", {}),
+    optional("races.json", {}),
+    optional("backgrounds.json", {}),
+    optional("items.json", {}),
+    optional("items-base.json", {}),
+    optional("optionalfeatures.json", {}),
   ]);
 
   // Only 2014-era rules: drop the 2024 core books and everything published after them.
@@ -98,13 +135,13 @@ async function load(): Promise<Dataset> {
   ds.spellClasses = spellSources;
 
   const files = await Promise.all([
-    ...Object.values(classIndex).map((f) => get(`class/${f}`)),
-    ...Object.values(spellIndex).map((f) => get(`spells/${f}`)),
+    ...Object.values(classIndex).map((f) => optional(`class/${f}`, {})),
+    ...Object.values(spellIndex).map((f) => optional(`spells/${f}`, {})),
   ]);
   for (const file of [...singles, ...files]) merge(ds, file, (e) => e.edition !== "one" && !modern.has(e.source) && !modern.has(e.classSource));
 
   // "+1 Longsword", "+2 Chain Mail"…: 5etools stores these as templates applied to base items.
-  const variants = await get<{ magicvariant: any[] }>("magicvariants.json").catch(() => ({ magicvariant: [] }));
+  const variants = await optional<{ magicvariant: any[] }>("magicvariants.json", { magicvariant: [] });
   ds.item.push(...expandBonusVariants(variants.magicvariant, ds.baseitem, modern));
 
   for (const brew of await enabledBrews()) {

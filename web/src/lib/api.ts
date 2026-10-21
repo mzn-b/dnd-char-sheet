@@ -30,6 +30,19 @@ export const api = {
 
   search: (type: ContentType, params: { q?: string; class?: string; level?: number; maxLevel?: number } = {}) =>
     request<ContentSummary[]>(`/content/${type}${qs(params)}`),
+  /** Search plus warnings about providers that failed or are still loading. */
+  searchFull: async (type: ContentType, params: { q?: string; class?: string; level?: number; maxLevel?: number } = {}) => {
+    const res = await fetch(`/api/content/${type}${qs(params)}`);
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `Request failed (${res.status})`);
+    const header = res.headers.get("X-Content-Warnings");
+    let warnings: string[] = [];
+    try {
+      warnings = header ? JSON.parse(decodeURIComponent(header)) : [];
+    } catch {
+      /* ignore a malformed header */
+    }
+    return { results: (await res.json()) as ContentSummary[], warnings };
+  },
   detail: (type: ContentType, source: ContentSource, key: string) =>
     request<ContentDetail>(`/content/${type}/${source}/${encodeURIComponent(key)}`),
   classRules: (source: ContentSource, key: string) =>
@@ -39,7 +52,9 @@ export const api = {
 
   providers: () => request<Providers>("/sources/providers"),
   setProviders: (p: Partial<Providers>) => request<Providers>("/sources/providers", { method: "PUT", body: JSON.stringify(p) }),
-  fivetoolsStatus: () => request<Record<string, number | string[]>>("/sources/5etools/status"),
+  fivetoolsStatus: () => request<FivetoolsStatus>("/sources/5etools/status"),
+  books: () => request<{ books: BookInfo[]; warnings: string[] }>("/sources/books"),
+  retryFivetools: () => request<FivetoolsStatus>("/sources/5etools/status?retry=1"),
   brewCatalog: (q: string, folder?: string, library?: string) => request<BrewFile[]>(`/sources/5etools/brew/catalog${qs({ q, folder, library })}`),
   open5eDocuments: () => request<{ slug: string; title: string; organization: string; enabled: boolean }[]>("/sources/open5e/documents"),
   setOpen5eExcluded: (excluded: string[]) => request<void>("/sources/open5e/documents", { method: "PUT", body: JSON.stringify({ excluded }) }),
@@ -75,4 +90,23 @@ export interface BrewFile {
 export interface Corrections {
   hiddenRolls: string[];
   hiddenReminders: string[];
+}
+
+export interface FivetoolsStatus {
+  loading: boolean;
+  error?: string | null;
+  spells?: number;
+  feats?: number;
+  classes?: number;
+  subclasses?: number;
+  races?: number;
+  items?: number;
+  brewSources?: string[];
+  failures?: string[];
+}
+
+export interface BookInfo {
+  label: string;
+  provider: "srd" | "open5e" | "5etools" | "homebrew";
+  counts: Record<string, number>;
 }

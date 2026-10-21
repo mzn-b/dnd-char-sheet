@@ -9,7 +9,14 @@ const FOLDERS = ["", "class", "subclass", "race", "background", "feat", "spell",
 export default function Settings() {
   const qc = useQueryClient();
   const providers = useQuery({ queryKey: ["providers"], queryFn: api.providers });
-  const status = useQuery({ queryKey: ["5etools-status"], queryFn: api.fivetoolsStatus, enabled: !!providers.data?.["5etools"], retry: false });
+  const status = useQuery({
+    queryKey: ["5etools-status"],
+    queryFn: api.fivetoolsStatus,
+    enabled: !!providers.data?.["5etools"],
+    retry: false,
+    // Poll while the first download runs.
+    refetchInterval: (q) => (q.state.data?.loading ? 3000 : false),
+  });
   const brews = useQuery({ queryKey: ["brews"], queryFn: api.brews });
   const [q, setQ] = useState("");
   const [folder, setFolder] = useState("");
@@ -73,12 +80,24 @@ export default function Settings() {
             </p>
             {providers.data["5etools"] && (
               <div className="text-sm">
-                {status.isLoading && <Spinner label="Loading 5etools data (first time can take a few seconds)…" />}
-                {status.error && <p className="text-blood-500">Couldn't load 5etools data: {(status.error as Error).message}</p>}
-                {status.data && (
-                  <p className="text-emerald-400">
-                    Loaded {String(status.data.spells)} spells, {String(status.data.classes)} classes, {String(status.data.subclasses)} subclasses, {String(status.data.races)} races, {String(status.data.feats)} feats, {String(status.data.items)} items.
+                {(status.isLoading || status.data?.loading) && <Spinner label="Downloading 5etools data… the first load can take a minute or two; pickers show the other sources meanwhile." />}
+                {status.error && <p className="text-blood-500">Couldn't check 5etools: {(status.error as Error).message}</p>}
+                {status.data?.error && (
+                  <p className="text-blood-500">
+                    Couldn't load 5etools data: {status.data.error}. Check that the server can reach {providers.data.fivetoolsDataUrl} (proxy, firewall or cluster egress).{" "}
+                    <button className="underline" onClick={async () => { await api.retryFivetools(); refreshContent(); }}>Retry</button>
                   </p>
+                )}
+                {status.data && !status.data.loading && !status.data.error && (
+                  <p className="text-emerald-400">
+                    Loaded {status.data.spells} spells, {status.data.classes} classes, {status.data.subclasses} subclasses, {status.data.races} races, {status.data.feats} feats, {status.data.items} items.
+                  </p>
+                )}
+                {!!status.data?.failures?.length && (
+                  <details className="mt-1 text-xs text-accent-400">
+                    <summary>{status.data.failures.length} file{status.data.failures.length > 1 ? "s" : ""} couldn't be downloaded (the rest loaded)</summary>
+                    <ul className="mt-1 list-disc pl-5 text-ink-400">{status.data.failures.map((f) => <li key={f}>{f}</li>)}</ul>
+                  </details>
                 )}
               </div>
             )}

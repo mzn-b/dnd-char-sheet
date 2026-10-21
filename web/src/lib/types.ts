@@ -173,6 +173,8 @@ export interface Attack {
   itemId?: string;
   ranged?: boolean;
   twoHanded?: boolean;
+  /** What making this attack costs; default the Attack action. */
+  actionType?: "action" | "bonus" | "reaction";
 }
 
 export interface Item {
@@ -415,6 +417,8 @@ export interface RuleOptions {
   strictMulticlass?: boolean;
   /** How HP is gained at level-up: player's choice, always average, or always rolled. */
   hpMethod?: "choose" | "average" | "roll";
+  /** Books (source labels) character options may come from; empty or missing = all enabled books. */
+  books?: string[];
 }
 
 export interface CharacterSummary {

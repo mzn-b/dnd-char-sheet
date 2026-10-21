@@ -1,13 +1,17 @@
 import { useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { api } from "../lib/api";
-import { abilityMod, fmt, ordinal, spellAttack, spellSaveDC, totalLevel } from "../lib/rules";
+import { abilityMod, canCastInWildShape, fmt, ordinal, spellAttack, spellSaveDC, totalLevel } from "../lib/rules";
 import { describeDice, diceAt, scalingNote } from "../lib/spellDice";
 import { describeRoll, extractRolls, resolveRoll } from "../lib/rollText";
 import { withModifier } from "./rolls";
 import { addEffect, effectForSpell } from "../lib/combat";
 import { rollKey, useCorrections } from "../lib/corrections";
 import { RollButton } from "./dice";
+import { ActionBadge } from "./ActionBadge";
+import { useDecision } from "./decisions";
+import { spellDecision } from "../lib/featureUse";
+import { kindFromCastingTime, spendEconomy } from "../lib/economy";
 import { d20 } from "../lib/dice";
 import type { Ability, Character, ContentDetail, SpellDice, SpellEntry } from "../lib/types";
 import type { Update } from "../lib/useCharacter";
@@ -43,10 +47,14 @@ export function SpellBadges({ detail }: { detail?: ContentDetail }) {
   if (!detail) return null;
   return (
     <span className="flex shrink-0 items-center gap-1 text-[10px] text-ink-400">
-      <span className="rounded bg-ink-800 px-1" title={detail.meta["Casting Time"]}>{castingTimeShort(detail.meta["Casting Time"])}</span>
+      {kindFromCastingTime(detail.meta["Casting Time"]) === "other" ? (
+        <span className="rounded bg-ink-800 px-1" title={detail.meta["Casting Time"]}>{castingTimeShort(detail.meta["Casting Time"])}</span>
+      ) : (
+        <ActionBadge kind={kindFromCastingTime(detail.meta["Casting Time"])} detail={detail.meta["Casting Time"]} />
+      )}
       {detail.meta.Range && <span className="hidden sm:inline" title="Range">{detail.meta.Range}</span>}
       {detail.spell?.concentration && <span className="rounded bg-arcane-500/20 px-1 text-arcane-400" title="Concentration">C</span>}
-      {detail.spell?.ritual && <span className="rounded bg-emerald-500/15 px-1 text-emerald-400" title="Ritual">R</span>}
+      {detail.spell?.ritual && <span className="rounded bg-emerald-500/15 px-1 text-emerald-400" title="Ritual">rit</span>}
     </span>
   );
 }
@@ -59,20 +67,30 @@ export function CastButton({
   c, update, spell, detail, onCast,
 }: { c: Character; update: Update; spell: SpellEntry; detail?: ContentDetail; onCast?: (d: Character) => void }) {
   const [open, setOpen] = useState(false);
+  const ask = useDecision();
   const conc = !!detail?.spell?.concentration;
+  // Find Familiar, Find Steed…: ask which creature after casting.
+  const followUp = () => {
+    const decision = spellDecision(spell.ref.name);
+    if (decision) setTimeout(() => ask(decision));
+  };
   const concentrate = (d: Character) => {
     if (conc) d.concentration = { name: spell.ref.name, spellId: spell.id };
     const s = d.spellcasting.spells.find((x) => x.id === spell.id);
     if (s) s.castCount = (s.castCount ?? 0) + 1;
+    // In combat, the casting time uses the action, bonus action or reaction.
+    spendEconomy(d, kindFromCastingTime(detail?.meta["Casting Time"]), `Cast ${spell.ref.name}`, { spellLevel: spell.level });
     // In combat, lasting spells become active effects with reminders and a countdown.
     if (d.combat?.active) {
       const effect = effectForSpell(d, spell, detail);
       if (effect) addEffect(d, effect);
-      d.combat.log.push({ round: d.combat.round, text: `Cast ${spell.ref.name}` });
     }
     onCast?.(d);
   };
 
+  if (c.wildShape && !canCastInWildShape(c)) {
+    return <button className="btn px-2 py-0 text-xs" disabled title="You can't cast spells in Wild Shape (until Beast Spells at 18th level)">Cast</button>;
+  }
   const freeMax = spell.uses ? parseInt(spell.uses, 10) || (/at will/.test(spell.uses) ? 0 : 1) : 0;
   const freeLeft = Math.max(0, freeMax - (spell.usesSpent ?? 0));
   const anySlots = c.spellcasting.slots.some((s, i) => i + 1 >= spell.level && s.max > 0) || c.spellcasting.pactSlots.level >= spell.level && c.spellcasting.pactSlots.max > 0;
@@ -85,14 +103,14 @@ export function CastButton({
         className="btn px-2 py-0 text-xs"
         disabled={spent >= max}
         title={`Innate: ${spell.uses}`}
-        onClick={() => update((d) => { const s = d.spellcasting.spells.find((x) => x.id === spell.id)!; s.usesSpent = (s.usesSpent ?? 0) + 1; concentrate(d); })}
+        onClick={() => { update((d) => { const s = d.spellcasting.spells.find((x) => x.id === spell.id)!; s.usesSpent = (s.usesSpent ?? 0) + 1; concentrate(d); }); followUp(); }}
       >
         Cast ({max - spent}/{max})
       </button>
     );
   }
   if (spell.level === 0) {
-    return <button className="btn px-2 py-0 text-xs" onClick={() => update(concentrate)}>Cast</button>;
+    return <button className="btn px-2 py-0 text-xs" onClick={() => { update(concentrate); followUp(); }}>Cast</button>;
   }
 
   const slots = c.spellcasting.slots.map((s, i) => ({ level: i + 1, left: s.max - s.used })).filter((s) => s.level >= spell.level && s.left > 0);
@@ -108,6 +126,7 @@ export function CastButton({
       concentrate(d);
     });
     setOpen(false);
+    followUp();
   };
   const nothing = !slots.length && !pactOk && !detail?.spell?.ritual && !freeLeft;
 

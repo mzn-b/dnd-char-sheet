@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import type { ContentDetail, ContentSummary, ContentType } from "../lib/types";
 import { spellLevelLabel } from "../lib/rules";
 import { Markdown, Modal, SourceBadge, Spinner } from "./ui";
+import { BOOK_FILTERED, useBookFilter } from "../lib/books";
 import { RollList, SpellRollBreakdown } from "./rolls";
 import { extractRolls } from "../lib/rollText";
 
@@ -63,22 +64,30 @@ export function ContentBrowser({
   const [sourceFilter, setSourceFilter] = useState("");
   const cls = classOnly ? filters.class : undefined;
 
-  const { data, isLoading, error } = useQuery({
+  const query = useQuery({
     queryKey: ["content", type, cls, filters.maxLevel],
-    queryFn: () => api.search(type, { class: cls, maxLevel: filters.maxLevel }),
-    staleTime: 5 * 60_000,
+    queryFn: () => api.searchFull(type, { class: cls, maxLevel: filters.maxLevel }),
+    // A partial answer (a provider still loading) is refreshed sooner.
+    staleTime: (q) => (q.state.data?.warnings.length ? 15_000 : 5 * 60_000),
   });
+  const { isLoading, error } = query;
+  const data = query.data?.results;
+  const warnings = query.data?.warnings ?? [];
 
+  const bookFilter = useBookFilter();
+  const [allBooks, setAllBooks] = useState(false);
+  const filtering = !!bookFilter.books?.length && BOOK_FILTERED.includes(type) && !allBooks;
   const extraIds = useMemo(() => new Set((extra?.items ?? []).map(contentId)), [extra]);
   const merged = useMemo(() => {
-    const base = data ?? [];
+    const base = (data ?? []).filter((c) => !filtering || bookFilter.allowed(c));
     if (!extra?.items.length || !includeExtra) return base;
     const have = new Set(base.map(contentId));
     const extras = extra.items.filter(
       (c) => !have.has(contentId(c)) && (filters.maxLevel == null || (c.level ?? 0) <= filters.maxLevel),
     );
     return [...base, ...extras].sort((a, b) => (a.level ?? 0) - (b.level ?? 0) || a.name.localeCompare(b.name));
-  }, [data, extra, includeExtra, filters.maxLevel]);
+  }, [data, extra, includeExtra, filters.maxLevel, filtering, bookFilter]);
+  const hiddenByBooks = filtering ? (data ?? []).length - (data ?? []).filter(bookFilter.allowed).length : 0;
   const sources = useMemo(() => [...new Set(merged.map((c) => c.sourceLabel ?? c.source))].sort(), [merged]);
 
   const results = useMemo(() => {
@@ -130,6 +139,15 @@ export function ContentBrowser({
               {includeExtra ? "✓ " : ""}{extra.label}
             </button>
           )}
+          {(filtering || allBooks) && !!bookFilter.books?.length && BOOK_FILTERED.includes(type) && (
+            <button
+              className={`chip ${allBooks ? "" : "border-arcane-500/60 text-arcane-400"}`}
+              title={allBooks ? "Only show your chosen books again" : `${hiddenByBooks} entries from other books hidden (${bookFilter.books.join(", ")})`}
+              onClick={() => setAllBooks(!allBooks)}
+            >
+              {allBooks ? "Showing all books" : `📚 ${bookFilter.books.length} book${bookFilter.books.length > 1 ? "s" : ""}`}
+            </button>
+          )}
           {sources.length > 1 && (
             <select className="field-boxed w-auto max-w-[12rem] py-0.5 text-xs" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} title="Filter by book">
               <option value="">All sources ({sources.length})</option>
@@ -141,7 +159,13 @@ export function ContentBrowser({
           )}
         </div>
         <div className="max-h-[50vh] min-h-0 flex-1 overflow-y-auto rounded-lg border border-ink-800">
-          {isLoading && <div className="p-3"><Spinner /></div>}
+          {isLoading && <div className="p-3"><Spinner label="Loading… (the first search of a source can take a few seconds)" /></div>}
+          {warnings.map((w) => (
+            <div key={w} className="flex items-start gap-2 border-b border-ink-800 bg-accent-500/5 p-2 text-xs text-accent-400">
+              <span className="flex-1">⚠ {w}</span>
+              <button className="underline" onClick={() => query.refetch()}>Retry</button>
+            </div>
+          ))}
           {error && <div className="p-3 text-sm text-blood-500">{(error as Error).message}</div>}
           {!isLoading && results.length === 0 && <div className="p-3 text-sm text-ink-400">Nothing found. You can add it as homebrew.</div>}
           {results.map((c) => {

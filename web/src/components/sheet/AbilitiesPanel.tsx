@@ -33,7 +33,9 @@ export function AbilitiesPanel({ c, update }: { c: Character; update: Update }) 
               onChange={(n) => update((d) => void (d.abilities[a] = n))}
             />
             {abilityScore(c, a) !== c.abilities[a] && (
-              <span className="mt-0.5 text-[10px] text-emerald-400" title="Changed by an item">→ {abilityScore(c, a)}</span>
+              <span className="mt-0.5 text-[10px] text-emerald-400" title={c.wildShape && ["str", "dex", "con"].includes(a) ? "Beast form (Wild Shape)" : "Changed by an item"}>
+                {c.wildShape && ["str", "dex", "con"].includes(a) ? "🐾 " : "→ "}{abilityScore(c, a)}
+              </span>
             )}
           </div>
         ))}

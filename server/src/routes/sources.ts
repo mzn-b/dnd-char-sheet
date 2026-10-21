@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { pool } from "../db.js";
 import { getProviders, setProviders } from "../content/settings.js";
-import { brewCatalog, brewFileUrl, invalidateDataset, getDataset, DATA_URL } from "../content/fivetools/data.js";
-import { cachedFetch, HttpError } from "../content/http.js";
+import { brewCatalog, brewFileUrl, datasetState, invalidateDataset, getDataset, DATA_URL } from "../content/fivetools/data.js";
+import { cachedFetch, HttpError, within } from "../content/http.js";
 import { excludedDocuments, listDocuments, setExcludedDocuments } from "../content/open5e.js";
+import { searchWithWarnings } from "../content/index.js";
 
 /** Content-provider settings and the 5etools homebrew library. */
 export const sources = Router();
@@ -21,12 +22,49 @@ sources.put("/providers", async (req, res) => {
   res.json(next);
 });
 
-/** Checks the 5etools mirror is reachable and reports what it loaded. */
-sources.get("/5etools/status", async (_req, res) => {
-  const ds = await getDataset();
+/** Content types a character is built from; the book filter applies to these (not items or monsters). */
+const BOOK_TYPES = ["race", "class", "subclass", "background", "feat", "spell", "feature"] as const;
+let booksCache: { at: number; data: BookInfo[]; complete: boolean } | null = null;
+interface BookInfo { label: string; provider: string; counts: Record<string, number> }
+
+/** Every book (source label) that has character options, with how many of each it adds. */
+sources.get("/books", async (_req, res) => {
+  if (booksCache && booksCache.complete && Date.now() - booksCache.at < 10 * 60_000) return void res.json({ books: booksCache.data, warnings: [] });
+  const byLabel = new Map<string, BookInfo>();
+  const warnings = new Set<string>();
+  for (const type of BOOK_TYPES) {
+    const { results, warnings: w } = await searchWithWarnings(type, {});
+    w.forEach((x) => warnings.add(x));
+    for (const r of results) {
+      const label = r.sourceLabel ?? (r.source === "homebrew" ? "Homebrew" : r.source);
+      const info = byLabel.get(label) ?? { label, provider: r.source, counts: {} };
+      info.counts[type] = (info.counts[type] ?? 0) + 1;
+      byLabel.set(label, info);
+    }
+  }
+  const data = [...byLabel.values()].sort((a, b) => a.label.localeCompare(b.label));
+  booksCache = { at: Date.now(), data, complete: warnings.size === 0 };
+  res.json({ books: data, warnings: [...warnings] });
+});
+
+/** Reports whether 5etools data is loaded, still downloading or failed, without waiting for it. */
+sources.get("/5etools/status", async (req, res) => {
+  if (req.query.retry) invalidateDataset();
+  const loading = getDataset();
+  loading.catch(() => {});
+  const state = datasetState();
+  if (!state.loaded) {
+    // Give a quick load (warm database cache) a moment before answering "loading".
+    const r = await within(loading, 3000).catch(() => ({ timedOut: false, value: undefined }));
+    if (!r.value) return void res.json({ loading: !datasetState().error, error: datasetState().error });
+  }
+  const ds = await loading.catch(() => null);
+  if (!ds) return void res.json({ loading: false, error: datasetState().error });
   res.json({
+    loading: false,
     spells: ds.spell.length, feats: ds.feat.length, classes: ds.class.length, subclasses: ds.subclass.length,
     races: ds.race.length + ds.subrace.length, items: ds.item.length + ds.baseitem.length, brewSources: [...ds.brewSources],
+    failures: ds.failures,
   });
 });
 

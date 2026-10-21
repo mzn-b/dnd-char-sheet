@@ -55,7 +55,7 @@ export function useRoll() {
  * Ctrl/⌘-click = disadvantage.
  */
 export function RollButton({
-  expression, label, kind = "check", children, className = "", title, critical,
+  expression, label, kind = "check", children, className = "", title, critical, onRoll,
 }: {
   expression: string;
   label: string;
@@ -64,6 +64,8 @@ export function RollButton({
   className?: string;
   title?: string;
   critical?: boolean;
+  /** Called after rolling (e.g. to mark the action as used in combat). */
+  onRoll?: () => void;
 }) {
   const { roll } = useRoll();
   return (
@@ -75,6 +77,7 @@ export function RollButton({
         e.stopPropagation();
         const mode: RollMode | undefined = e.shiftKey ? "advantage" : e.ctrlKey || e.metaKey ? "disadvantage" : undefined;
         roll(expression, { label, kind, mode, critical });
+        onRoll?.();
       }}
       className={`rounded px-1 transition hover:bg-accent-500/15 hover:text-accent-400 ${className}`}
     >

@@ -12,6 +12,9 @@ import { useRoll } from "../dice";
 import { useSpellDetails } from "../spells";
 import { NumberField, Section } from "../ui";
 import { HideButton } from "../rolls";
+import { ActionBadge } from "../ActionBadge";
+import { useDecision } from "../decisions";
+import { attacksPerAction, featureKind, spendEconomy } from "../../lib/economy";
 import { useCorrections } from "../../lib/corrections";
 
 const ORDER: ReminderWhen[] = ["turnStart", "attack", "hit", "damaged", "turnEnd", "always"];
@@ -21,6 +24,9 @@ export function CombatBar({ c, update, onEnded }: { c: Character; update: Update
   const s = c.combat;
   if (!s?.active) return null;
   const econ = s.economy;
+  // The latest economy warning this round (e.g. "your bonus action is already used").
+  const last = s.log[s.log.length - 1];
+  const warning = last?.round === s.round && last.text.startsWith("⚠") ? last.text.slice(2) : undefined;
   const toggle = (k: "action" | "bonus" | "reaction") => update((d) => void (d.combat!.economy[k] = !d.combat!.economy[k]));
   return (
     <div className="sticky top-[53px] z-30 -mx-4 flex flex-wrap items-center gap-2 border-y border-blood-500/40 bg-ink-950/95 px-4 py-2 text-sm backdrop-blur print:hidden">
@@ -50,8 +56,10 @@ export function CombatBar({ c, update, onEnded }: { c: Character; update: Update
           className={`rounded-full border px-2 py-0.5 text-xs capitalize transition ${econ[k] ? "border-ink-700 text-ink-600 line-through" : "border-accent-600 text-accent-400"}`}
         >
           {k === "bonus" ? "Bonus action" : k}
+          {k === "action" && econ.attacks ? ` · ${econ.attacks}/${attacksPerAction(c)} attacks` : ""}
         </button>
       ))}
+      {warning && <span className="text-xs text-accent-400" title={warning}>⚠ {warning}</span>}
       <span className="flex items-center gap-1 text-xs text-ink-400">
         Move
         <button className="btn px-1.5 py-0 text-xs" onClick={() => update((d) => void (d.combat!.economy.movement = Math.max(0, d.combat!.economy.movement - 5)))}>−</button>
@@ -82,6 +90,7 @@ export function CombatPanel({ c, update, endedNotice }: { c: Character; update: 
   const [custom, setCustom] = useState<{ name: string; rounds: number; text: string; when: ReminderWhen } | null>(null);
   const details = useSpellDetails(c.spellcasting.spells);
   const corrections = useCorrections();
+  const ask = useDecision();
   const [showHidden, setShowHidden] = useState(false);
   const s = c.combat;
 
@@ -221,8 +230,16 @@ export function CombatPanel({ c, update, endedNotice }: { c: Character; update: 
                   className="btn"
                   disabled={a.left === 0 || s.effects.some((e) => e.name === a.name)}
                   title={a.def.reminders.map((r) => r.text).join("\n")}
-                  onClick={() => update((d) => activateEffect(d, a.def, a.name))}
+                  onClick={() => {
+                    if (/^wild shape$/i.test(a.name)) return ask({ kind: "wildshape" });
+                    update((d) => {
+                      const f = d.features.find((x) => x.name.toLowerCase() === a.name.toLowerCase());
+                      spendEconomy(d, a.def.always ? "action" : featureKind(d, f ?? { name: a.name, description: "" }), a.name);
+                      activateEffect(d, a.def, a.name);
+                    });
+                  }}
                 >
+                  <ActionBadge kind={a.def.always ? "action" : featureKind(c, c.features.find((x) => x.name.toLowerCase() === a.name.toLowerCase()) ?? { name: a.name, description: "" })} />{" "}
                   {a.name}{a.left != null ? <span className="text-xs text-ink-400"> ({a.left} left)</span> : null}
                 </button>
               ))}

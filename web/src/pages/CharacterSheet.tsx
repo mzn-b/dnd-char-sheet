@@ -12,6 +12,8 @@ import { InventoryTab } from "../components/sheet/InventoryTab";
 import { FeaturesTab, SubFeatureRow } from "../components/sheet/FeaturesTab";
 import { BioTab } from "../components/sheet/BioTab";
 import { ExtrasTab, WildShapeBanner } from "../components/sheet/ExtrasTab";
+import { BooksContext } from "../lib/books";
+import { DecisionProvider } from "../components/decisions";
 import { HistoryTab } from "../components/sheet/HistoryTab";
 import { RestDialog } from "../components/sheet/RestDialog";
 import { LevelUpWizard } from "../components/levelup/LevelUpWizard";
@@ -63,6 +65,8 @@ export default function CharacterSheet() {
   if (error || !c) return <p className="text-blood-500">Couldn't load character. <Link to="/" className="underline">Back to list</Link></p>;
 
   return (
+    <BooksContext.Provider value={c.options?.books?.length ? c.options.books : null}>
+    <DecisionProvider c={c} update={update}>
     <div className="space-y-4">
       <SheetHeader
         c={c}
@@ -137,6 +141,8 @@ export default function CharacterSheet() {
         />
       )}
     </div>
+    </DecisionProvider>
+    </BooksContext.Provider>
   );
 }
 

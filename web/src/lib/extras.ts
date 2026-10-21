@@ -91,15 +91,19 @@ export function damageCreature(p: Companion, n: number): number {
   return overflow;
 }
 
-/** Assume a Wild Shape form: fresh HP, spend a use of Wild Shape if tracked. */
+/** Assume a Wild Shape form with fresh HP (spending the use is up to the caller, see wildShapeInto). */
 export function startWildShape(d: Character, companionId: string) {
   const form = d.companions?.find((p) => p.id === companionId);
   if (!form) return;
   form.hp.current = form.hp.max;
   form.hp.temp = 0;
   d.wildShape = { companionId };
-  const feature = d.features.find((f) => /^wild shape$/i.test(f.name) && f.uses);
-  if (feature?.uses) feature.uses.used = Math.min(feature.uses.max, feature.uses.used + 1);
+}
+
+/** Back to your normal form (and end the Wild Shape combat effect). */
+export function revertWildShape(d: Character) {
+  d.wildShape = null;
+  if (d.combat) d.combat.effects = d.combat.effects.filter((e) => e.name !== "Wild Shape");
 }
 
 /** Damage while wild shaped: the beast takes it; at 0 HP you revert and excess carries over. */
@@ -108,7 +112,7 @@ export function damageWildShape(d: Character, n: number): { reverted: boolean; c
   if (!form) return { reverted: false, carried: 0 };
   const carried = damageCreature(form, n);
   if (form.hp.current > 0) return { reverted: false, carried: 0 };
-  d.wildShape = null;
+  revertWildShape(d);
   if (carried) {
     const absorbed = Math.min(d.hp.temp, carried);
     d.hp.temp -= absorbed;

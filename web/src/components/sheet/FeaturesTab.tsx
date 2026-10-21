@@ -1,3 +1,5 @@
+import { ActionBadge } from "../ActionBadge";
+import { featureKind } from "../../lib/economy";
 import { ModifiersPanel } from "./ModifiersPanel";
 import { useState } from "react";
 import { applySubfeatureMechanics, buildFeature, grantFeature, resolveSubfeatures } from "../../lib/apply";
@@ -82,6 +84,7 @@ function FeatureCard({ f, c, update }: { f: Feature; c: Character; update: Updat
     <details className="group rounded-lg border border-ink-800 bg-ink-850/40" open={pending.length > 0 || undefined}>
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2">
         <span className="text-ink-600 transition group-open:rotate-90">›</span>
+        <ActionBadge kind={featureKind(c, f)} />
         <span className="flex-1 font-semibold">{f.name}</span>
         {pending.length > 0 && <span className="chip border-accent-600 text-accent-400">choice needed</span>}
         {f.uses && (

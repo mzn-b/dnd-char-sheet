@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { CONDITIONS, CONDITION_TEXT, EXHAUSTION_TEXT, armorClassBreakdown, fmt, hpMax, hpMaxParts, initiative, saveBonus, speedBreakdown } from "../../lib/rules";
+import { CONDITIONS, CONDITION_TEXT, EXHAUSTION_TEXT, armorClassBreakdown, fmt, hpMax, hpMaxParts, initiative, saveBonus, speedBreakdown, wildShapeForm } from "../../lib/rules";
+import { damageWildShape } from "../../lib/extras";
 import { describe } from "../../lib/modifiers";
 import { d20 } from "../../lib/dice";
 import { RollButton, useRoll } from "../dice";
@@ -19,7 +20,8 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
   const corrections = useCorrections();
   const { roll } = useRoll();
   const ac = armorClassBreakdown(c);
-  const auto = c.acMode === "auto";
+  const form = wildShapeForm(c);
+  const auto = c.acMode === "auto" || !!form;
   const maxHp = hpMax(c);
   const hpParts = hpMaxParts(c);
   const spd = speedBreakdown(c);
@@ -35,7 +37,7 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
       else d.deathSaves.failures = Math.min(3, d.deathSaves.failures + 1);
     });
   };
-  const hpPct = maxHp ? Math.max(0, Math.min(100, (c.hp.current / maxHp) * 100)) : 0;
+  const hpPct = form ? (form.hp.max ? Math.max(0, Math.min(100, (form.hp.current / form.hp.max) * 100)) : 0) : maxHp ? Math.max(0, Math.min(100, (c.hp.current / maxHp) * 100)) : 0;
   const hitDice = Object.entries(
     c.classes.reduce<Record<string, number>>((acc, k) => ({ ...acc, [k.hitDie]: (acc[k.hitDie] ?? 0) + k.level }), {}),
   );
@@ -43,6 +45,18 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
   const applyHp = (kind: "damage" | "heal" | "temp") => {
     const n = Math.abs(parseInt(amount, 10));
     if (!n) return;
+    if (form) {
+      // In Wild Shape the beast takes the damage; at 0 HP you revert and the rest carries over.
+      update((d) => {
+        const f = d.companions!.find((p) => p.id === form.id)!;
+        if (kind === "damage") damageWildShape(d, n);
+        else if (kind === "heal") f.hp.current = Math.min(f.hp.max, f.hp.current + n);
+        else f.hp.temp = Math.max(f.hp.temp ?? 0, n);
+      });
+      if (kind === "damage" && c.concentration) setConcentrationDc(Math.max(10, Math.floor(n / 2)));
+      setAmount("");
+      return;
+    }
     update((d) => {
       if (kind === "temp") d.hp.temp = Math.max(d.hp.temp, n);
       else if (kind === "heal") {
@@ -106,7 +120,25 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
         </Stat>
       </div>
 
-      <Section title="Hit Points">
+      <Section title={form ? `Hit Points · 🐾 ${form.name}` : "Hit Points"}>
+        {form ? (
+          <div className="flex items-end justify-between gap-3">
+            <div className="flex items-baseline gap-1">
+              <NumberField
+                className="field w-20 text-right font-display text-4xl text-emerald-400"
+                value={form.hp.current}
+                onChange={(n) => update((d) => void (d.companions!.find((p) => p.id === form.id)!.hp.current = n))}
+                aria-label={`${form.name} HP`}
+              />
+              <span className="text-2xl text-ink-600">/</span>
+              <span className="font-display text-2xl text-ink-400">{form.hp.max}</span>
+            </div>
+            <div className="text-right text-xs text-ink-400">
+              Your HP {c.hp.current} / {hpMax(c)}
+              <div>{form.hp.temp ? <span className="text-arcane-400">+{form.hp.temp} temp</span> : "excess damage carries over"}</div>
+            </div>
+          </div>
+        ) : (
         <div className="flex items-end justify-between gap-3">
           <div className="flex items-baseline gap-1">
             <NumberField
@@ -128,6 +160,7 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
             <NumberField className="field w-14 text-right font-display text-2xl text-arcane-400" value={c.hp.temp} min={0} onChange={(n) => update((d) => void (d.hp.temp = n))} />
           </div>
         </div>
+        )}
         <div className="mt-2 h-2 overflow-hidden rounded-full bg-ink-800">
           <div className={`h-full transition-all ${hpPct > 50 ? "bg-emerald-500" : hpPct > 20 ? "bg-accent-500" : "bg-blood-500"}`} style={{ width: `${hpPct}%` }} />
         </div>

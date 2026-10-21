@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getContent, resolveSpellByName, searchContent } from "../content/index.js";
+import { getContent, resolveSpellByName, searchWithWarnings } from "../content/index.js";
 import { archetypeRules } from "../content/open5e.js";
 import { getClassRules, getSubclassLevels } from "../content/srd.js";
 import { classRules5etools, subclassLevels5etools } from "../content/fivetools/index.js";
@@ -20,14 +20,15 @@ function contentType(t: string): ContentType {
 
 /** GET /api/content/spell?q=fire&class=wizard&maxLevel=3 */
 content.get("/content/:type", async (req, res) => {
-  res.json(
-    await searchContent(contentType(req.params.type), {
-      q: req.query.q as string | undefined,
-      cls: req.query.class as string | undefined,
-      level: num(req.query.level),
-      maxLevel: num(req.query.maxLevel),
-    }),
-  );
+  const { results, warnings } = await searchWithWarnings(contentType(req.params.type), {
+    q: req.query.q as string | undefined,
+    cls: req.query.class as string | undefined,
+    level: num(req.query.level),
+    maxLevel: num(req.query.maxLevel),
+  });
+  // Results stay a plain array; providers that failed or are still loading are reported in a header.
+  if (warnings.length) res.set("X-Content-Warnings", encodeURIComponent(JSON.stringify(warnings)));
+  res.json(results);
 });
 
 /** GET /api/content/spell/srd/fireball */

@@ -6,6 +6,7 @@ import type { SaveState, Update } from "../../lib/useCharacter";
 import { ContentApplyDialog } from "../ChoicePicker";
 import { Modal, NumberField, TextField } from "../ui";
 import { RuleOptionsEditor } from "../RuleOptions";
+import { BookPicker } from "../BookPicker";
 
 export function SheetHeader({
   c, update, saveState, onLevelUp, restButtons,
@@ -101,6 +102,8 @@ export function SheetHeader({
       {editingRules && (
         <Modal title="Optional rules" onClose={() => setEditingRules(false)} footer={<button className="btn-primary" onClick={() => setEditingRules(false)}>Done</button>}>
           <RuleOptionsEditor value={c.options ?? {}} onChange={(v) => update((d) => void (d.options = v))} />
+          <h3 className="mb-2 mt-5 font-display text-lg text-accent-400">Books</h3>
+          <BookPicker value={c.options?.books ?? []} onChange={(books) => update((d) => void (d.options = { ...d.options, books }))} />
           <p className="mt-4 text-xs text-ink-600">Customizing Your Origin is applied in the character creator. On an existing sheet, move racial increases by editing the ability scores directly.</p>
         </Modal>
       )}

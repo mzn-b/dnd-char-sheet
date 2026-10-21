@@ -1,4 +1,4 @@
-import type { Ability, CasterType, Character, ClassEntry, ProfLevel, SpellModel } from "./types";
+import type { Ability, CasterType, Character, ClassEntry, Companion, ProfLevel, SpellModel } from "./types";
 import { effectiveScore, hasModifier, modifiersFor, sumFor, type Modifier } from "./modifiers";
 
 export const ABILITY_NAMES: Record<Ability, string> = {
@@ -57,13 +57,32 @@ export const profBonus = (c: Character) =>
   c.profBonusOverride ?? Math.ceil(Math.max(totalLevel(c), 1) / 4) + 1;
 
 /** Ability score including items (Belt of Giant Strength…). The stored score is the base. */
-export const abilityScore = (c: Character, a: Ability) => effectiveScore(c, a);
-export const abilityMod = (c: Character, a: Ability) => mod(effectiveScore(c, a));
+export const abilityScore = (c: Character, a: Ability) => {
+  // Wild Shape: the beast's Strength, Dexterity and Constitution replace yours (PHB).
+  const beast = wildShapeForm(c)?.monster;
+  if (beast && (a === "str" || a === "dex" || a === "con")) return beast.abilities[a];
+  return effectiveScore(c, a);
+};
+export const abilityMod = (c: Character, a: Ability) => mod(abilityScore(c, a));
+
+/** The Wild Shape form currently assumed, if any. */
+export function wildShapeForm(c: Character): Companion | undefined {
+  const id = c.wildShape?.companionId;
+  return id ? c.companions?.find((p) => p.id === id) : undefined;
+}
+
+/** Druids keep their own spellcasting in beast form only from 18th level (Beast Spells). */
+export const canCastInWildShape = (c: Character) =>
+  (c.classes.find((k) => k.name.toLowerCase() === "druid")?.level ?? 0) >= 18 || c.features.some((f) => /^beast spells$/i.test(f.name));
 /** Modifier from the stored score only (for level-up maths that shouldn't count items). */
 export const baseAbilityMod = (c: Character, a: Ability) => mod(c.abilities[a]);
 
-export const saveBonus = (c: Character, a: Ability) =>
-  abilityMod(c, a) + (c.saveProficiencies.includes(a) ? profBonus(c) : 0) + sumFor(c, "save", `save:${a}`);
+export const saveBonus = (c: Character, a: Ability) => {
+  const own = abilityMod(c, a) + (c.saveProficiencies.includes(a) ? profBonus(c) : 0) + sumFor(c, "save", `save:${a}`);
+  // In Wild Shape you use the better of your proficiency and the beast's.
+  const beast = wildShapeForm(c)?.monster?.saves[a];
+  return beast != null ? Math.max(own, beast) : own;
+};
 
 /** Half proficiency on an unproficient check: Jack of All Trades (round down) or Remarkable Athlete (round up). */
 export function unproficientBonus(c: Character, a: Ability): number {
@@ -77,7 +96,10 @@ export const skillBonus = (c: Character, skill: string) => {
   const s = SKILLS.find((x) => x.key === skill)!;
   const prof: ProfLevel = c.skills[skill] ?? 0;
   const profPart = prof ? Math.floor(prof * profBonus(c)) : unproficientBonus(c, s.ability);
-  return abilityMod(c, s.ability) + profPart + sumFor(c, "check", `skill:${skill}`);
+  const own = abilityMod(c, s.ability) + profPart + sumFor(c, "check", `skill:${skill}`);
+  const skills = wildShapeForm(c)?.monster?.skills;
+  const beast = skills?.[skill] ?? skills?.[skill.replace(/-/g, " ")];
+  return beast != null ? Math.max(own, beast) : own;
 };
 
 /** Raw ability check (no skill): ability mod + Jack of All Trades + check bonuses. */
@@ -90,13 +112,14 @@ export const initiative = (c: Character) =>
 
 /** Hit point maximum: the stored base plus Tough & co., item Constitution changes and exhaustion 4+. */
 export function hpMax(c: Character): number {
-  const conDiff = abilityMod(c, "con") - baseAbilityMod(c, "con");
+  // Items that change Constitution change HP; Wild Shape doesn't (the beast has its own HP).
+  const conDiff = mod(effectiveScore(c, "con")) - baseAbilityMod(c, "con");
   const max = c.hp.max + sumFor(c, "hp") + conDiff * totalLevel(c);
   return c.exhaustion >= 4 ? Math.floor(max / 2) : max;
 }
 
 export const hpMaxParts = (c: Character): Modifier[] => {
-  const conDiff = abilityMod(c, "con") - baseAbilityMod(c, "con");
+  const conDiff = mod(effectiveScore(c, "con")) - baseAbilityMod(c, "con");
   return [
     ...modifiersFor(c, "hp"),
     ...(conDiff ? [{ id: "con", target: "hp", value: conDiff * totalLevel(c), source: "Constitution change", kind: "item" as const }] : []),
@@ -115,6 +138,12 @@ export function carrying(c: Character) {
 
 /** Walking speed after items, features, heavy armor, encumbrance and exhaustion. */
 export function speedBreakdown(c: Character): { total: number; parts: string[] } {
+  const form = wildShapeForm(c);
+  if (form) {
+    const walk = form.monster?.speed.walk ?? (parseInt(form.speed, 10) || 0);
+    const other = Object.entries(form.monster?.speed ?? {}).filter(([k, v]) => k !== "walk" && v).map(([k, v]) => `${k} ${v}`);
+    return { total: walk, parts: [`${form.name} (Wild Shape) ${walk}`, ...other] };
+  }
   let total = c.speed;
   const parts = [`Base ${c.speed}`];
   for (const m of modifiersFor(c, "speed")) {
@@ -257,6 +286,11 @@ export interface AcBreakdown {
 
 /** AC from equipped armor and shield, Unarmored Defense, the Defense style and misc bonuses. */
 export function armorClassBreakdown(c: Character): AcBreakdown {
+  const form = wildShapeForm(c);
+  if (form) {
+    const note = form.monster?.acNote ? ` (${form.monster.acNote})` : "";
+    return { total: form.ac, parts: [`${form.name} (Wild Shape) ${form.ac}${note}`], stealthDisadvantage: false, tooHeavy: false };
+  }
   const dex = abilityMod(c, "dex");
   const equipped = c.equipment.filter((i) => i.equipped && i.data?.armor);
   const armor = equipped.find((i) => i.data!.armor!.type !== "shield");
@@ -298,7 +332,7 @@ export function armorClassBreakdown(c: Character): AcBreakdown {
   };
 }
 
-export const armorClass = (c: Character) => (c.acMode === "auto" ? armorClassBreakdown(c).total : c.armorClass);
+export const armorClass = (c: Character) => (c.acMode === "auto" || wildShapeForm(c) ? armorClassBreakdown(c).total : c.armorClass);
 
 /** Attunement slots in use (max 3). */
 export const attunedCount = (c: Character) => c.equipment.filter((i) => i.attuned).length;

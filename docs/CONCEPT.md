@@ -199,6 +199,20 @@ Monsters are a content type like the others. `server/src/content/monsters.ts` no
 
 Creatures live in `Character.companions` with a role (Wild Shape form, familiar, steed, companion, summon) and a snapshot of their stat block. `Character.wildShape` points at the assumed form; damage goes to the beast first and the excess carries over when it drops to 0 (`lib/extras.ts`).
 
+## Action economy and decisions
+
+`web/src/lib/economy.ts` decides what using something costs: spells from their casting time, features from their text ("as a bonus action", "use your reaction", "use your action to…", earliest mention wins) with a short list of known exceptions (Rage, Action Surge, the Moon druid's Wild Shape). `spendEconomy` marks the action, bonus action or reaction in the combat state, counts attacks inside one Attack action (Extra Attack, a beast's Multiattack), applies the bonus-action spell rule and logs a warning instead of blocking: the player stays in charge.
+
+Actions that need a follow-up choice return a `Decision` (`lib/featureUse.ts`). The sheet-wide `DecisionProvider` turns it into a dialog: Wild Shape asks which beast, Find Familiar and Find Steed ask which creature. Wild Shape is stored as `Character.wildShape` pointing at a creature, and `rules.ts` swaps in the beast's physical scores, AC, speed, saves and skills while it lasts. HP max stays yours; the HP box tracks the beast.
+
+## Loading content robustly
+
+Every upstream request has a timeout and one retry, and at most 8 run at once. The 5etools dataset tolerates missing files (they're listed on the Sources page), serves the previous copy while refreshing, and after a failed first load waits a minute before trying again. `searchWithWarnings` gives each provider 20 seconds; a slower one is reported in the `X-Content-Warnings` header and the picker shows the rest.
+
+## Books per character
+
+`Character.options.books` lists the allowed source labels. `BooksContext` carries them to every picker (`useBookFilter`), so the creator, level-up wizard and sheet all apply the same filter to character options. `/api/sources/books` lists the books that currently have content, with counts.
+
 ## Playing at the table
 
 | Need | Where |

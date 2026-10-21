@@ -10,6 +10,8 @@ import {
 } from "../lib/rules";
 import { ABILITIES, type Ability, type ContentDetail, type ContentSummary, type RuleOptions, type Selections } from "../lib/types";
 import { RuleOptionsEditor } from "../components/RuleOptions";
+import { BookPicker } from "../components/BookPicker";
+import { BooksContext, useBookFilter } from "../lib/books";
 import { ChoiceList, unfinishedChoices } from "../components/ChoicePicker";
 import { ContentBrowser, contentId } from "../components/ContentBrowser";
 import { NumberField, Section, Spinner, TextArea, TextField } from "../components/ui";
@@ -191,6 +193,7 @@ export default function CharacterCreator() {
   }
 
   return (
+    <BooksContext.Provider value={options.books?.length ? options.books : null}>
     <div className="mx-auto max-w-5xl space-y-5">
       <div>
         <h1 className="font-display text-3xl">Create a character</h1>
@@ -227,6 +230,10 @@ export default function CharacterCreator() {
                   </div>
                 )}
               </Card>
+            </div>
+            <div className="rounded-lg border border-ink-800 p-3">
+              <h3 className="mb-2 font-display text-lg text-accent-400">Which books are you using?</h3>
+              <BookPicker value={options.books ?? []} onChange={(books) => setOptions({ ...options, books })} />
             </div>
             <details className="rounded-lg border border-ink-800 p-3">
               <summary className="cursor-pointer text-sm text-ink-200">Optional rules <span className="text-ink-600">(Tasha's origins, feats, encumbrance, HP…) — changeable later from ⚙ Rules on the sheet</span></summary>
@@ -450,6 +457,7 @@ export default function CharacterCreator() {
         </div>
       </div>
     </div>
+    </BooksContext.Provider>
   );
 }
 
@@ -508,7 +516,9 @@ function ClassRowEditor({
   onChange: (r: ClassRow) => void;
   onRemove?: () => void;
 }) {
-  const { data } = useQuery({ queryKey: ["content", "class"], queryFn: () => api.search("class"), staleTime: 60_000 });
+  const { allowed } = useBookFilter();
+  const { data: all } = useQuery({ queryKey: ["content", "class"], queryFn: () => api.search("class"), staleTime: 60_000 });
+  const data = all?.filter((c) => allowed(c) || (row.cls && contentId(c) === contentId(row.cls)));
   const ok = meetsRequirements(scores, rules?.multiclass.requirements);
   return (
     <div className="rounded-lg border border-ink-800 bg-ink-850/50 p-3">

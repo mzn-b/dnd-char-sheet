@@ -42,7 +42,18 @@ export interface CombatState {
   myTurn: boolean;
   turnsTaken: number;
   initiative?: number;
-  economy: { action: boolean; bonus: boolean; reaction: boolean; movement: number };
+  economy: {
+    action: boolean;
+    bonus: boolean;
+    reaction: boolean;
+    movement: number;
+    /** Attacks made with this turn's Attack action (Extra Attack allows more). */
+    attacks?: number;
+    /** A bonus-action spell was cast this turn. */
+    bonusSpell?: boolean;
+    /** Level of the spell cast with the action this turn. */
+    actionSpellLevel?: number;
+  };
   effects: ActiveEffect[];
   log: { round: number; text: string }[];
 }

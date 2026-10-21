@@ -1,3 +1,5 @@
+import { ActionBadge } from "../ActionBadge";
+import { featureKind } from "../../lib/economy";
 import { classResources } from "../../lib/resources";
 import { formulaLabel, usesMax } from "../../lib/uses";
 import type { Character } from "../../lib/types";
@@ -20,7 +22,7 @@ export function ResourcesPanel({ c, update }: { c: Character; update: Update }) 
           return (
             <li key={r.id} className="flex flex-wrap items-center gap-2 text-sm">
               <span className="min-w-0 flex-1">
-                {r.name} <span className="text-xs text-ink-600">{r.reset === "short" ? "☾" : "☀"}{r.die ? ` · ${r.die}` : ""}</span>
+                <ActionBadge kind={featureKind(c, c.features.find((f) => f.name.toLowerCase() === r.name.toLowerCase()) ?? { name: r.name, description: "" })} /> {r.name} <span className="text-xs text-ink-600">{r.reset === "short" ? "☾" : "☀"}{r.die ? ` · ${r.die}` : ""}</span>
               </span>
               {r.max >= 99 ? (
                 <span className="text-xs text-emerald-400">unlimited</span>
@@ -42,7 +44,7 @@ export function ResourcesPanel({ c, update }: { c: Character; update: Update }) 
           return (
             <li key={f.id} className="flex items-center gap-2 text-sm">
               <span className="flex-1">
-                {f.name} <span className="text-xs text-ink-600">{f.uses!.reset === "short" ? "☾" : "☀"}{f.uses!.formula && typeof f.uses!.formula !== "number" ? ` · ${formulaLabel(f.uses!.formula)}` : ""}</span>
+                <ActionBadge kind={featureKind(c, f)} /> {f.name} <span className="text-xs text-ink-600">{f.uses!.reset === "short" ? "☾" : "☀"}{f.uses!.formula && typeof f.uses!.formula !== "number" ? ` · ${formulaLabel(f.uses!.formula)}` : ""}</span>
               </span>
               <Pips max={max} used={Math.min(f.uses!.used, max)} onChange={(u) => update((d) => void (d.features.find((x) => x.id === f.id)!.uses!.used = u))} />
             </li>

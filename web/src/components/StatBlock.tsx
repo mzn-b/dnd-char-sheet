@@ -5,12 +5,14 @@ import { ABILITIES, type MonsterData, type MonsterEntry } from "../lib/types";
 import { RollButton } from "./dice";
 import { RollList } from "./rolls";
 import { Markdown } from "./ui";
+import { ActionBadge } from "./ActionBadge";
+import type { ActionKind } from "../lib/economy";
 
 const speedText = (m: MonsterData) =>
   Object.entries(m.speed).map(([k, v]) => (k === "walk" ? `${v} ft.` : `${k} ${v} ft.`)).join(", ") + (m.speedNote ? ` (${m.speedNote})` : "");
 
 /** A monster stat block with clickable checks, saves, attacks and damage. */
-export function StatBlock({ m, name, compact }: { m: MonsterData; name: string; compact?: boolean }) {
+export function StatBlock({ m, name, compact, onUse }: { m: MonsterData; name: string; compact?: boolean; onUse?: UseHandler }) {
   return (
     <div className="space-y-2 text-sm">
       {!compact && <p className="italic text-ink-400">{m.size} {m.type}{m.alignment ? `, ${m.alignment}` : ""}</p>}
@@ -53,9 +55,9 @@ export function StatBlock({ m, name, compact }: { m: MonsterData; name: string; 
         <Line label="Challenge">{m.cr}</Line>
       </dl>
       <Entries list={m.traits} name={name} />
-      <Entries title="Actions" list={m.actions} name={name} />
-      <Entries title="Bonus Actions" list={m.bonusActions} name={name} />
-      <Entries title="Reactions" list={m.reactions} name={name} />
+      <Entries title="Actions" list={m.actions} name={name} kind="action" onUse={onUse} />
+      <Entries title="Bonus Actions" list={m.bonusActions} name={name} kind="bonus" onUse={onUse} />
+      <Entries title="Reactions" list={m.reactions} name={name} kind="reaction" onUse={onUse} />
       <Entries title="Legendary Actions" list={m.legendary} name={name} />
     </div>
   );
@@ -65,29 +67,35 @@ function Line({ label, children }: { label: string; children: React.ReactNode })
   return <div><dt className="inline font-semibold text-ink-200">{label} </dt><dd className="inline text-ink-400">{children}</dd></div>;
 }
 
-function Entries({ title, list, name }: { title?: string; list: MonsterEntry[]; name: string }) {
+/** Called when a creature's attack is rolled (so a Wild Shape form's attacks use your action). */
+export type UseHandler = (kind: ActionKind, entry: MonsterEntry) => void;
+
+function Entries({ title, list, name, kind, onUse }: { title?: string; list: MonsterEntry[]; name: string; kind?: ActionKind; onUse?: UseHandler }) {
   if (!list.length) return null;
   return (
     <div>
       {title && <h4 className="mb-1 border-b border-blood-500/30 font-display text-base text-blood-500">{title}</h4>}
       <div className="space-y-2">
-        {list.map((e, i) => <EntryRow key={i} e={e} name={name} />)}
+        {list.map((e, i) => <EntryRow key={i} e={e} name={name} kind={kind} onUse={onUse} />)}
       </div>
     </div>
   );
 }
 
 /** One trait/action, with its to-hit and damage as roll buttons. */
-export function EntryRow({ e, name }: { e: MonsterEntry; name: string }) {
+export function EntryRow({ e, name, kind, onUse }: { e: MonsterEntry; name: string; kind?: ActionKind; onUse?: UseHandler }) {
   const hit = e.text.match(/([+-]\d+) to hit/);
   const rolls = extractRolls(e.text);
   return (
     <div>
-      <Markdown text={e.name ? `**${e.name}.** ${e.text}` : e.text} />
+      <div className="flex items-start gap-1.5">
+        {kind && <span className="mt-1"><ActionBadge kind={/^multiattack$/i.test(e.name) ? "action" : kind} /></span>}
+        <div className="min-w-0 flex-1"><Markdown text={e.name ? `**${e.name}.** ${e.text}` : e.text} /></div>
+      </div>
       {(hit || rolls.length > 0) && (
         <div className="mt-0.5 flex flex-wrap items-start gap-2 pl-2">
           {hit && (
-            <RollButton expression={d20(Number(hit[1]))} label={`${name} ${e.name}: to hit`} kind="attack" className="rounded border border-accent-600/50 px-1.5 text-sm font-semibold text-accent-400">
+            <RollButton expression={d20(Number(hit[1]))} label={`${name} ${e.name}: to hit`} kind="attack" className="rounded border border-accent-600/50 px-1.5 text-sm font-semibold text-accent-400" onRoll={onUse && kind ? () => onUse(kind, e) : undefined}>
               {hit[1]} to hit
             </RollButton>
           )}

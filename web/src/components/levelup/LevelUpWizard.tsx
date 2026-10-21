@@ -1,3 +1,4 @@
+import { useBookFilter } from "../../lib/books";
 import { useMemo, useState } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../lib/api";
@@ -618,7 +619,8 @@ const spellListLabel = (rules: ClassRules, sub?: { spellcastingAbility: Ability 
 function ClassStep({ c, selected, onSelect }: { c: Character; selected: ContentRef | null; onSelect: (k: ContentRef) => void }) {
   const { data, isLoading } = useQuery({ queryKey: ["content", "class"], queryFn: () => api.search("class"), staleTime: 60_000 });
   const isSel = (k: ContentRef) => selected?.key === k.key && selected.source === k.source;
-  const others = (data ?? []).filter((k) => !c.classes.some((x) => x.key === k.key && x.source === k.source));
+  const { allowed } = useBookFilter();
+  const others = (data ?? []).filter((k) => allowed(k) && !c.classes.some((x) => x.key === k.key && x.source === k.source));
   return (
     <div className="space-y-4">
       {c.classes.length > 0 && (

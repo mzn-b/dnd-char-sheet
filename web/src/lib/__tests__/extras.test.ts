@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { newCharacter } from "../defaults";
-import { damageWildShape, fitsPreset, startWildShape, wildShapeLimits } from "../extras";
+import { damageWildShape, fitsPreset, wildShapeLimits } from "../extras";
+import { wildShapeInto } from "../featureUse";
 import type { ContentSummary } from "../types";
 
 const beast = (name: string, cr: number, movement: string[] = []): ContentSummary => ({ source: "srd", key: name, name, type: "monster", level: cr, creatureType: "beast", movement });
@@ -27,7 +28,7 @@ describe("extras", () => {
     c.hp = { max: 20, current: 20, temp: 0 };
     c.features.push({ id: "w", name: "Wild Shape", origin: "", kind: "class", description: "", uses: { max: 2, used: 0, reset: "short" } });
     c.companions = [{ id: "b", name: "Brown Bear", kind: "", ac: 11, hp: { max: 34, current: 5 }, speed: "40 ft", notes: "", role: "wildshape" }];
-    startWildShape(c, "b");
+    wildShapeInto(c, "b");
     expect(c.companions[0].hp.current).toBe(34);
     expect(c.features[0].uses!.used).toBe(1);
     expect(damageWildShape(c, 30)).toEqual({ reverted: false, carried: 0 });
