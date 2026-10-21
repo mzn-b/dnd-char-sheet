@@ -1,0 +1,146 @@
+import { useState } from "react";
+import { CONDITIONS, fmt, initiative } from "../../lib/rules";
+import type { Character } from "../../lib/types";
+import type { Update } from "../../lib/useCharacter";
+import { NumberField, Pips, Section } from "../ui";
+
+export function CombatPanel({ c, update }: { c: Character; update: Update }) {
+  const [amount, setAmount] = useState("");
+  const hpPct = c.hp.max ? Math.max(0, Math.min(100, (c.hp.current / c.hp.max) * 100)) : 0;
+  const hitDice = Object.entries(
+    c.classes.reduce<Record<string, number>>((acc, k) => ({ ...acc, [k.hitDie]: (acc[k.hitDie] ?? 0) + k.level }), {}),
+  );
+
+  const applyHp = (kind: "damage" | "heal" | "temp") => {
+    const n = Math.abs(parseInt(amount, 10));
+    if (!n) return;
+    update((d) => {
+      if (kind === "temp") d.hp.temp = Math.max(d.hp.temp, n);
+      else if (kind === "heal") {
+        d.hp.current = Math.min(d.hp.max, Math.max(0, d.hp.current) + n);
+        d.deathSaves = { successes: 0, failures: 0 };
+      } else {
+        const absorbed = Math.min(d.hp.temp, n);
+        d.hp.temp -= absorbed;
+        d.hp.current = Math.max(0, d.hp.current - (n - absorbed));
+      }
+    });
+    setAmount("");
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-2">
+        <Stat label="Armor Class">
+          <NumberField className="field text-center font-display text-3xl" value={c.armorClass} onChange={(n) => update((d) => void (d.armorClass = n))} />
+        </Stat>
+        <Stat label="Initiative" hint={`Dex ${fmt(initiative(c) - c.initiativeBonus)} + misc`}>
+          <div className="flex items-baseline justify-center gap-1">
+            <span className="font-display text-3xl">{fmt(initiative(c))}</span>
+          </div>
+          <label className="flex items-center justify-center gap-1 text-[10px] text-ink-600">
+            misc
+            <NumberField className="field w-8 py-0 text-center text-xs" value={c.initiativeBonus} onChange={(n) => update((d) => void (d.initiativeBonus = n))} />
+          </label>
+        </Stat>
+        <Stat label="Speed">
+          <div className="flex items-baseline justify-center">
+            <NumberField className="field w-16 text-center font-display text-3xl" value={c.speed} onChange={(n) => update((d) => void (d.speed = n))} />
+            <span className="text-xs text-ink-400">ft</span>
+          </div>
+        </Stat>
+      </div>
+
+      <Section title="Hit Points">
+        <div className="flex items-end justify-between gap-3">
+          <div className="flex items-baseline gap-1">
+            <NumberField
+              className="field w-20 text-right font-display text-4xl"
+              value={c.hp.current}
+              onChange={(n) => update((d) => void (d.hp.current = n))}
+              aria-label="Current HP"
+            />
+            <span className="text-2xl text-ink-600">/</span>
+            <NumberField className="field w-16 font-display text-2xl text-ink-400" value={c.hp.max} min={0} onChange={(n) => update((d) => void (d.hp.max = n))} aria-label="Max HP" />
+          </div>
+          <div className="text-right">
+            <span className="label">Temp</span>
+            <NumberField className="field w-14 text-right font-display text-2xl text-arcane-400" value={c.hp.temp} min={0} onChange={(n) => update((d) => void (d.hp.temp = n))} />
+          </div>
+        </div>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-ink-800">
+          <div className={`h-full transition-all ${hpPct > 50 ? "bg-emerald-500" : hpPct > 20 ? "bg-accent-500" : "bg-blood-500"}`} style={{ width: `${hpPct}%` }} />
+        </div>
+        <div className="mt-3 flex gap-2">
+          <input
+            className="field-boxed w-20 text-center"
+            inputMode="numeric"
+            placeholder="0"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))}
+            onKeyDown={(e) => e.key === "Enter" && applyHp("damage")}
+          />
+          <button className="btn flex-1 hover:border-blood-500 hover:text-blood-500" onClick={() => applyHp("damage")}>Damage</button>
+          <button className="btn flex-1 hover:border-emerald-500 hover:text-emerald-400" onClick={() => applyHp("heal")}>Heal</button>
+          <button className="btn flex-1 hover:border-arcane-500 hover:text-arcane-400" onClick={() => applyHp("temp")}>Temp</button>
+        </div>
+      </Section>
+
+      <div className="grid grid-cols-2 gap-2">
+        <Section title="Hit Dice">
+          {hitDice.length === 0 && <p className="text-xs text-ink-600">Gained with class levels</p>}
+          {hitDice.map(([die, total]) => (
+            <div key={die} className="flex items-center justify-between gap-2 text-sm">
+              <span className="font-semibold">d{die}</span>
+              <span className="text-xs text-ink-400">{total - (c.hitDiceUsed[die] ?? 0)}/{total} left</span>
+              <Pips max={total} used={c.hitDiceUsed[die] ?? 0} color="bg-ink-600" onChange={(u) => update((d) => void (d.hitDiceUsed[die] = u))} />
+            </div>
+          ))}
+        </Section>
+        <Section title="Death Saves">
+          <div className="space-y-1 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-ink-400">Successes</span>
+              <Pips max={3} used={c.deathSaves.successes} color="bg-emerald-500" onChange={(u) => update((d) => void (d.deathSaves.successes = u))} />
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-ink-400">Failures</span>
+              <Pips max={3} used={c.deathSaves.failures} color="bg-blood-500" onChange={(u) => update((d) => void (d.deathSaves.failures = u))} />
+            </div>
+          </div>
+        </Section>
+      </div>
+
+      <Section title="Conditions" action={
+        <label className="flex items-center gap-1 text-xs text-ink-400">
+          Exhaustion
+          <NumberField className="field w-8 text-center" value={c.exhaustion} min={0} max={6} onChange={(n) => update((d) => void (d.exhaustion = n))} />
+        </label>
+      }>
+        <div className="flex flex-wrap gap-1">
+          {CONDITIONS.map((cond) => {
+            const on = c.conditions.includes(cond);
+            return (
+              <button
+                key={cond}
+                className={`chip transition ${on ? "border-blood-500 bg-blood-500/15 text-blood-500" : "hover:border-ink-600"}`}
+                onClick={() => update((d) => void (d.conditions = on ? d.conditions.filter((x) => x !== cond) : [...d.conditions, cond]))}
+              >
+                {cond}
+              </button>
+            );
+          })}
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+function Stat({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="panel flex flex-col items-center justify-center p-2 text-center" title={hint}>
+      {children}
+      <span className="label mt-0.5">{label}</span>
+    </div>
+  );
+}

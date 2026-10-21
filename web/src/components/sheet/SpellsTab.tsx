@@ -1,0 +1,201 @@
+import { useMemo, useState } from "react";
+import { useQueries } from "@tanstack/react-query";
+import { api } from "../../lib/api";
+import { uid } from "../../lib/defaults";
+import { ABILITY_NAMES, fmt, maxPrepared, spellAttack, spellLevelLabel, spellModel, spellSaveDC } from "../../lib/rules";
+import type { Character, ClassEntry, ClassRules, ContentSummary, SpellEntry } from "../../lib/types";
+import type { Update } from "../../lib/useCharacter";
+import { ContentDetailView, ContentPicker, contentId } from "../ContentBrowser";
+import { Modal, NumberField, Pips, Section } from "../ui";
+
+/** Highest spell level a class can cast at its current level, per its own table. */
+export function maxSpellLevel(rules: ClassRules | undefined, level: number): number {
+  const slots = rules?.levels.find((l) => l.level === level)?.spellcasting?.slots;
+  if (!slots) return 9;
+  const highest = slots.reduce((hi, n, i) => (n > 0 ? i + 1 : hi), 0);
+  return highest;
+}
+
+export function useClassRules(classes: ClassEntry[]) {
+  const results = useQueries({
+    queries: classes.map((k) => ({
+      queryKey: ["classRules", k.source, k.key],
+      queryFn: () => api.classRules(k.source, k.key),
+      staleTime: Infinity,
+    })),
+  });
+  return Object.fromEntries(classes.map((k, i) => [k.key, results[i].data])) as Record<string, ClassRules | undefined>;
+}
+
+export function SpellsTab({ c, update }: { c: Character; update: Update }) {
+  const casters = c.classes.filter((k) => k.spellcastingAbility);
+  const rules = useClassRules(casters);
+  const [adding, setAdding] = useState<{ cls?: ClassEntry } | null>(null);
+  const [viewing, setViewing] = useState<SpellEntry | null>(null);
+  const owned = useMemo(() => new Set(c.spellcasting.spells.map((s) => contentId(s.ref))), [c.spellcasting.spells]);
+
+  const byLevel = useMemo(() => {
+    const groups: Record<number, SpellEntry[]> = {};
+    for (const s of [...c.spellcasting.spells].sort((a, b) => a.ref.name.localeCompare(b.ref.name))) (groups[s.level] ??= []).push(s);
+    return groups;
+  }, [c.spellcasting.spells]);
+
+  const addSpells = (picked: ContentSummary[], cls?: ClassEntry) => {
+    update((d) => {
+      for (const p of picked) {
+        d.spellcasting.spells.push({
+          id: uid(),
+          ref: { source: p.source, key: p.key, name: p.name },
+          level: p.level ?? 0,
+          classKey: cls?.key,
+          // Cantrips and spells of "known" casters are always ready to cast.
+          prepared: (p.level ?? 0) === 0 || !cls || spellModel(cls.key) === "known",
+          alwaysPrepared: false,
+          notes: "",
+        });
+      }
+    });
+    setAdding(null);
+  };
+
+  const editSpell = (id: string, patch: Partial<SpellEntry>) =>
+    update((d) => void Object.assign(d.spellcasting.spells.find((s) => s.id === id)!, patch));
+
+  const slotLevels = c.spellcasting.slots.map((s, i) => ({ ...s, level: i + 1 }));
+
+  return (
+    <div className="space-y-4">
+      {casters.length === 0 && (
+        <div className="panel text-sm text-ink-400">
+          None of your classes cast spells, but you can still track spells from feats, items or racial traits.
+        </div>
+      )}
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {casters.map((k) => {
+          const a = k.spellcastingAbility!;
+          const lvl = rules[k.key]?.levels.find((l) => l.level === k.level)?.spellcasting;
+          const mine = c.spellcasting.spells.filter((s) => s.classKey === k.key);
+          const cantrips = mine.filter((s) => s.level === 0).length;
+          const leveled = mine.filter((s) => s.level > 0);
+          const prepared = leveled.filter((s) => s.prepared && !s.alwaysPrepared).length;
+          const model = spellModel(k.key);
+          const prepLimit = maxPrepared(c, k);
+          return (
+            <div key={k.key} className="panel space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-display text-lg">{k.name}</h3>
+                <span className="chip">{ABILITY_NAMES[a]}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-center">
+                <div className="rounded-lg bg-ink-850 p-2"><div className="font-display text-2xl">{spellSaveDC(c, a)}</div><div className="label">Save DC</div></div>
+                <div className="rounded-lg bg-ink-850 p-2"><div className="font-display text-2xl">{fmt(spellAttack(c, a))}</div><div className="label">Attack</div></div>
+              </div>
+              <ul className="space-y-1 text-sm">
+                {lvl && <Limit label="Cantrips known" have={cantrips} max={lvl.cantripsKnown} />}
+                {model === "known" && lvl?.spellsKnown != null && <Limit label="Spells known" have={leveled.length} max={lvl.spellsKnown} />}
+                {model === "spellbook" && <li className="flex justify-between"><span className="text-ink-400">Spells in spellbook</span><span>{leveled.length}</span></li>}
+                {prepLimit != null && <Limit label="Prepared today" have={prepared} max={prepLimit} />}
+              </ul>
+              <button className="btn w-full" onClick={() => setAdding({ cls: k })}>
+                {model === "prepared" ? "Add spells to your list" : model === "spellbook" ? "Add to spellbook" : "Learn / swap spells"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      <Section title="Spell Slots" action={<span className="text-[10px] text-ink-600">click pips to spend · edit totals on the right</span>}>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {slotLevels.map((s) => (
+            <div key={s.level} className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 ${s.max ? "bg-ink-850" : "opacity-50"}`}>
+              <span className="w-12 text-sm font-semibold">{spellLevelLabel(s.level).replace(" level", "")}</span>
+              <Pips max={s.max} used={s.used} color="bg-arcane-500" onChange={(u) => update((d) => void (d.spellcasting.slots[s.level - 1].used = u))} />
+              <NumberField
+                className="field ml-auto w-8 text-center text-xs text-ink-400"
+                value={s.max}
+                min={0}
+                max={9}
+                title="Total slots"
+                onChange={(n) => update((d) => void (d.spellcasting.slots[s.level - 1] = { max: n, used: Math.min(d.spellcasting.slots[s.level - 1].used, n) }))}
+              />
+            </div>
+          ))}
+          {c.spellcasting.pactSlots.max > 0 && (
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-arcane-500/40 bg-ink-850 px-2 py-1.5">
+              <span className="text-sm font-semibold">Pact ({spellLevelLabel(c.spellcasting.pactSlots.level).replace(" level", "")})</span>
+              <Pips max={c.spellcasting.pactSlots.max} used={c.spellcasting.pactSlots.used} color="bg-arcane-400" onChange={(u) => update((d) => void (d.spellcasting.pactSlots.used = u))} />
+            </div>
+          )}
+        </div>
+      </Section>
+
+      <Section title="Spells" action={<button className="btn-ghost px-2 py-0.5 text-xs" onClick={() => setAdding({})}>+ Spell from another source</button>}>
+        {c.spellcasting.spells.length === 0 && <p className="text-sm text-ink-600">No spells yet.</p>}
+        <div className="space-y-4">
+          {Object.entries(byLevel).map(([level, spells]) => (
+            <div key={level}>
+              <h4 className="mb-1 border-b border-ink-800 pb-1 font-display text-sm text-accent-400">{spellLevelLabel(Number(level))}</h4>
+              <ul>
+                {spells.map((s) => {
+                  const cls = c.classes.find((k) => k.key === s.classKey);
+                  const needsPrep = s.level > 0 && cls && spellModel(cls.key) !== "known";
+                  return (
+                    <li key={s.id} className="group flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-ink-850">
+                      {needsPrep ? (
+                        <button
+                          title={s.alwaysPrepared ? "Always prepared" : s.prepared ? "Prepared" : "Not prepared"}
+                          className={`h-3.5 w-3.5 shrink-0 rounded-full border ${s.alwaysPrepared ? "border-arcane-400 bg-arcane-400" : s.prepared ? "border-accent-500 bg-accent-500" : "border-ink-600"}`}
+                          onClick={() => !s.alwaysPrepared && editSpell(s.id, { prepared: !s.prepared })}
+                        />
+                      ) : (
+                        <span className="h-3.5 w-3.5 shrink-0 rounded-full bg-ink-700" title="Always available" />
+                      )}
+                      <button className="flex-1 truncate text-left hover:text-accent-400" onClick={() => setViewing(s)}>{s.ref.name}</button>
+                      {s.ref.source === "homebrew" && <span className="chip border-fuchsia-800 text-fuchsia-300">HB</span>}
+                      <span className="text-xs text-ink-600">{cls?.name ?? "Other"}</span>
+                      <button className="btn-ghost px-1.5 py-0 text-xs opacity-0 hover:text-blood-500 group-hover:opacity-100" title="Remove" onClick={() => update((d) => void (d.spellcasting.spells = d.spellcasting.spells.filter((x) => x.id !== s.id)))}>✕</button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      {adding && (
+        <ContentPicker
+          title={adding.cls ? `${adding.cls.name} spells` : "Add spells"}
+          type="spell"
+          classLabel={adding.cls?.name}
+          filters={adding.cls ? { class: adding.cls.key, maxLevel: maxSpellLevel(rules[adding.cls.key], adding.cls.level) } : {}}
+          disabledIds={owned}
+          onClose={() => setAdding(null)}
+          onConfirm={(p) => addSpells(p, adding.cls)}
+        />
+      )}
+      {viewing && (
+        <Modal title={viewing.ref.name} onClose={() => setViewing(null)}>
+          <ContentDetailView type="spell" item={viewing.ref} />
+          <label className="mt-4 flex items-center gap-2 text-sm">
+            <input type="checkbox" className="accent-arcane-500" checked={viewing.alwaysPrepared} onChange={(e) => { editSpell(viewing.id, { alwaysPrepared: e.target.checked, prepared: true }); setViewing({ ...viewing, alwaysPrepared: e.target.checked }); }} />
+            Always prepared (domain, oath or feature spell; doesn't count against your limit)
+          </label>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function Limit({ label, have, max }: { label: string; have: number; max: number }) {
+  const state = have > max ? "text-blood-500" : have < max ? "text-accent-400" : "text-emerald-400";
+  return (
+    <li className="flex justify-between">
+      <span className="text-ink-400">{label}</span>
+      <span className={state} title={have > max ? "Over the limit (allowed, but check with your DM)" : have < max ? "You can choose more" : "Full"}>
+        {have} / {max}
+      </span>
+    </li>
+  );
+}
