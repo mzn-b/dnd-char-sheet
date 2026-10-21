@@ -1,5 +1,6 @@
 import { activeModifiers } from "./modifiers";
 import { ABILITIES, type Ability, type Character } from "./types";
+import { featureParts } from "./featureSections";
 
 /** A short reminder shown on an ability: what changes or replaces it for this build. */
 export interface AbilityNote {
@@ -32,24 +33,20 @@ export function abilityNotes(c: Character): Record<Ability, AbilityNote[]> {
     if (target) add(target, { short: `+${m.note ?? m.value} checks`, text: `${m.source}: +${m.value} to ${AB(target)} checks${m.note ? ` (your ${m.note} modifier)` : ""}, already included`, source: m.source });
   }
 
-  for (const f of c.features) {
-    for (const item of [f, ...(f.subfeatures ?? [])]) {
-      const text = item.description ?? "";
-      const instead = sentenceWith(text, INSTEAD);
-      if (instead) {
-        const m = instead.match(INSTEAD)!;
-        const use = NAMES[m[1].toLowerCase()];
-        for (const old of [m[2], m[3]].filter(Boolean).map((x) => NAMES[x.toLowerCase()])) {
-          add(old, { short: `${AB(use)} instead`, text: `${item.name}: ${instead}`, source: item.name });
-        }
+  // Features, chosen options and feature sections ("Otherworldly Glamour" inside "Fey Wanderer").
+  for (const part of featureParts(c)) {
+    const instead = sentenceWith(part.text, INSTEAD);
+    if (instead) {
+      const m = instead.match(INSTEAD)!;
+      const use = NAMES[m[1].toLowerCase()];
+      for (const old of [m[2], m[3]].filter(Boolean).map((x) => NAMES[x.toLowerCase()])) {
+        add(old, { short: `${AB(use)} instead`, text: `${part.name}: ${instead}`, source: part.name });
       }
-      const bonus = sentenceWith(text, CHECK_BONUS);
-      if (bonus) {
-        const m = bonus.match(CHECK_BONUS)!;
-        const target = NAMES[m[1].toLowerCase()];
-        const from = NAMES[m[2].toLowerCase()];
-        add(target, { short: `+${AB(from)} checks`, text: `${item.name}: ${bonus}`, source: item.name });
-      }
+    }
+    const bonus = sentenceWith(part.text, CHECK_BONUS);
+    if (bonus) {
+      const m = bonus.match(CHECK_BONUS)!;
+      add(NAMES[m[1].toLowerCase()], { short: `+${AB(NAMES[m[2].toLowerCase()])} checks`, text: `${part.name}: ${bonus}`, source: part.name });
     }
   }
 

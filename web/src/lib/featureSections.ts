@@ -1,0 +1,35 @@
+import type { Character, Feature } from "./types";
+
+/** A named part of a feature: the feature itself, or a "**Name.**" section inside its text. */
+export interface FeaturePart {
+  name: string;
+  text: string;
+  feature: Feature;
+}
+
+/**
+ * Many subclasses deliver several features as one entry: Fey Wanderer's 3rd-level feature contains
+ * "**Dreadful Strikes.**", "**Fey Wanderer Magic.**" and "**Otherworldly Glamour.**". Rules that look
+ * for a feature by name need these sections as parts of their own.
+ */
+const FEATURE_MARK = /^\*?\s*\d+(?:st|nd|rd|th)-level [^*\n]*feature\b/i;
+
+export function featureSections(f: Pick<Feature, "name" | "description">): { name: string; text: string }[] {
+  const text = f.description ?? "";
+  const heading = /(?:^|\n)\*\*([^*\n]{2,60}?)\.\*\*/g;
+  const marks = [...text.matchAll(heading)].map((m) => ({ name: m[1].trim(), start: m.index! + m[0].length, at: m.index! }));
+  const sections = marks.map((m, i) => ({ name: m.name, text: text.slice(m.start, i + 1 < marks.length ? marks[i + 1].at : undefined).trim() }));
+  // Only sections marked as features ("*3rd-level Fey Wanderer feature*"); option lists such as
+  // Fighting Style's **Archery.** / **Defense.** are choices, not features you have.
+  const features = sections.filter((x) => FEATURE_MARK.test(x.text));
+  if (!features.length) return [{ name: f.name, text }];
+  return [{ name: f.name, text: text.slice(0, marks[0].at) }, ...features];
+}
+
+/** Every feature, chosen option and feature section on the character, by name. */
+export function featureParts(c: Character): FeaturePart[] {
+  return c.features.flatMap((f) => [
+    ...featureSections(f).map((s) => ({ ...s, feature: f })),
+    ...(f.subfeatures ?? []).map((s) => ({ name: s.name, text: s.description ?? "", feature: f })),
+  ]);
+}

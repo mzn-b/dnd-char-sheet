@@ -3,6 +3,7 @@ import { describeRoll, extractRolls, resolveRoll } from "./rollText";
 import { classResources } from "./resources";
 import { CONDITION_TEXT, abilityMod, totalLevel } from "./rules";
 import type { Character, ContentDetail, SpellEntry } from "./types";
+import { featureParts } from "./featureSections";
 
 export type ReminderWhen = "turnStart" | "attack" | "hit" | "damaged" | "turnEnd" | "always";
 
@@ -343,27 +344,26 @@ export function reminders(c: Character, spellDetails: Record<string, ContentDeta
   const out: Reminder[] = [];
   for (const e of c.combat?.effects ?? []) for (const r of e.reminders) out.push({ ...r, source: e.name });
   const handled = new Set<string>();
+  // Features, chosen options and the feature sections inside them (Dreadful Strikes inside "Fey Wanderer").
+  const parts = featureParts(c);
   for (const p of PASSIVES) {
-    const f = c.features.find((x) => p.match.test(x.name) || x.subfeatures?.some((s) => p.match.test(s.name)));
-    if (f) {
-      out.push({ when: p.when, text: p.text(c), source: f.name });
-      handled.add(f.name.toLowerCase());
-      for (const sub of f.subfeatures ?? []) if (p.match.test(sub.name)) handled.add(sub.name.toLowerCase());
+    const part = parts.find((x) => p.match.test(x.name));
+    if (part) {
+      out.push({ when: p.when, text: p.text(c), source: part.name });
+      handled.add(part.name.toLowerCase());
     }
   }
-  // Every other feature, feat or chosen option whose text names a trigger ("when you hit…", "at the start of your turn…").
+  // Every other one whose text names a trigger ("when you hit…", "at the start of your turn…").
   const effectNames = new Set((c.combat?.effects ?? []).map((e) => e.name.toLowerCase()));
-  for (const f of c.features) {
-    for (const item of [f, ...(f.subfeatures ?? [])]) {
-      const name = item.name.toLowerCase();
-      if (handled.has(name) || effectNames.has(name) || EFFECTS.some((e) => e.match.test(item.name))) continue;
-      for (const t of TRIGGERS) {
-        const sentence = triggerSentence(item.description ?? "", t.re);
-        if (sentence) {
-          out.push({ when: t.when, text: `${item.name}: ${sentence}`, source: item.name });
-          handled.add(name);
-          break;
-        }
+  for (const part of parts) {
+    const name = part.name.toLowerCase();
+    if (handled.has(name) || effectNames.has(name) || EFFECTS.some((e) => e.match.test(part.name))) continue;
+    for (const t of TRIGGERS) {
+      const sentence = triggerSentence(part.text, t.re);
+      if (sentence) {
+        out.push({ when: t.when, text: `${part.name}: ${sentence}`, source: part.name });
+        handled.add(name);
+        break;
       }
     }
   }

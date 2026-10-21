@@ -1,4 +1,5 @@
 import { ABILITIES, type Ability, type Attack, type Character, type Item } from "./types";
+import { featureParts } from "./featureSections";
 
 /**
  * Automatic bonuses from equipped magic items, feats and class/race features, plus the
@@ -79,13 +80,9 @@ function itemModifiers(c: Character): Modifier[] {
 }
 
 /** Feature names (feats, class/race features, chosen options) on the sheet, lower-cased. */
+/** Names of features, chosen options and feature sections ("Otherworldly Glamour" inside "Fey Wanderer"). */
 function featureNames(c: Character): Set<string> {
-  const names = new Set<string>();
-  for (const f of c.features) {
-    names.add(f.name.toLowerCase().trim());
-    for (const s of f.subfeatures ?? []) names.add(s.name.toLowerCase().trim());
-  }
-  return names;
+  return new Set(featureParts(c).map((p) => p.name.toLowerCase().trim()));
 }
 
 const has = (names: Set<string>, ...options: string[]) => options.some((o) => names.has(o));
