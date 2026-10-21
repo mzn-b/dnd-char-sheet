@@ -1,3 +1,4 @@
+import { takeSnapshot } from "../../lib/levelDown";
 import { useBookFilter } from "../../lib/books";
 import { useMemo, useState } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -201,6 +202,8 @@ export function LevelUpWizard({
       const summary: string[] = [];
       let snapshot: Character | null = null;
       update((d) => {
+        // The build before this level, so "Level down" can undo it exactly.
+        const buildBefore = takeSnapshot(d);
         // Class & level
         let entry = d.classes.find((k) => k.key === rules.index && k.source === rules.source);
         if (!entry) {
@@ -287,7 +290,7 @@ export function LevelUpWizard({
 
         Object.assign(d.spellcasting, recomputeSlots(d.classes, entry, plan.spellcasting, d.spellcasting));
 
-        d.levelHistory.push({ classKey: rules.index, className: rules.name, level: plan.newLevel, hpGained: hpGain, summary, at: new Date().toISOString() });
+        d.levelHistory.push({ classKey: rules.index, className: rules.name, level: plan.newLevel, hpGained: hpGain, summary, at: new Date().toISOString(), snapshot: buildBefore });
         onApplied?.(d);
         snapshot = d;
       });

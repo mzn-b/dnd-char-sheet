@@ -310,7 +310,25 @@ export interface LevelRecord {
   hpGained: number;
   summary: string[];
   at: string;
+  /** The build just before this level, so it can be undone exactly (levels gained since this existed). */
+  snapshot?: BuildSnapshot;
 }
+
+/** The parts of a character a level-up changes, saved just before it so it can be undone exactly. */
+export interface BuildSnapshot {
+  classes: Character["classes"];
+  abilities: Character["abilities"];
+  saveProficiencies: Character["saveProficiencies"];
+  skills: Character["skills"];
+  proficienciesAndLanguages: string;
+  features: Character["features"];
+  speed: number;
+  hpMax: number;
+  spells: Character["spellcasting"]["spells"];
+  slotMax: number[];
+  pact: { max: number; level: number };
+}
+
 
 export interface Character {
   id?: string;

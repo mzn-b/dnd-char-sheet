@@ -7,6 +7,7 @@ import { ContentApplyDialog } from "../ChoicePicker";
 import { Modal, NumberField, TextField } from "../ui";
 import { RuleOptionsEditor } from "../RuleOptions";
 import { BookPicker } from "../BookPicker";
+import { LevelDownDialog } from "../levelup/LevelDownDialog";
 
 export function SheetHeader({
   c, update, saveState, onLevelUp, restButtons,
@@ -14,6 +15,7 @@ export function SheetHeader({
   const [picking, setPicking] = useState<"race" | "background" | null>(null);
   const [editingClasses, setEditingClasses] = useState(false);
   const [editingRules, setEditingRules] = useState(false);
+  const [levelingDown, setLevelingDown] = useState(false);
   const level = totalLevel(c);
   const milestone = c.progression === "milestone";
   const [xpGain, setXpGain] = useState("");
@@ -90,6 +92,9 @@ export function SheetHeader({
         <div className="flex flex-wrap justify-end gap-2">
           {restButtons}
           <button className="btn" title="Optional rules for this character" onClick={() => setEditingRules(true)}>⚙ Rules</button>
+          {level > 1 && (
+            <button className="btn" title="Undo the most recent level-up" onClick={() => setLevelingDown(true)}>▼ Level down</button>
+          )}
           <button className={`btn-primary ${canLevel ? "animate-pulse" : ""}`} onClick={onLevelUp}>
             {level === 0 ? "Choose a class" : "▲ Level up"}
           </button>
@@ -99,6 +104,7 @@ export function SheetHeader({
         </span>
       </div>
 
+      {levelingDown && <LevelDownDialog c={c} update={update} onClose={() => setLevelingDown(false)} />}
       {editingRules && (
         <Modal title="Optional rules" onClose={() => setEditingRules(false)} footer={<button className="btn-primary" onClick={() => setEditingRules(false)}>Done</button>}>
           <RuleOptionsEditor value={c.options ?? {}} onChange={(v) => update((d) => void (d.options = v))} />
