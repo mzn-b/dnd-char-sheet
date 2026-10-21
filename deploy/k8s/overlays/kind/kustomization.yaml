@@ -13,4 +13,4 @@ components:
 images:
   - name: ghcr.io/mzn-b/dnd-char-sheet
     # Updated by the "Container image" workflow on every push to the default branch.
-    newTag: sha-4e9bb06
+    newTag: sha-3860719
