@@ -1,3 +1,4 @@
+import { uid } from "./defaults";
 /** Dice expressions like "1d20+5", "2d6 + 3", "8d6", "1d8+1d6-1". */
 
 export interface DieResult {
@@ -64,7 +65,7 @@ export function roll(expression: string, opts: { label?: string; mode?: RollMode
     }
   }
   return {
-    id: crypto.randomUUID(),
+    id: uid(),
     label: opts.label ?? expression,
     expression,
     total,

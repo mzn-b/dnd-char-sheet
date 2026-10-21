@@ -1,3 +1,4 @@
+import { uid } from "../lib/defaults";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
@@ -306,12 +307,12 @@ function ChoicesEditor({ choices, onChange }: { choices: Choice[]; onChange: (c:
                   <button className="btn-ghost px-2" onClick={() => edit(i, { options: ch.options.filter((_, j) => j !== oi) })}>✕</button>
                 </div>
               ))}
-              <button className="btn text-xs" onClick={() => edit(i, { options: [...ch.options, { key: crypto.randomUUID(), name: "" }] })}>+ Option</button>
+              <button className="btn text-xs" onClick={() => edit(i, { options: [...ch.options, { key: uid(), name: "" }] })}>+ Option</button>
             </div>
           )}
         </div>
       ))}
-      <button className="btn text-xs" onClick={() => onChange([...choices, { id: crypto.randomUUID(), label: "Choose one", kind: "feature", count: 1, options: [] }])}>+ Choice</button>
+      <button className="btn text-xs" onClick={() => onChange([...choices, { id: uid(), label: "Choose one", kind: "feature", count: 1, options: [] }])}>+ Choice</button>
     </div>
   );
 }
