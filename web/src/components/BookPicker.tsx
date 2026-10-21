@@ -7,19 +7,18 @@ import { Spinner } from "./ui";
 const XGE = "Xanathar's Guide to Everything";
 const TCE = "Tasha's Cauldron of Everything";
 
+const DMG = "Dungeon Master's Guide (2014)";
+
 /** "Core": the 2014 core books plus the supplements and setting books usually allowed at the table. */
 const CORE = [
-  "Acquisitions Incorporated", "Astarion's Book of Hungers", "Astral Adventurer's Guide", "Dungeon Master's Guide (2014)",
-  "Eberron: Forge of the Artificer", "Eberron: Rising from the Last War", "Elemental Evil Player's Companion",
-  "Explorer's Guide to Wildemount", "Fizban's Treasury of Dragons", "Guildmasters' Guide to Ravnica", "Lorwyn: First Light",
-  "Mordenkainen Presents: Monsters of the Multiverse", "Mordenkainen's Tome of Foes", "Mythic Odysseys of Theros",
-  PHB, "Sword Coast Adventurer's Guide", TCE, "Van Richten's Guide to Ravenloft", "Volo's Guide to Monsters",
+  "Acquisitions Incorporated", "Astral Adventurer's Guide", DMG, "Eberron: Rising from the Last War",
+  "Elemental Evil Player's Companion", "Explorer's Guide to Wildemount", "Fizban's Treasury of Dragons",
+  "Guildmasters' Guide to Ravnica", "Mordenkainen Presents: Monsters of the Multiverse", "Mordenkainen's Tome of Foes",
+  "Mythic Odysseys of Theros", PHB, "Sword Coast Adventurer's Guide", TCE, "Van Richten's Guide to Ravenloft",
+  "Volo's Guide to Monsters", XGE,
 ];
-/** "Vanilla": a minimal set built around the 2024 Player's Handbook. */
-const VANILLA = [
-  "Astarion's Book of Hungers", "Fizban's Treasury of Dragons", "Mordenkainen Presents: Monsters of the Multiverse",
-  "Player's Handbook (2024)", "Sword Coast Adventurer's Guide", TCE,
-];
+/** "Vanilla": a minimal set around the 2014 Player's Handbook and Dungeon Master's Guide. */
+const VANILLA = [DMG, "Fizban's Treasury of Dragons", "Mordenkainen Presents: Monsters of the Multiverse", PHB, "Sword Coast Adventurer's Guide", TCE];
 
 const PRESETS: { label: string; books: string[]; title?: string }[] = [
   { label: "All books", books: [] },
