@@ -113,7 +113,7 @@ Git is the source of truth: the image tag running in the cluster is whatever the
 | --- | --- |
 | `deploy/k8s/base/` | The app: Deployment (probes `/api/ready` and `/api/health`, non-root, read-only filesystem) and Service. Reads `DATABASE_URL` from the Secret `dnd-db`, key `url`. |
 | `deploy/k8s/components/postgres/` | Optional Kustomize component: a Postgres 16 StatefulSet with a 2 GiB volume, its Service and the `dnd-db` Secret. |
-| `deploy/k8s/overlays/kind/` | What Argo CD deploys: base + postgres component, namespace `dnd`, image tag. The Service is ClusterIP: open it with `kubectl port-forward`. |
+| `deploy/k8s/overlays/kind/` | What Argo CD deploys: base + postgres component, namespace `dnd`, image tag, and a Traefik `IngressRoute` for http://dnd.mazen.home. |
 | `deploy/k8s/overlays/kind-nodeport/` | Optional: the kind overlay plus a fixed NodePort 30480, for clusters created with `deploy/kind/cluster.yaml`. |
 | `deploy/kind/cluster.yaml` | kind cluster that maps NodePort 30480 to http://localhost:8080. |
 | `deploy/argocd/application.yaml` | The Argo CD `Application` (automated sync, prune, self-heal, creates the namespace). |
@@ -144,11 +144,15 @@ Git is the source of truth: the image tag running in the cluster is whatever the
    ```bash
    kubectl apply -n argocd -f deploy/argocd/application.yaml
    ```
-7. **Open the app**:
-   ```bash
-   kubectl -n dnd port-forward svc/dnd-app 8080:80   # then http://localhost:8080
-   ```
-   To skip port-forwarding, create the cluster with `deploy/kind/cluster.yaml` and point the Application's `path` at `deploy/k8s/overlays/kind-nodeport`. Then the app is always on http://localhost:8080 through NodePort 30480. NodePorts are shared by the whole cluster. If Argo CD reports `provided port is already allocated`, another service already uses that port (`kubectl get svc -A | grep 30480`): pick a free one (30000–32767) in that overlay and in `cluster.yaml`, or stay with port-forward.
+7. **Open the app** at **http://dnd.mazen.home** through Traefik (`deploy/k8s/overlays/kind/ingressroute.yaml`). It's a Traefik `IngressRoute` on the `web` entrypoint, set up like the Argo CD route. It needs:
+   - the Traefik CRDs (`traefik.io/v1alpha1`) in the cluster
+   - `dnd.mazen.home` resolving to wherever Traefik listens, like `argocd.mazen.home` (DNS or a hosts-file entry)
+
+   To use another hostname, change the `Host(...)` rule.
+
+   Without an ingress controller: `kubectl -n dnd port-forward svc/dnd-app 8080:80`, then http://localhost:8080.
+
+   To skip both, create the cluster with `deploy/kind/cluster.yaml` and point the Application's `path` at `deploy/k8s/overlays/kind-nodeport`. Then the app is always on http://localhost:8080 through NodePort 30480. NodePorts are shared by the whole cluster. If Argo CD reports `provided port is already allocated`, another service already uses that port (`kubectl get svc -A | grep 30480`): pick a free one (30000–32767) in that overlay and in `cluster.yaml`, or stay with port-forward.
 
    For the Argo CD UI:
    ```bash

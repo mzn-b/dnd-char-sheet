@@ -1,0 +1,17 @@
+# Exposes the app through Traefik at http://dnd.mazen.home (same setup as the Argo CD route).
+# The namespace (dnd) comes from the overlay's kustomization.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: dnd-app
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  entryPoints:
+    - web
+  routes:
+    - kind: Rule
+      match: Host(`dnd.mazen.home`)
+      services:
+        - name: dnd-app
+          port: 80
