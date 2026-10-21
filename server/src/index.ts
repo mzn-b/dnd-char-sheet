@@ -1,7 +1,7 @@
 import express, { type ErrorRequestHandler } from "express";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { migrate } from "./db.js";
+import { migrate, pool, waitForDatabase } from "./db.js";
 import { characters } from "./routes/characters.js";
 import { homebrew } from "./routes/homebrew.js";
 import { content } from "./routes/content.js";
@@ -12,6 +12,15 @@ const app = express();
 app.use(express.json({ limit: "2mb" }));
 
 app.get("/api/health", (_req, res) => void res.json({ ok: true }));
+// Readiness: only route traffic here when the database answers.
+app.get("/api/ready", async (_req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(503).json({ ok: false, error: (err as Error).message });
+  }
+});
 app.use("/api/characters", characters);
 app.use("/api/homebrew", homebrew);
 app.use("/api", content);
@@ -35,5 +44,6 @@ const onError: ErrorRequestHandler = (err, _req, res, _next) => {
 app.use(onError);
 
 const port = Number(process.env.PORT ?? 4000);
+await waitForDatabase();
 await migrate();
 app.listen(port, () => console.log(`API listening on http://localhost:${port}`));

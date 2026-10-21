@@ -7,6 +7,20 @@ export const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL ?? "postgres://dnd:dnd@localhost:5432/dnd",
 });
 
+/** Retries until Postgres accepts connections (it may start after the app in Docker or Kubernetes). */
+export async function waitForDatabase(attempts = 30, delayMs = 2000) {
+  for (let i = 1; ; i++) {
+    try {
+      await pool.query("SELECT 1");
+      return;
+    } catch (err) {
+      if (i >= attempts) throw err;
+      console.log(`waiting for database (${i}/${attempts}): ${(err as Error).message}`);
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+}
+
 /** Applies any SQL files in ./migrations that have not run yet, in filename order. */
 export async function migrate() {
   const dir = join(dirname(fileURLToPath(import.meta.url)), "migrations");

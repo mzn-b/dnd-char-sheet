@@ -1,0 +1,24 @@
+# What Argo CD deploys to the kind cluster: the app, its own Postgres, and a NodePort
+# that deploy/kind/cluster.yaml maps to http://localhost:8080.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: dnd
+resources:
+  - ../../base
+components:
+  - ../../components/postgres
+images:
+  - name: ghcr.io/mzn-b/dnd-char-sheet
+    # Updated by the "Container image" workflow on every push to the default branch.
+    newTag: latest
+patches:
+  - target:
+      kind: Service
+      name: dnd-app
+    patch: |
+      - op: add
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30080

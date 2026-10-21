@@ -1,0 +1,7 @@
+# A Postgres instance just for this app, in the same namespace, with its data on a PersistentVolumeClaim.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - secret.yaml
+  - statefulset.yaml
+  - service.yaml

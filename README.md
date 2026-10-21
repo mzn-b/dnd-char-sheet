@@ -77,11 +77,111 @@ docker compose --profile app up --build
 
 Open http://localhost:4000. The API serves the built web client.
 
+## Deploying to kind with Argo CD
+
+### How it fits together
+
+```
+git push ──► GitHub Actions "Container image" (.github/workflows/image.yml)
+               1. test:  npm ci, typecheck, unit tests
+               2. image: build linux/amd64 + linux/arm64, push to ghcr.io/mzn-b/dnd-char-sheet
+                         tags: sha-<7 chars>, <branch>, latest (default branch), <version> (v* tags)
+               3. bump-deployment (default branch only): set newTag: sha-<…> in
+                  deploy/k8s/overlays/kind/kustomization.yaml and commit it
+                       │
+Argo CD in kind ◄──────┘ watches deploy/k8s/overlays/kind on the default branch (polls every ~3 min)
+   └─ syncs namespace "dnd": Secret dnd-db → Postgres StatefulSet → app Deployment (rolling update)
+         app starts, waits for Postgres, applies pending SQL migrations, then reports ready
+```
+
+Git is the source of truth: the image tag running in the cluster is whatever the overlay in the repo says. To roll back, revert the bump commit (or pin `newTag` by hand) and Argo CD syncs to it. Pull requests build the image without pushing it; other branches push `sha-…` and `<branch>` tags you can try by editing `newTag`.
+
+| Path | What it is |
+| --- | --- |
+| `deploy/k8s/base/` | The app: Deployment (probes `/api/ready` and `/api/health`, non-root, read-only filesystem) and Service. Reads `DATABASE_URL` from the Secret `dnd-db`, key `url`. |
+| `deploy/k8s/components/postgres/` | Optional Kustomize component: a Postgres 16 StatefulSet with a 2 GiB volume, its Service and the `dnd-db` Secret. |
+| `deploy/k8s/overlays/kind/` | What Argo CD deploys: base + postgres component, namespace `dnd`, image tag, NodePort 30080. |
+| `deploy/kind/cluster.yaml` | kind cluster that maps NodePort 30080 to http://localhost:8080. |
+| `deploy/argocd/application.yaml` | The Argo CD `Application` (automated sync, prune, self-heal, creates the namespace). |
+
+### Setup
+
+1. **Push to GitHub** and let the workflow run once (Actions tab). The image appears under the repository's **Packages**.
+2. **Create the cluster**:
+   ```bash
+   kind create cluster --config deploy/kind/cluster.yaml
+   ```
+3. **Install Argo CD**:
+   ```bash
+   kubectl create namespace argocd
+   kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+   kubectl -n argocd rollout status deploy/argocd-server
+   ```
+4. **Let the cluster pull the image.** GHCR packages start out **private**. Either make the package public (Package settings → Change visibility), or give the cluster a pull secret (a classic personal access token with `read:packages`):
+   ```bash
+   kubectl create namespace dnd
+   kubectl -n dnd create secret docker-registry ghcr-pull \
+     --docker-server=ghcr.io --docker-username=<github-user> --docker-password=<token>
+   ```
+   The Deployment already references `ghcr-pull`, and it's ignored when the secret doesn't exist.
+5. **If the repository is private**, Argo CD also needs read access to it:
+   `argocd repo add https://github.com/mzn-b/dnd-char-sheet.git --username <github-user> --password <token>` (or a repository Secret in the `argocd` namespace).
+6. **Register the app**:
+   ```bash
+   kubectl apply -n argocd -f deploy/argocd/application.yaml
+   ```
+7. Open **http://localhost:8080**. For the Argo CD UI:
+   ```bash
+   kubectl -n argocd port-forward svc/argocd-server 8443:443   # https://localhost:8443, user admin
+   kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
+   ```
+
+If you renamed or forked the repository, change `ghcr.io/mzn-b/dnd-char-sheet` in `deploy/k8s/base/deployment.yaml` and the overlay, and `repoURL` in the Application.
+
+### Where the database lives
+
+**Postgres is not inside the GHCR image.** The image contains only the API and the built web client, and it is stateless: everything (characters, homebrew, settings, the cache of fetched rules content) lives in Postgres, reached through `DATABASE_URL`. Schema migrations ship in the image and run automatically when the app starts, so upgrading is just a new image. Running several replicas is fine.
+
+So you don't need a global database in your kind cluster. You have two options:
+
+- **Per-app Postgres (the default for kind).** The `components/postgres` component deploys a dedicated Postgres StatefulSet next to the app in the `dnd` namespace, managed by the same Argo CD Application. Its data sits on a PersistentVolumeClaim (kind's built-in `standard` local-path storage), so it survives pod restarts, re-syncs and new images. It is lost when you `kind delete cluster`, so back up first:
+  ```bash
+  kubectl -n dnd exec dnd-postgres-0 -- pg_dump -U dnd dnd > dnd-backup.sql
+  # restore into a fresh cluster:
+  kubectl -n dnd exec -i dnd-postgres-0 -- psql -U dnd dnd < dnd-backup.sql
+  ```
+  The credentials in `components/postgres/secret.yaml` are development values committed to git. That's fine for a local kind cluster. For anything shared, use Sealed Secrets or External Secrets instead.
+- **A shared database you already run** (a cluster-wide Postgres, CloudNativePG, a managed DB…). Remove `../../components/postgres` from the overlay's `components`, create a database and user for the app, and provide the connection string yourself:
+  ```bash
+  kubectl -n dnd create secret generic dnd-db \
+    --from-literal=url=postgres://dnd:<password>@<postgres-service>.<namespace>.svc:5432/dnd
+  ```
+  The app creates its tables on first start.
+
+The rules-content cache (`api_cache`) is also in the database. A new, empty database works right away; content is fetched again from the public APIs as you use it.
+
+### Building the image yourself
+
+```bash
+docker build -t dnd-char-sheet .
+# If Docker Hub rate-limits you:
+docker build --build-arg NODE_IMAGE=mirror.gcr.io/library/node:22-alpine -t dnd-char-sheet .
+```
+
+To try a local build in kind without GHCR, tag it with the name the manifests use and load it into the cluster. Then set `newTag: dev` in the overlay (with Argo CD that means committing it, or pausing auto-sync while you experiment):
+
+```bash
+docker build -t ghcr.io/mzn-b/dnd-char-sheet:dev .
+kind load docker-image ghcr.io/mzn-b/dnd-char-sheet:dev --name dnd
+```
+
 ## Project layout
 
 ```
 docker-compose.yml        Postgres (+ optional app container)
-Dockerfile                Builds web + API into one image
+Dockerfile                Builds web + API into one image (no database inside)
+.github/workflows/        CI: tests, multi-arch image to GHCR, GitOps tag bump
+deploy/                   Kubernetes manifests (Kustomize), kind cluster config, Argo CD Application
 server/                   Express + pg API (TypeScript)
   src/migrations/         SQL migrations, applied automatically on start
   src/content/            Rules-content adapters: SRD, Open5e, 5etools, homebrew → one normalized shape

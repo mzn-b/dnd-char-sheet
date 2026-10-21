@@ -1,0 +1,10 @@
+# The app on its own. It needs a Secret named "dnd-db" with a "url" key (a Postgres connection string):
+# the postgres component provides one, or create it yourself to use an existing database.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: dnd-char-sheet
+resources:
+  - deployment.yaml
+  - service.yaml

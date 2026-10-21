@@ -1,0 +1,11 @@
+# kind create cluster --config deploy/kind/cluster.yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: dnd
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # The app's NodePort → http://localhost:8080
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP
