@@ -1,6 +1,6 @@
 import { withTextChoices } from "../../lib/textChoices";
 import { ActionBadge } from "../ActionBadge";
-import { featureKind } from "../../lib/economy";
+import { KIND_LABEL, featureKind } from "../../lib/economy";
 import { ModifiersPanel } from "./ModifiersPanel";
 import { useState } from "react";
 import { applySubfeatureMechanics, buildFeature, grantFeature, resolveSubfeatures } from "../../lib/apply";
@@ -166,6 +166,34 @@ function FeatureCard({ f, c, update }: { f: Feature; c: Character; update: Updat
       </div>
       {rechoosing && <RechooseDialog f={{ ...f, choices }} c={c} update={update} onClose={() => setRechoosing(false)} />}
     </details>
+  );
+}
+
+/** Read-only view of a feature: its text, chosen options and dice (used by the Actions tab's detail window). */
+export function FeatureDetail({ c, f }: { c: Character; f: Feature }) {
+  const kind = featureKind(c, f);
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-ink-400">
+        {kind && <span className="flex items-center gap-1"><ActionBadge kind={kind} /> {KIND_LABEL[kind]}</span>}
+        {f.origin && <span className="chip">{f.origin}</span>}
+        {f.uses && <span>{Math.max(0, usesMax(c, f.uses.formula, f.uses.max) - f.uses.used)} / {usesMax(c, f.uses.formula, f.uses.max)} uses left · resets on a {f.uses.reset} rest</span>}
+        {f.ref?.source && <span className="chip">{f.ref.source}</span>}
+      </div>
+      <Markdown text={f.description || "_No description._"} />
+      <FeatureRolls c={c} f={f} />
+      {(f.subfeatures?.length ?? 0) > 0 && (
+        <div className="space-y-1.5 border-l-2 border-accent-600/50 pl-3">
+          <div className="label">Your choices</div>
+          {f.subfeatures!.map((s) => (
+            <div key={s.id}>
+              <div className="text-sm font-semibold"><span className="text-accent-500">◆</span> {s.name}</div>
+              {s.description && <div className="pl-4"><Markdown text={s.description} /></div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

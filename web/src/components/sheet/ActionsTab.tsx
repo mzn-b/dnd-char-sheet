@@ -18,7 +18,7 @@ import { useDecision } from "../decisions";
 import type { Feature } from "../../lib/types";
 import { ResourcesPanel } from "./ResourcesPanel";
 import { CombatPanel } from "./CombatTracker";
-import { FeatureRolls } from "./FeaturesTab";
+import { FeatureDetail, FeatureRolls } from "./FeaturesTab";
 import { EFFECTS, activateEffect, activeRollBonus } from "../../lib/combat";
 import { ContentDetailView } from "../ContentBrowser";
 
@@ -201,6 +201,7 @@ export function ActionsTab({ c, update, endedEffects }: { c: Character; update: 
 function FeatureActions({ c, update, features }: { c: Character; update: Update; features: Feature[] }) {
   const ask = useDecision();
   const [warning, setWarning] = useState<string>();
+  const [reading, setReading] = useState<Feature | null>(null);
   const order: ActionKind[] = ["action", "bonus", "reaction", "free", "other"];
   const sorted = [...features].sort((a, b) => order.indexOf(featureKind(c, a) ?? "other") - order.indexOf(featureKind(c, b) ?? "other"));
   return (
@@ -216,7 +217,7 @@ function FeatureActions({ c, update, features }: { c: Character; update: Update;
             <li key={f.id} className="rounded-lg bg-ink-850/60 px-3 py-2">
               <div className="flex flex-wrap items-center gap-2">
                 <ActionBadge kind={kind} />
-                <span className="flex-1 text-sm font-semibold">{f.name}</span>
+                <button className="flex-1 text-left text-sm font-semibold hover:text-accent-400" title="Read the full feature" onClick={() => setReading(f)}>{f.name}</button>
                 {left != null && <span className="text-xs text-ink-400">{left} left</span>}
                 {kind && kind !== "other" && (
                   <button
@@ -239,6 +240,11 @@ function FeatureActions({ c, update, features }: { c: Character; update: Update;
           );
         })}
       </ul>
+      {reading && (
+        <Modal title={reading.name} onClose={() => setReading(null)}>
+          <FeatureDetail c={c} f={c.features.find((x) => x.id === reading.id) ?? reading} />
+        </Modal>
+      )}
     </Section>
   );
 }

@@ -141,7 +141,27 @@ export function Markdown({ text }: { text: string }) {
           );
         }
         if (lines[0].trim().startsWith("|")) {
-          return <pre key={i} className="overflow-x-auto rounded bg-ink-850 p-2 text-xs">{b}</pre>;
+          // "| a | b |" rows; the first is the header, a "|---|" separator row is skipped.
+          const rows = lines
+            .filter((l) => l.trim().startsWith("|") && !/^\|[\s:|-]+\|$/.test(l.trim()))
+            .map((l) => l.trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim()));
+          const [head, ...body] = rows;
+          return (
+            <div key={i} className="overflow-x-auto">
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr>{head.map((cell, j) => <th key={j} className="border-b border-ink-700 px-2 py-1 text-left font-semibold text-ink-200">{inline(cell)}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {body.map((r, k) => (
+                    <tr key={k} className="odd:bg-ink-850/60">
+                      {r.map((cell, j) => <td key={j} className="px-2 py-1 align-top">{inline(cell)}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
         }
         if (/^#{1,6}\s/.test(b)) return <h4 key={i} className="font-semibold text-ink-200">{inline(b.replace(/^#+\s/, ""))}</h4>;
         return <p key={i}>{inline(b)}</p>;
