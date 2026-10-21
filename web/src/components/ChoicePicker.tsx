@@ -28,6 +28,37 @@ export function ChoicePicker({
     </div>
   );
 
+  // Point-style choices (+2/+1 or +1/+1/+1): a stepper per option; repeated keys add up.
+  if (choice.maxPerOption && choice.maxPerOption > 1) {
+    const times = (key: string) => selected.filter((k) => k === key).length;
+    const add = (key: string) => !full && times(key) < choice.maxPerOption! && onChange([...selected, key]);
+    const remove = (key: string) => {
+      const i = selected.lastIndexOf(key);
+      if (i >= 0) onChange(selected.filter((_, j) => j !== i));
+    };
+    const amount = choice.amount ?? 1;
+    return (
+      <div>
+        {header}
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+          {choice.options.map((o) => {
+            const n = times(o.key);
+            return (
+              <div key={o.key} className={`flex flex-col items-center rounded-lg border p-1.5 ${n ? "border-accent-500 bg-accent-500/10" : "border-ink-700"}`}>
+                <span className="text-xs font-semibold">{o.name}</span>
+                <span className={`font-display text-lg ${n ? "text-accent-400" : "text-ink-600"}`}>+{n * amount}</span>
+                <span className="flex gap-1">
+                  <button type="button" className="btn px-1.5 py-0 text-xs" disabled={!n} onClick={() => remove(o.key)} aria-label={`Lower ${o.name}`}>−</button>
+                  <button type="button" className="btn px-1.5 py-0 text-xs" disabled={full || n >= choice.maxPerOption!} onClick={() => add(o.key)} aria-label={`Raise ${o.name}`}>+</button>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   if (choice.kind !== "feature") {
     return (
       <div>

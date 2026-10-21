@@ -150,7 +150,7 @@ function raceFacets5eRaw(race: any, sub?: any): Facets | undefined {
   const fast = (v: any) => (v === true ? true : typeof v === "number" ? v > 0 : typeof v?.number === "number");
   const skills = [...(race.skillProficiencies ?? []), ...(sub?.skillProficiencies ?? [])].flatMap((x: any) => Object.keys(x).filter((k) => k !== "choose" && k !== "any"));
   return clean({
-    abilityIncreases: abilityPicks5e([...(race.ability ?? []), ...(sub?.ability ?? [])]),
+    abilityIncreases: race.lineage || sub?.lineage ? ["Any (choice)"] : abilityPicks5e([...(race.ability ?? []), ...(sub?.ability ?? [])]),
     size: (r.size ?? []).map((x: string) => SIZES[x] ?? x),
     speed: typeof speed.walk === "number" ? speed.walk : undefined,
     movement: ["fly", "swim", "climb", "burrow"].filter((k) => fast(speed[k])).map(cap),

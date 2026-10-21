@@ -160,6 +160,8 @@ export interface Choice {
   options: ChoiceOption[];
   /** For "ability" choices: how much each pick adds. */
   amount?: number;
+  /** The same option may be picked up to this many times (e.g. +2 to one ability as two +1 picks). */
+  maxPerOption?: number;
 }
 
 export interface ChoiceOption {

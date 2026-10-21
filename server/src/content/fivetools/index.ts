@@ -251,6 +251,15 @@ function abilityBlock(block: any[] | undefined, id: string, effects: Effect[], c
   }
 }
 
+/** "Increase one score by 2 and a different one by 1, or three different scores by 1": 3 points, at most 2 in one. */
+function lineageChoice(id: string): Choice {
+  return {
+    id, kind: "ability", count: 3, amount: 1, maxPerOption: 2,
+    label: "Ability Score Increase: +2 to one score and +1 to another, or +1 to three different scores",
+    options: ABILITIES.map((a) => ({ key: a, name: a.toUpperCase() })),
+  };
+}
+
 function profText(label: string, block: any[] | undefined): Effect[] {
   const b = block?.[0];
   if (!b) return [];
@@ -341,6 +350,10 @@ function raceDetail(ds: Dataset, r: { name: string; key: string; source: string;
   // A subrace's ability block adds to (or, with "overwrite", replaces) the base race's.
   const abilities = sub.overwrite?.ability ? sub.ability : [{ ...(race.ability?.[0] ?? {}), ...(sub.ability?.[0] ?? {}) }];
   abilityBlock(abilities, "ability", effects, choices);
+  // Monsters of the Multiverse, Tasha's lineages, Van Richten's, Fizban's…: no fixed scores, "lineage" instead.
+  if ((race.lineage || sub.lineage) && !effects.some((e) => e.kind === "ability") && !choices.some((c) => c.kind === "ability")) {
+    choices.push(lineageChoice("ability"));
+  }
   skillBlock(ds, sub.skillProficiencies ?? race.skillProficiencies, "skills", effects, choices);
   const speed = typeof race.speed === "number" ? race.speed : race.speed?.walk;
   if (speed) effects.push({ kind: "speed", amount: speed });

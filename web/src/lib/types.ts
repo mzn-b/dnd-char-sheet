@@ -63,6 +63,8 @@ export interface Choice {
   count: number;
   options: ChoiceOption[];
   amount?: number;
+  /** The same option may be picked up to this many times (+2 to one ability = two +1 picks). */
+  maxPerOption?: number;
 }
 
 export interface ChoiceOption {
