@@ -1,9 +1,12 @@
+import { useState } from "react";
 import { abilityMod, fmt, profBonus, wildShapeForm } from "../../lib/rules";
+import { attackFromItem } from "../../lib/items";
+import { genericOptions } from "../../lib/genericItems";
 import { EntryRow } from "../StatBlock";
 import { attackModifiers, describe, isRangedAttack } from "../../lib/modifiers";
 import { multiattackCount, spendEconomy, type ActionKind } from "../../lib/economy";
 import { ActionBadge } from "../ActionBadge";
-import { ABILITIES, type Attack, type Character } from "../../lib/types";
+import { ABILITIES, type Attack, type Character, type Item } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
 import { NumberField, Section, TextField } from "../ui";
 import { d20, withBonus } from "../../lib/dice";
@@ -90,6 +93,46 @@ export function BeastAttacks({ c, update }: { c: Character; update: Update }) {
   );
 }
 
+/** "+ Add": an attack from a weapon in your inventory, or a blank one to fill in. */
+export function AddAttackMenu({ c, update }: { c: Character; update: Update }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // Weapons first (they carry damage and properties), then everything else you could swing or throw.
+  const items = [...c.equipment].filter((i) => !genericOptions(i.name)).sort((a, b) => Number(!!b.data?.weapon) - Number(!!a.data?.weapon) || a.name.localeCompare(b.name));
+  const add = async (item: Item) => {
+    setBusy(true);
+    try {
+      const attack = await attackFromItem(c, item);
+      update((d) => void d.attacks.push(attack));
+      setOpen(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <span className="relative">
+      <button className="btn-ghost px-2 py-0.5 text-xs" onClick={() => setOpen(!open)} aria-expanded={open}>+ Add</button>
+      {open && (
+        <div className="absolute right-0 top-full z-30 mt-1 max-h-80 w-64 overflow-y-auto rounded-lg border border-ink-700 bg-ink-900 p-1 shadow-xl" onMouseLeave={() => setOpen(false)}>
+          <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-ink-600">From your inventory</div>
+          {items.length === 0 && <p className="px-2 py-1 text-xs text-ink-600">No items yet: add weapons on the Inventory tab.</p>}
+          {items.map((i) => (
+            <button key={i.id} disabled={busy} className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-ink-800 disabled:opacity-50" onClick={() => add(i)}>
+              <span className="flex-1 truncate">{i.name}{i.qty > 1 ? ` ×${i.qty}` : ""}</span>
+              {i.data?.weapon ? <span className="text-[10px] text-ink-400">{i.data.weapon.damage} {i.data.weapon.damageType}</span> : <span className="text-[10px] text-ink-600">improvised</span>}
+              {c.attacks.some((a) => a.itemId === i.id || a.name === i.name) && <span className="text-[10px] text-emerald-400">✓</span>}
+            </button>
+          ))}
+          <div className="my-1 border-t border-ink-800" />
+          <button className="w-full rounded px-2 py-1 text-left text-sm hover:bg-ink-800" onClick={() => { update((d) => void d.attacks.push(blankAttackFields())); setOpen(false); }}>
+            Custom attack…
+          </button>
+        </div>
+      )}
+    </span>
+  );
+}
+
 export function AttacksPanel({ c, update }: { c: Character; update: Update }) {
   const edit = (id: string, patch: Partial<Attack>) =>
     update((d) => void Object.assign(d.attacks.find((a) => a.id === id)!, patch));
@@ -97,7 +140,7 @@ export function AttacksPanel({ c, update }: { c: Character; update: Update }) {
   return (
     <Section
       title="Attacks & Spellcasting"
-      action={<button className="btn-ghost px-2 py-0.5 text-xs" onClick={() => update((d) => void d.attacks.push(blankAttackFields()))}>+ Add</button>}
+      action={<AddAttackMenu c={c} update={update} />}
     >
       {wildShapeForm(c) ? (
         <BeastAttacks c={c} update={update} />

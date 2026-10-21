@@ -96,19 +96,19 @@ export const skillBonus = (c: Character, skill: string) => {
   const s = SKILLS.find((x) => x.key === skill)!;
   const prof: ProfLevel = c.skills[skill] ?? 0;
   const profPart = prof ? Math.floor(prof * profBonus(c)) : unproficientBonus(c, s.ability);
-  const own = abilityMod(c, s.ability) + profPart + sumFor(c, "check", `skill:${skill}`);
+  const own = abilityMod(c, s.ability) + profPart + sumFor(c, "check", `check:${s.ability}`, `skill:${skill}`);
   const skills = wildShapeForm(c)?.monster?.skills;
   const beast = skills?.[skill] ?? skills?.[skill.replace(/-/g, " ")];
   return beast != null ? Math.max(own, beast) : own;
 };
 
 /** Raw ability check (no skill): ability mod + Jack of All Trades + check bonuses. */
-export const abilityCheckBonus = (c: Character, a: Ability) => abilityMod(c, a) + unproficientBonus(c, a) + sumFor(c, "check");
+export const abilityCheckBonus = (c: Character, a: Ability) => abilityMod(c, a) + unproficientBonus(c, a) + sumFor(c, "check", `check:${a}`);
 
 export const passiveScore = (c: Character, skill: string) => 10 + skillBonus(c, skill) + sumFor(c, `passive:${skill}`);
 export const passivePerception = (c: Character) => passiveScore(c, "perception");
 export const initiative = (c: Character) =>
-  abilityMod(c, "dex") + c.initiativeBonus + unproficientBonus(c, "dex") + sumFor(c, "initiative", "check");
+  abilityMod(c, "dex") + c.initiativeBonus + unproficientBonus(c, "dex") + sumFor(c, "initiative", "check", "check:dex");
 
 /** Hit point maximum: the stored base plus Tough & co., item Constitution changes and exhaustion 4+. */
 export function hpMax(c: Character): number {

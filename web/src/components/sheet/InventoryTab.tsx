@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { api } from "../../lib/api";
 import { uid } from "../../lib/defaults";
-import { attackFromItem, itemFromDetail } from "../../lib/items";
+import { attackFromItem, itemFromDetail, resolveItem } from "../../lib/items";
+import { genericOptions } from "../../lib/genericItems";
 import { attunedCount, carrying } from "../../lib/rules";
 import { itemActive, targetLabel } from "../../lib/modifiers";
 import type { Character, ContentSummary, Item } from "../../lib/types";
@@ -26,6 +27,22 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
     const details = await Promise.all(picked.map((p) => api.detail("item", p.source, p.key)));
     update((d) => void d.equipment.push(...details.map((det) => itemFromDetail(det))));
     setPicking(false);
+  };
+
+  /** Replace one unit of a placeholder ("Any simple melee weapon") with the real item, ready to attack with. */
+  const choosePlaceholder = async (placeholder: Item, name: string) => {
+    const real = await resolveItem(name, 1);
+    const attack = real.data?.weapon ? await attackFromItem(c, real, true) : null;
+    update((d) => {
+      const ph = d.equipment.find((x) => x.id === placeholder.id);
+      if (!ph) return;
+      const same = d.equipment.find((x) => x.name === real.name && x.ref?.key === real.ref?.key);
+      if (same) same.qty += 1;
+      else d.equipment.splice(d.equipment.indexOf(ph), 0, real);
+      if (ph.qty > 1) ph.qty -= 1;
+      else d.equipment = d.equipment.filter((x) => x.id !== ph.id);
+      if (attack && !d.attacks.some((a) => a.name === real.name)) d.attacks.push({ ...attack, itemId: same?.id ?? real.id });
+    });
   };
 
   const makeAttack = async (item: Item) => {
@@ -71,6 +88,17 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
             <input type="checkbox" className="accent-accent-500" checked={i.equipped} onChange={(e) => toggleEquip(i, e.target.checked)} />
             <div className="min-w-0">
               <TextField value={i.name} placeholder="Item name" onChange={(v) => edit(i.id, { name: v })} />
+              {genericOptions(i.name) && !i.ref && (
+                <select
+                  className="field-boxed mx-1.5 my-0.5 w-auto py-0.5 text-xs"
+                  value=""
+                  aria-label={`Choose ${i.name}`}
+                  onChange={(e) => e.target.value && choosePlaceholder(i, e.target.value)}
+                >
+                  <option value="">Choose {i.qty > 1 ? "one" : "which"}…</option>
+                  {genericOptions(i.name)!.map((n) => <option key={n}>{n}</option>)}
+                </select>
+              )}
               <div className="flex flex-wrap gap-1 px-1.5 text-[10px] text-ink-400">
                 {i.data?.armor && <span className="chip px-1.5 py-0">{i.data.armor.type === "shield" ? `+${i.data.armor.base} AC` : `AC ${i.data.armor.base} ${i.data.armor.type}`}</span>}
                 {i.data?.weapon && <span className="chip px-1.5 py-0">{i.data.weapon.damage} {i.data.weapon.damageType}</span>}

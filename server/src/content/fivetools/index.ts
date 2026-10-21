@@ -651,7 +651,8 @@ function skillChoices(block: any[] | undefined) {
 
 function itemName(ref: string) {
   const n = ref.split("|")[0];
-  return n.replace(/\b\w/g, (c) => c.toUpperCase());
+  // Capitalize words, not letters after an apostrophe ("dungeoneer's pack" → "Dungeoneer's Pack").
+  return n.replace(/(^|[\s(-])(\w)/g, (_m, pre: string, c: string) => pre + c.toUpperCase());
 }
 
 const EQUIPMENT_TYPES: Record<string, string> = {

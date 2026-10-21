@@ -10,7 +10,7 @@ import type { Update } from "../../lib/useCharacter";
 import { RollButton } from "../dice";
 import { CastButton, SpellBadges, SpellRollInfo, spellRollContext, actionType, useSpellDetails } from "../spells";
 import { Modal, NumberField, Section } from "../ui";
-import { AttackRolls, BeastAttacks, attackKind } from "./AttacksPanel";
+import { AddAttackMenu, AttackRolls, BeastAttacks, attackKind } from "./AttacksPanel";
 import { ActionBadge } from "../ActionBadge";
 import { featureKind, spendEconomy, type ActionKind } from "../../lib/economy";
 import { applyFeatureUse, featureDecision, usesLeft } from "../../lib/featureUse";
@@ -74,9 +74,9 @@ export function ActionsTab({ c, update, endedEffects }: { c: Character; update: 
           </div>
         )}
 
-        <Section title="Attacks">
+        <Section title="Attacks" action={wildShapeForm(c) ? undefined : <AddAttackMenu c={c} update={update} />}>
           <BeastAttacks c={c} update={update} />
-          {!wildShapeForm(c) && c.attacks.length === 0 && <p className="text-sm text-ink-600">Add attacks on the Overview tab or from a weapon in your inventory (+Atk).</p>}
+          {!wildShapeForm(c) && c.attacks.length === 0 && <p className="text-sm text-ink-600">No attacks yet: + Add picks a weapon from your inventory.</p>}
           <ul className={`space-y-1.5 ${wildShapeForm(c) ? "hidden" : ""}`}>
             {c.attacks.map((a) => (
               <li key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded-lg bg-ink-850/60 px-3 py-2">

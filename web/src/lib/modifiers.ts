@@ -28,6 +28,7 @@ export const MODIFIER_TARGETS: { value: string; label: string }[] = [
   { value: "save", label: "All saving throws" },
   ...ABILITIES.map((a) => ({ value: `save:${a}`, label: `${a.toUpperCase()} saving throw` })),
   { value: "check", label: "All ability checks" },
+  ...ABILITIES.map((a) => ({ value: `check:${a}`, label: `${a.toUpperCase()} checks (incl. skills)` })),
   { value: "attack", label: "Weapon attack rolls" },
   { value: "damage", label: "Weapon damage rolls" },
   { value: "spellAttack", label: "Spell attack bonus" },
@@ -89,7 +90,7 @@ function featureNames(c: Character): Set<string> {
 
 const has = (names: Set<string>, ...options: string[]) => options.some((o) => names.has(o));
 
-function featureModifiers(c: Character, chaMod: number): Modifier[] {
+function featureModifiers(c: Character, chaMod: number, wisMod: number): Modifier[] {
   const names = featureNames(c);
   const out: Modifier[] = [];
   const add = (id: string, source: string, target: string, value: number, note?: string) =>
@@ -123,6 +124,8 @@ function featureModifiers(c: Character, chaMod: number): Modifier[] {
   if (classLevel(c, "fighter") >= 7 && has(names, "remarkable athlete")) add("remarkable-athlete", "Remarkable Athlete", "halfProfPhysical", 1);
   if (classLevel(c, "paladin") >= 6 && has(names, "aura of protection"))
     add("aura-of-protection", "Aura of Protection", "save", Math.max(1, chaMod), "while conscious");
+  // Fey Wanderer (Tasha's): add your Wisdom modifier to Charisma checks (minimum +1).
+  if (classLevel(c, "ranger") >= 3 && has(names, "otherworldly glamour")) add("otherworldly-glamour", "Otherworldly Glamour", "check:cha", Math.max(1, wisMod));
   return out;
 }
 
@@ -138,7 +141,8 @@ export function allModifiers(c: Character): Modifier[] {
   const disabled = new Set(c.disabledModifiers ?? []);
   const chaMods = [...items, ...custom].filter((m) => !disabled.has(m.id));
   const cha = scoreFrom(c.abilities.cha, chaMods, "cha");
-  const all = [...items, ...featureModifiers(c, Math.floor((cha - 10) / 2)), ...custom];
+  const wis = scoreFrom(c.abilities.wis, chaMods, "wis");
+  const all = [...items, ...featureModifiers(c, Math.floor((cha - 10) / 2), Math.floor((wis - 10) / 2)), ...custom];
   cache.set(c, all);
   return all;
 }

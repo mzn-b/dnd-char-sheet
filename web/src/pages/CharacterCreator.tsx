@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { addGrantedSpells, buildFeature, grantFeature, prepareGrantedSpells, sensesFromRace } from "../lib/apply";
 import { newCharacter } from "../lib/defaults";
 import { attackFromItem, resolveItem } from "../lib/items";
+import { genericOptions } from "../lib/genericItems";
 import {
   ABILITY_NAMES, ALIGNMENTS, POINT_BUY_BUDGET, POINT_BUY_COST, STANDARD_ARRAY, fmt, meetsRequirements, mod, requirementText,
 } from "../lib/rules";
@@ -57,6 +58,8 @@ export default function CharacterCreator() {
   const [rolled, setRolled] = useState<number[]>([]);
   const [rows, setRows] = useState<ClassRow[]>([{ cls: null, levels: 1 }]);
   const [equipment, setEquipment] = useState<Record<number, number>>({});
+  /** Picks for generic entries ("two simple melee weapons"), keyed by group:option:item. */
+  const [genericPicks, setGenericPicks] = useState<Record<string, string[]>>({});
   const [skipEquipment, setSkipEquipment] = useState(false);
   const [details, setDetails] = useState({ alignment: "", playerName: "", traits: "", ideals: "", bonds: "", flaws: "", backstory: "" });
   const [creating, setCreating] = useState(false);
@@ -166,7 +169,17 @@ export default function CharacterCreator() {
         grantFeature(c, f, bgDetail);
       }
       if (!skipEquipment) {
-        const wanted = equipmentGroups.flatMap((group, gi) => group.options[equipment[gi] ?? 0]?.items ?? []);
+        // Generic entries become the items picked for them (unpicked ones stay as placeholders to fix later).
+        const wanted = equipmentGroups.flatMap((group, gi) => {
+          const oi = equipment[gi] ?? 0;
+          return (group.options[oi]?.items ?? []).flatMap((it, ii) => {
+            if (!genericOptions(it.name)) return [it];
+            const picks = (genericPicks[`${gi}:${oi}:${ii}`] ?? []).slice(0, it.qty).filter(Boolean);
+            const merged = Object.entries(picks.reduce<Record<string, number>>((acc, n) => ({ ...acc, [n]: (acc[n] ?? 0) + 1 }), {})).map(([name, qty]) => ({ name, qty }));
+            const rest = it.qty - picks.length;
+            return [...merged, ...(rest > 0 ? [{ name: it.name, qty: rest }] : [])];
+          });
+        });
         const items = await Promise.all(wanted.map((it) => (/^\d+(\.\d+)? gp$/.test(it.name) ? null : resolveItem(it.name, it.qty))));
         for (const it of wanted) {
           const gp = it.name.match(/^(\d+(?:\.\d+)?) gp$/);
@@ -373,10 +386,41 @@ export default function CharacterCreator() {
                     </button>
                   ))}
                 </div>
+                {(() => {
+                  const oi = equipment[gi] ?? 0;
+                  const items = g.options[oi]?.items ?? [];
+                  return items.map((it, ii) => {
+                    const options = genericOptions(it.name);
+                    if (!options) return null;
+                    const key = `${gi}:${oi}:${ii}`;
+                    const picks = genericPicks[key] ?? [];
+                    return (
+                      <div key={key} className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                        <span className="text-ink-400">Choose {it.qty > 1 ? `${it.qty}×` : ""} {it.name.replace(/^any /i, "")}:</span>
+                        {Array.from({ length: it.qty }, (_, n) => (
+                          <select
+                            key={n}
+                            className="field-boxed w-auto py-1"
+                            aria-label={`${it.name} ${n + 1}`}
+                            value={picks[n] ?? ""}
+                            onChange={(e) => {
+                              const next = [...picks];
+                              next[n] = e.target.value;
+                              setGenericPicks({ ...genericPicks, [key]: next });
+                            }}
+                          >
+                            <option value="">— choose —</option>
+                            {options.map((name) => <option key={name}>{name}</option>)}
+                          </select>
+                        ))}
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             ))}
             {!skipEquipment && equipmentGroups.length > 0 && (
-              <p className="text-xs text-ink-600">Items are matched to the rules data when the character is created, so armor counts toward AC and weapons can become attacks. "Any martial weapon" style picks are added as placeholders to rename.</p>
+              <p className="text-xs text-ink-600">Items are matched to the rules data when the character is created, so armor counts toward AC and weapons become ready attacks. Generic picks you leave open ("any martial weapon") are added as placeholders you can choose later in the inventory.</p>
             )}
           </div>
         )}

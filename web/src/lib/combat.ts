@@ -171,7 +171,31 @@ const PASSIVES: { match: RegExp; when: ReminderWhen; text: (c: Character) => str
   { match: /^great weapon fighting$/i, when: "hit", text: () => "Great Weapon Fighting: reroll 1s and 2s on two-handed weapon damage" },
   { match: /^dueling$/i, when: "hit", text: () => "Dueling: +2 damage with a one-handed melee weapon and no other weapon" },
   { match: /^archery$/i, when: "attack", text: () => "Archery: +2 to ranged weapon attack rolls" },
+  { match: /^dreadful strikes$/i, when: "hit", text: (c) => `Dreadful Strikes: +${(c.classes.find((k) => k.name === "Ranger")?.level ?? 3) >= 11 ? "1d6" : "1d4"} psychic damage on a weapon hit (once per turn per creature)` },
+  { match: /^colossus slayer$/i, when: "hit", text: () => "Colossus Slayer: +1d8 damage once per turn if the target is below its hit point maximum" },
+  { match: /^dread ambusher$/i, when: "turnStart", text: () => "Dread Ambusher (first turn): +10 ft speed, and one extra weapon attack this turn that deals +1d8 on a hit" },
+  { match: /^planar warrior$/i, when: "turnStart", text: () => "Planar Warrior: bonus action to mark a creature; your next weapon hit on it this turn deals +1d8 force (2d8 at 11th)" },
+  { match: /^favored foe$/i, when: "hit", text: () => "Favored Foe: mark the creature on a hit (concentration); +1d4 damage once per turn while marked" },
 ];
+
+/** Trigger phrases in rules text, for features and spells without a hand-written reminder. */
+const TRIGGERS: { when: ReminderWhen; re: RegExp }[] = [
+  { when: "hit", re: /\b(?:when|whenever|once (?:on each of your turns|per turn) when|the (?:first|next) time)\b[^.]{0,60}?\byou hit\b|\bhits? (?:a|the) (?:creature|target)[^.]{0,30} with (?:a|an) (?:weapon|melee|ranged)[^.]{0,20}attack\b/i },
+  { when: "damaged", re: /\bwhen (?:you take damage|a creature hits you|an attacker[^.]{0,30}hits you|you are hit)\b/i },
+  { when: "turnStart", re: /\bat the start of (?:each of )?your turns?\b/i },
+  { when: "turnEnd", re: /\bat the end of (?:each of )?your turns?\b/i },
+];
+
+/** The first sentence of a text that matches a trigger, shortened for a reminder. */
+function triggerSentence(text: string, re: RegExp): string | undefined {
+  const plain = text.replace(/\*\*?|_/g, "").replace(/\s+/g, " ");
+  const sentence = plain.split(/(?<=[.!?])\s+/).find((x) => re.test(x));
+  if (!sentence) return undefined;
+  return sentence.length > 220 ? `${sentence.slice(0, 217)}…` : sentence;
+}
+
+/** Spells that add damage when you hit: the smites, Hunter's Mark, Hex, Hail of Thorns… */
+const ON_HIT_SPELL = /\b(?:the next time you hit|the first time you hit|whenever you hit|you hit (?:the|a) (?:creature|target)[^.]{0,40}with (?:a|an) (?:weapon|melee weapon|ranged weapon) attack|when you hit (?:it|a creature|the target))\b/i;
 
 function hasFeature(c: Character, re: RegExp) {
   return c.features.some((f) => re.test(f.name) || f.subfeatures?.some((s) => re.test(s.name)));
@@ -318,9 +342,50 @@ export function endTurn(d: Character) {
 export function reminders(c: Character, spellDetails: Record<string, ContentDetail | undefined> = {}): Reminder[] {
   const out: Reminder[] = [];
   for (const e of c.combat?.effects ?? []) for (const r of e.reminders) out.push({ ...r, source: e.name });
+  const handled = new Set<string>();
   for (const p of PASSIVES) {
     const f = c.features.find((x) => p.match.test(x.name) || x.subfeatures?.some((s) => p.match.test(s.name)));
-    if (f) out.push({ when: p.when, text: p.text(c), source: f.name });
+    if (f) {
+      out.push({ when: p.when, text: p.text(c), source: f.name });
+      handled.add(f.name.toLowerCase());
+      for (const sub of f.subfeatures ?? []) if (p.match.test(sub.name)) handled.add(sub.name.toLowerCase());
+    }
+  }
+  // Every other feature, feat or chosen option whose text names a trigger ("when you hit…", "at the start of your turn…").
+  const effectNames = new Set((c.combat?.effects ?? []).map((e) => e.name.toLowerCase()));
+  for (const f of c.features) {
+    for (const item of [f, ...(f.subfeatures ?? [])]) {
+      const name = item.name.toLowerCase();
+      if (handled.has(name) || effectNames.has(name) || EFFECTS.some((e) => e.match.test(item.name))) continue;
+      for (const t of TRIGGERS) {
+        const sentence = triggerSentence(item.description ?? "", t.re);
+        if (sentence) {
+          out.push({ when: t.when, text: `${item.name}: ${sentence}`, source: item.name });
+          handled.add(name);
+          break;
+        }
+      }
+    }
+  }
+  // Spells you can cast that add damage on a hit: remind before attacking (once cast, their effect reminds on hit).
+  for (const s of c.spellcasting.spells) {
+    const d = spellDetails[s.id];
+    if (!d || effectNames.has(s.ref.name.toLowerCase())) continue;
+    if (!(s.level === 0 || s.prepared || s.alwaysPrepared || s.uses || !s.classKey)) {
+      const cls = c.classes.find((k) => k.key === s.classKey);
+      if (cls?.spellModel && cls.spellModel !== "known") continue; // unprepared
+    }
+    const text = d.description ?? "";
+    if (!ON_HIT_SPELL.test(text)) continue;
+    const roll = extractRolls(text).find((r) => r.kind === "damage");
+    const dice = roll ? resolveRoll(roll, { spellLevel: s.level, slotLevel: s.level, characterLevel: totalLevel(c) }) : undefined;
+    const ct = d.meta["Casting Time"] ?? "";
+    const cost = /bonus/i.test(ct) ? "bonus action" : /reaction/i.test(ct) ? "reaction" : "action";
+    out.push({
+      when: "attack",
+      text: `${s.ref.name} available (${cost}${s.level ? `, ${s.level === 1 ? "1st" : s.level === 2 ? "2nd" : s.level === 3 ? "3rd" : `${s.level}th`}-level slot` : ""})${dice ? `: +${dice}${roll?.type ? ` ${roll.type}` : ""} on a hit` : ""}`,
+      source: s.ref.name,
+    });
   }
   // Reaction spells: remind when they could trigger.
   for (const s of c.spellcasting.spells) {
