@@ -1,5 +1,5 @@
 import type {
-  Character, CharacterSummary, ClassRules, ContentDetail, ContentSource, ContentSummary, ContentType, LevelRules,
+  Character, CharacterSummary, ClassRules, ContentDetail, ContentSource, ContentSummary, ContentType, SubclassRules,
 } from "./types";
 import { normalizeCharacter } from "./defaults";
 
@@ -32,9 +32,18 @@ export const api = {
     request<ContentSummary[]>(`/content/${type}${qs(params)}`),
   detail: (type: ContentType, source: ContentSource, key: string) =>
     request<ContentDetail>(`/content/${type}/${source}/${encodeURIComponent(key)}`),
-  classRules: (source: ContentSource, key: string) => request<ClassRules>(`/rules/classes/${source}/${key}`),
-  subclassLevels: (source: ContentSource, key: string) =>
-    request<Pick<LevelRules, "level" | "features">[]>(`/rules/subclasses/${source}/${key}/levels`),
+  classRules: (source: ContentSource, key: string) =>
+    request<ClassRules>(`/rules/classes/${source}/${encodeURIComponent(key)}`),
+  subclassRules: (source: ContentSource, key: string) =>
+    request<SubclassRules>(`/rules/subclasses/${source}/${encodeURIComponent(key)}/levels`),
+
+  providers: () => request<Providers>("/sources/providers"),
+  setProviders: (p: Partial<Providers>) => request<Providers>("/sources/providers", { method: "PUT", body: JSON.stringify(p) }),
+  fivetoolsStatus: () => request<Record<string, number | string[]>>("/sources/5etools/status"),
+  brewCatalog: (q: string, folder?: string) => request<BrewFile[]>(`/sources/5etools/brew/catalog${qs({ q, folder })}`),
+  brews: () => request<{ path: string; enabled: boolean }[]>("/sources/5etools/brew"),
+  addBrew: (path: string) => request<void>("/sources/5etools/brew", { method: "POST", body: JSON.stringify({ path }) }),
+  removeBrew: (path: string) => request<void>(`/sources/5etools/brew${qs({ path })}`, { method: "DELETE" }),
 
   listHomebrew: (type?: ContentType) => request<ContentDetail[]>(`/homebrew${qs({ type })}`),
   saveHomebrew: (entry: Partial<ContentDetail>) =>
@@ -43,3 +52,16 @@ export const api = {
       : request<ContentDetail>("/homebrew", { method: "POST", body: JSON.stringify(entry) }),
   deleteHomebrew: (key: string) => request<void>(`/homebrew/${key}`, { method: "DELETE" }),
 };
+
+export interface Providers {
+  srd: boolean;
+  open5e: boolean;
+  "5etools": boolean;
+  fivetoolsDataUrl?: string;
+}
+
+export interface BrewFile {
+  path: string;
+  folder: string;
+  name: string;
+}

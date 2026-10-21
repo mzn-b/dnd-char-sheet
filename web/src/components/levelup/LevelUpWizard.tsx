@@ -1,29 +1,48 @@
 import { useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../lib/api";
+import {
+  addProficiencyLine, applySubfeatureMechanics, attachProgression, buildFeature, grantFeature, grantProgression, resolveSubfeatures,
+} from "../../lib/apply";
 import { uid } from "../../lib/defaults";
-import { ABILITY_NAMES, abilityMod, fmt, mod, spellModel, totalLevel } from "../../lib/rules";
-import { ABILITIES, type Ability, type Character, type ClassEntry, type ContentRef, type ContentSummary, type Feature } from "../../lib/types";
+import { ABILITY_NAMES, abilityMod, fmt, meetsRequirements, mod, requirementText, skillName, totalLevel } from "../../lib/rules";
+import {
+  ABILITIES, type Ability, type Character, type Choice, type ClassEntry, type ClassRules, type ContentDetail,
+  type ContentRef, type ContentSummary, type Feature, type Selections,
+} from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
+import { ChoiceList, ChoicePicker, unfinishedChoices } from "../ChoicePicker";
 import { ContentBrowser, ContentDetailView, contentId } from "../ContentBrowser";
-import { Modal, Spinner } from "../ui";
+import { Markdown, Modal, Spinner } from "../ui";
 import { planLevel, recomputeSlots } from "./plan";
 
-type StepId = "class" | "hp" | "features" | "asi" | "spells" | "review";
+type StepId = "class" | "proficiencies" | "hp" | "features" | "asi" | "spells" | "review";
 const STEP_LABEL: Record<StepId, string> = {
-  class: "Class", hp: "Hit Points", features: "Features", asi: "Ability / Feat", spells: "Spells", review: "Review",
+  class: "Class", proficiencies: "Proficiencies", hp: "Hit Points", features: "Features", asi: "Ability / Feat", spells: "Spells", review: "Review",
 };
 
-export function LevelUpWizard({ c, update, onClose }: { c: Character; update: Update; onClose: () => void }) {
+export interface QueueInfo {
+  cls: ContentRef;
+  index: number;
+  total: number;
+}
+
+export function LevelUpWizard({
+  c, update, onClose, queue, onApplied,
+}: { c: Character; update: Update; onClose: () => void; queue?: QueueInfo; onApplied?: (d: Character) => void }) {
   const qc = useQueryClient();
-  const [cls, setCls] = useState<ContentRef | null>(c.classes.length === 1 ? c.classes[0] : null);
-  const [step, setStep] = useState<StepId>("class");
+  const [cls, setCls] = useState<ContentRef | null>(queue?.cls ?? (c.classes.length === 1 ? c.classes[0] : null));
+  const [step, setStep] = useState<StepId>(queue ? "proficiencies" : "class");
   const [hpMode, setHpMode] = useState<"average" | "roll">("average");
   const [hpRoll, setHpRoll] = useState<number | null>(null);
+  const [skillPicks, setSkillPicks] = useState<string[]>([]);
   const [subclass, setSubclass] = useState<ContentSummary | null>(null);
+  const [featureSel, setFeatureSel] = useState<Record<string, Selections>>({});
+  const [progressionSel, setProgressionSel] = useState<Record<string, string[]>>({});
   const [asiMode, setAsiMode] = useState<"asi" | "feat">("asi");
   const [asi, setAsi] = useState<Partial<Record<Ability, number>>>({});
   const [feat, setFeat] = useState<ContentSummary | null>(null);
+  const [featSel, setFeatSel] = useState<Selections>({});
   const [cantrips, setCantrips] = useState<ContentSummary[]>([]);
   const [spells, setSpells] = useState<ContentSummary[]>([]);
   const [swapOut, setSwapOut] = useState<string>("");
@@ -38,54 +57,100 @@ export function LevelUpWizard({ c, update, onClose }: { c: Character; update: Up
   });
   const rules = rulesQuery.data;
   const existing = c.classes.find((k) => cls && k.key === cls.key && k.source === cls.source);
-  const plan = useMemo(() => (rules ? planLevel(c, rules) : null), [c, rules]);
   const activeSubclass = existing?.subclass ?? subclass ?? undefined;
 
-  const subclassLevels = useQuery({
-    queryKey: ["subclassLevels", activeSubclass?.source, activeSubclass?.key],
-    queryFn: () => api.subclassLevels(activeSubclass!.source, activeSubclass!.key),
+  const subRulesQuery = useQuery({
+    queryKey: ["subclassRules", activeSubclass?.source, activeSubclass?.key],
+    queryFn: () => api.subclassRules(activeSubclass!.source, activeSubclass!.key),
     enabled: !!activeSubclass,
     staleTime: Infinity,
   });
+  const plan = useMemo(() => (rules ? planLevel(c, rules, subRulesQuery.data) : null), [c, rules, subRulesQuery.data]);
 
   const newFeatures = useMemo(() => {
     if (!plan) return [];
     const fromClass = (plan.current?.features ?? []).map((f) => ({ ...f, kind: "class" as const }));
-    const fromSub = (subclassLevels.data?.find((l) => l.level === plan.newLevel)?.features ?? []).map((f) => ({ ...f, kind: "subclass" as const }));
+    const fromSub = (subRulesQuery.data?.levels.find((l) => l.level === plan.newLevel)?.features ?? []).map((f) => ({ ...f, kind: "subclass" as const }));
     // ASI is represented by the choice step instead of a feature entry.
     return [...fromClass, ...fromSub].filter((f) => !/ability score improvement/i.test(f.name));
-  }, [plan, subclassLevels.data]);
+  }, [plan, subRulesQuery.data]);
+
+  const featureDetails = useQueries({
+    queries: newFeatures.map((f) => ({
+      queryKey: ["detail", "feature", f.source, f.key],
+      queryFn: () => api.detail("feature", f.source, f.key),
+      staleTime: Infinity,
+    })),
+  });
+  const detailOf = (i: number) => featureDetails[i]?.data as ContentDetail | undefined;
+  const featDetail = useQuery({
+    queryKey: ["detail", "feat", feat?.source, feat?.key],
+    queryFn: () => api.detail("feat", feat!.source, feat!.key),
+    enabled: !!feat,
+    staleTime: Infinity,
+  }).data;
+
+  // Every class the character has (or will have) must meet its multiclass prerequisite.
+  const allClassRules = useQueries({
+    queries: c.classes.map((k) => ({ queryKey: ["classRules", k.source, k.key], queryFn: () => api.classRules(k.source, k.key), staleTime: Infinity })),
+  });
+  const multiclassProblems = useMemo(() => {
+    if (!plan?.isNewClass || plan.isFirstLevelOverall || !rules) return [];
+    const list = [rules, ...allClassRules.map((q) => q.data).filter(Boolean)] as ClassRules[];
+    return list.filter((r) => !meetsRequirements(c.abilities, r.multiclass.requirements)).map((r) => `${r.name} requires ${requirementText(r.multiclass.requirements)}`);
+  }, [plan, rules, allClassRules, c.abilities]);
+
+  const skillChoices = plan?.isNewClass ? (plan.isFirstLevelOverall ? rules?.skillChoices : rules?.multiclass.skillChoices) : null;
+  const profLines = plan?.isNewClass ? (plan.isFirstLevelOverall ? rules?.proficiencies : rules?.multiclass.proficiencies) ?? [] : [];
 
   const steps: StepId[] = useMemo(() => {
-    if (!plan) return ["class"];
-    const s: StepId[] = ["class", "hp", "features"];
+    if (!plan) return queue ? [] : ["class"];
+    const s: StepId[] = queue ? [] : ["class"];
+    if (plan.isNewClass) s.push("proficiencies");
+    s.push("hp", "features");
     if (plan.grantsAsi) s.push("asi");
     if (plan.cantripPicks || plan.spellPicks || plan.freeSpellPicks || plan.canSwapSpell || plan.preparedNote) s.push("spells");
     s.push("review");
     return s;
-  }, [plan]);
+  }, [plan, queue]);
+  const currentStep = steps.includes(step) ? step : steps[0];
 
   const conMod = abilityMod(c, "con");
   const hitDie = rules?.hitDie ?? 8;
+  const featCon = asiMode === "feat" ? (featDetail?.effects?.find((e) => e.kind === "ability" && e.ability === "con") as { amount: number } | undefined)?.amount ?? (featSel.ability?.includes("con") ? 1 : 0) : 0;
+  const conGain = asiMode === "asi" ? asi.con ?? 0 : featCon;
   const baseHp = plan?.isFirstLevelOverall ? hitDie : hpMode === "average" ? Math.floor(hitDie / 2) + 1 : hpRoll ?? 0;
-  const newConMod = mod(c.abilities.con + (asiMode === "asi" ? asi.con ?? 0 : 0));
+  const newConMod = mod(c.abilities.con + (plan?.grantsAsi ? conGain : 0));
   // A Constitution increase raises HP retroactively for every level.
   const hpGain = Math.max(1, baseHp + newConMod) + (newConMod - conMod) * totalLevel(c);
 
   const asiPoints = Object.values(asi).reduce((s, n) => s + (n ?? 0), 0);
   const ownedSpells = new Set(c.spellcasting.spells.map((s) => contentId(s.ref)));
   const knownForClass = c.spellcasting.spells.filter((s) => s.classKey === cls?.key && s.level > 0);
+  const classFilter = rules ? (rules.source === "srd" ? rules.index : rules.name) : undefined;
 
-  const idx = steps.indexOf(step);
+  const idx = steps.indexOf(currentStep);
   const go = (d: 1 | -1) => setStep(steps[Math.max(0, Math.min(steps.length - 1, idx + d))]);
-
   const toggle = (set: React.Dispatch<React.SetStateAction<ContentSummary[]>>) => (item: ContentSummary) =>
     set((s) => (s.some((x) => contentId(x) === contentId(item)) ? s.filter((x) => contentId(x) !== contentId(item)) : [...s, item]));
 
+  // Choices later in the wizard should see skills picked earlier in it (Rogue skills → Expertise).
+  const preview = useMemo(
+    () => ({ ...c, skills: { ...c.skills, ...Object.fromEntries(skillPicks.map((k) => [k, Math.max(1, c.skills[k] ?? 0)])) } }) as Character,
+    [c, skillPicks],
+  );
+
+  const progressionTaken = (name: string) => c.features.find((f) => f.name === name)?.subfeatures?.map((s) => s.key) ?? [];
+
   const warnings = [
-    plan?.needsSubclass && !subclass && "No subclass chosen",
+    ...multiclassProblems.map((p) => `Multiclass prerequisite not met: ${p}`),
+    skillChoices && skillPicks.length < skillChoices.count && `${skillChoices.count - skillPicks.length} class skill(s) left to choose`,
+    plan?.needsSubclass && !subclass && `No ${rules?.subclassTitle ?? "subclass"} chosen`,
+    ...newFeatures.flatMap((f, i) => unfinishedChoices(detailOf(i)?.choices, featureSel[f.key] ?? {}).map((ch) => `${f.name}: ${ch.label}`)),
+    ...(plan?.progressions ?? []).filter((p) => (progressionSel[p.name]?.length ?? 0) < p.gained).map((p) => `${p.name}: ${p.gained - (progressionSel[p.name]?.length ?? 0)} left to choose`),
     plan?.grantsAsi && asiMode === "asi" && asiPoints < 2 && `Only ${asiPoints}/2 ability points assigned`,
     plan?.grantsAsi && asiMode === "feat" && !feat && "No feat chosen",
+    plan?.grantsAsi && asiMode === "feat" && featDetail && unfinishedChoices(featDetail.choices, featSel).length > 0 && `${featDetail.name}: choices incomplete`,
     plan && cantrips.length < plan.cantripPicks && `${plan.cantripPicks - cantrips.length} cantrip(s) left to choose`,
     plan && spells.length < plan.spellPicks && `${plan.spellPicks - spells.length} spell(s) left to choose`,
     hpMode === "roll" && !plan?.isFirstLevelOverall && hpRoll == null && "Hit point die not rolled",
@@ -95,30 +160,52 @@ export function LevelUpWizard({ c, update, onClose }: { c: Character; update: Up
     if (!rules || !plan) return;
     setApplying(true);
     try {
-      const fetchDetail = (type: "feature" | "feat" | "subclass", ref: ContentRef) =>
-        qc.fetchQuery({ queryKey: ["detail", type, ref.source, ref.key], queryFn: () => api.detail(type, ref.source, ref.key), staleTime: Infinity });
-      const [featureDetails, featDetail, subclassDetail] = await Promise.all([
-        Promise.all(newFeatures.map((f) => fetchDetail("feature", f).catch(() => null))),
-        asiMode === "feat" && feat ? fetchDetail("feat", feat) : null,
-        subclass ? fetchDetail("subclass", subclass).catch(() => null) : null,
-      ]);
-      const summary: string[] = [];
       const origin = `${rules.name} ${plan.newLevel}`;
+      const fetchDetail = (type: "feature" | "subclass", ref: ContentRef) =>
+        qc.fetchQuery({ queryKey: ["detail", type, ref.source, ref.key], queryFn: () => api.detail(type, ref.source, ref.key), staleTime: Infinity });
+      // Resolve everything async first; the update itself must be synchronous.
+      const builtFeatures: Feature[] = await Promise.all(
+        newFeatures.map(async (f, i) => {
+          const det = detailOf(i) ?? (await fetchDetail("feature", f).catch(() => null));
+          if (!det) return { id: uid(), name: f.name, origin, kind: f.kind, description: "", ref: { ...f, type: "feature" as const } };
+          return buildFeature({ ...det, name: f.name }, featureSel[f.key] ?? {}, origin, f.kind);
+        }),
+      );
+      const subclassDetail = subclass ? await fetchDetail("subclass", subclass).catch(() => null) : null;
+      const builtFeat = plan.grantsAsi && asiMode === "feat" && featDetail ? await buildFeature(featDetail, featSel, "Feat", "feat") : null;
+      const builtProgressions = await Promise.all(
+        plan.progressions.map(async (p) => ({ p, ...(await grantProgression(p, progressionSel[p.name] ?? [])) })),
+      );
+      const subRules = subRulesQuery.data ?? (subclass ? await api.subclassRules(subclass.source, subclass.key).catch(() => undefined) : undefined);
 
+      const summary: string[] = [];
+      let snapshot: Character | null = null;
       update((d) => {
         // Class & level
         let entry = d.classes.find((k) => k.key === rules.index && k.source === rules.source);
         if (!entry) {
-          entry = { source: rules.source, key: rules.index, name: rules.name, level: 0, hitDie: rules.hitDie, spellcastingAbility: rules.spellcastingAbility, casterType: rules.casterType };
+          entry = {
+            source: rules.source, key: rules.index, name: rules.name, level: 0, hitDie: rules.hitDie,
+            spellcastingAbility: rules.spellcastingAbility, casterType: rules.casterType, spellModel: rules.spellModel, preparedDivisor: rules.preparedDivisor,
+          } satisfies ClassEntry;
           d.classes.push(entry);
-          if (plan.isFirstLevelOverall) d.saveProficiencies = [...rules.savingThrows];
+          if (plan.isFirstLevelOverall) d.saveProficiencies = [...new Set([...d.saveProficiencies, ...rules.savingThrows])];
+          for (const line of profLines) addProficiencyLine(d, line);
+          for (const s of skillPicks) d.skills[s] = Math.max(1, d.skills[s] ?? 0) as 1 | 2;
           summary.push(plan.isFirstLevelOverall ? `Became a ${rules.name}` : `Multiclassed into ${rules.name}`);
+          if (skillPicks.length) summary.push(`Skill proficiencies: ${skillPicks.map(skillName).join(", ")}`);
         }
         entry.level = plan.newLevel;
         if (subclass) {
           entry.subclass = { source: subclass.source, key: subclass.key, name: subclass.name };
-          summary.push(`Chose subclass: ${subclass.name}`);
-          if (subclassDetail) d.features.push(feature(subclass.name, origin, "subclass", subclassDetail.description, { ...subclass, type: "subclass" }));
+          // Subclasses like Eldritch Knight grant spellcasting to a non-caster class.
+          if (!entry.spellcastingAbility && subRules?.spellcastingAbility) {
+            Object.assign(entry, { spellcastingAbility: subRules.spellcastingAbility, casterType: subRules.casterType, spellModel: subRules.spellModel });
+          }
+          summary.push(`Chose ${rules.subclassTitle}: ${subclass.name}`);
+          // 5etools subclasses ship an intro feature named after the subclass; don't add the same text twice.
+          const hasIntro = builtFeatures.some((f) => f.kind === "subclass" && subclass.name.includes(f.name));
+          if (subclassDetail && !hasIntro) d.features.push({ id: uid(), name: subclass.name, origin, kind: "subclass", description: subclassDetail.description, ref: { ...subclass, type: "subclass" } });
         }
 
         // Ability scores / feat (before HP so Constitution increases count)
@@ -127,28 +214,31 @@ export function LevelUpWizard({ c, update, onClose }: { c: Character; update: Up
           const parts = Object.entries(asi).filter(([, n]) => n).map(([a, n]) => `${a.toUpperCase()} +${n}`);
           if (parts.length) summary.push(`Ability Score Improvement: ${parts.join(", ")}`);
         }
-        if (plan.grantsAsi && asiMode === "feat" && featDetail) {
-          d.features.push(feature(featDetail.name, "Feat", "feat", featDetail.description, { ...featDetail, type: "feat" }));
-          for (const e of featDetail.effects ?? []) if (e.kind === "ability") d.abilities[e.ability] = Math.min(20, d.abilities[e.ability] + e.amount);
-          summary.push(`Took feat: ${featDetail.name}`);
+        if (builtFeat && featDetail) {
+          grantFeature(d, builtFeat, { ...featDetail, effects: featDetail.effects?.filter((e) => e.kind !== "speed") });
+          summary.push(`Took feat: ${builtFeat.name}${builtFeat.subfeatures?.length ? ` (${builtFeat.subfeatures.map((s) => s.name).join(", ")})` : ""}`);
         }
 
-        // Hit points
         d.hp.max += hpGain;
         d.hp.current += hpGain;
 
-        // Features
-        newFeatures.forEach((f, i) => {
-          const det = featureDetails[i];
-          d.features.push(feature(f.name, origin, f.kind, det?.description ?? "", { ...f, type: "feature" }));
-        });
-        if (newFeatures.length) summary.push(`New features: ${newFeatures.map((f) => f.name).join(", ")}`);
+        for (const f of builtFeatures) {
+          applySubfeatureMechanics(d, f.choices ?? [], f.subfeatures ?? []);
+          d.features.push(f);
+        }
+        if (builtFeatures.length) summary.push(`New features: ${builtFeatures.map((f) => f.name).join(", ")}`);
+        for (const f of builtFeatures) if (f.subfeatures?.length) summary.push(`${f.name}: ${f.subfeatures.map((s) => s.name).join(", ")}`);
+        for (const { p, choice, subs } of builtProgressions) {
+          if (!subs.length) continue;
+          attachProgression(d, p, choice, subs, origin);
+          summary.push(`${p.name}: ${subs.map((s) => s.name).join(", ")}`);
+        }
 
         // Spells
         const addSpell = (s: ContentSummary) =>
           d.spellcasting.spells.push({
             id: uid(), ref: { source: s.source, key: s.key, name: s.name }, level: s.level ?? 0, classKey: rules.index,
-            prepared: (s.level ?? 0) === 0 || spellModel(rules.index) === "known", alwaysPrepared: false, notes: "",
+            prepared: (s.level ?? 0) === 0 || plan.spellModel === "known", alwaysPrepared: false, notes: "",
           });
         cantrips.forEach(addSpell);
         spells.forEach(addSpell);
@@ -161,26 +251,32 @@ export function LevelUpWizard({ c, update, onClose }: { c: Character; update: Up
         if (cantrips.length) summary.push(`Learned cantrips: ${cantrips.map((s) => s.name).join(", ")}`);
         if (spells.length) summary.push(`Learned spells: ${spells.map((s) => s.name).join(", ")}`);
 
-        Object.assign(d.spellcasting, recomputeSlots(d.classes, entry, plan.current, d.spellcasting));
+        Object.assign(d.spellcasting, recomputeSlots(d.classes, entry, plan.spellcasting, d.spellcasting));
 
         d.levelHistory.push({ classKey: rules.index, className: rules.name, level: plan.newLevel, hpGained: hpGain, summary, at: new Date().toISOString() });
+        onApplied?.(d);
+        snapshot = d;
       });
-      onClose();
+      if (snapshot) onClose();
     } finally {
       setApplying(false);
     }
   }
 
+  const title = queue
+    ? `Build: level ${queue.index} of ${queue.total}${plan && rules ? ` (${rules.name} ${plan.newLevel})` : ""}`
+    : plan && rules ? `Level up: ${rules.name} ${plan.newLevel}` : "Level up";
+
   return (
     <Modal
       wide
-      title={plan ? `Level up: ${rules!.name} ${plan.newLevel}` : "Level up"}
+      title={title}
       onClose={onClose}
       footer={
         <>
-          <button className="btn mr-auto" onClick={onClose}>Cancel</button>
+          <button className="btn mr-auto" onClick={onClose}>{queue ? "Pause build" : "Cancel"}</button>
           {idx > 0 && <button className="btn" onClick={() => go(-1)}>Back</button>}
-          {step !== "review" ? (
+          {currentStep !== "review" ? (
             <button className="btn-primary" disabled={!plan} onClick={() => go(1)}>Next</button>
           ) : (
             <button className="btn-primary" disabled={applying} onClick={apply}>{applying ? "Applying…" : "Apply level up"}</button>
@@ -194,7 +290,7 @@ export function LevelUpWizard({ c, update, onClose }: { c: Character; update: Up
             <button
               disabled={!plan}
               onClick={() => setStep(s)}
-              className={`rounded-full px-3 py-1 transition ${s === step ? "bg-accent-500 text-ink-950" : i < idx ? "bg-ink-700 text-ink-200" : "bg-ink-850 text-ink-400"}`}
+              className={`rounded-full px-3 py-1 transition ${s === currentStep ? "bg-accent-500 text-ink-950" : i < idx ? "bg-ink-700 text-ink-200" : "bg-ink-850 text-ink-400"}`}
             >
               {i + 1}. {STEP_LABEL[s]}
             </button>
@@ -202,11 +298,43 @@ export function LevelUpWizard({ c, update, onClose }: { c: Character; update: Up
         ))}
       </ol>
 
-      {step === "class" && <ClassStep c={c} selected={cls} onSelect={(k) => { setCls(k); setSubclass(null); setCantrips([]); setSpells([]); }} />}
+      {currentStep === "class" && (
+        <ClassStep c={c} selected={cls} onSelect={(k) => { setCls(k); setSubclass(null); setCantrips([]); setSpells([]); setSkillPicks([]); setFeatureSel({}); setProgressionSel({}); }} />
+      )}
       {cls && rulesQuery.isLoading && <Spinner label="Loading class progression…" />}
       {rulesQuery.error && <p className="text-blood-500">{(rulesQuery.error as Error).message}</p>}
+      {currentStep === "class" && multiclassProblems.length > 0 && (
+        <div className="mt-4 rounded-lg border border-blood-500/50 bg-blood-500/10 p-3 text-sm">
+          <p className="font-semibold text-blood-500">Multiclass prerequisites not met</p>
+          <ul className="mt-1 list-disc pl-5">{multiclassProblems.map((p) => <li key={p}>{p}</li>)}</ul>
+          <p className="mt-1 text-ink-400">You can continue anyway if your DM allows it.</p>
+        </div>
+      )}
 
-      {plan && rules && step === "hp" && (
+      {plan && rules && currentStep === "proficiencies" && (
+        <div className="space-y-4">
+          <p className="text-sm text-ink-400">
+            {plan.isFirstLevelOverall
+              ? `As a 1st-level ${rules.name} you gain these proficiencies.`
+              : `Multiclassing into ${rules.name} grants only some of its proficiencies.`}
+          </p>
+          <ul className="space-y-1 text-sm">
+            {plan.isFirstLevelOverall && <li><span className="label mr-2">Saving throws</span>{rules.savingThrows.map((a) => ABILITY_NAMES[a]).join(", ")}</li>}
+            {profLines.map((l) => <li key={l}>{l}</li>)}
+            {!profLines.length && !plan.isFirstLevelOverall && <li className="text-ink-400">No armor or weapon proficiencies.</li>}
+          </ul>
+          {skillChoices && (
+            <ChoicePicker
+              character={c}
+              choice={{ id: "class-skills", kind: "skill", count: skillChoices.count, label: `Choose ${skillChoices.count} ${rules.name} skill${skillChoices.count > 1 ? "s" : ""}`, options: skillChoices.from.map((k) => ({ key: k, name: skillName(k) })) }}
+              selected={skillPicks}
+              onChange={setSkillPicks}
+            />
+          )}
+        </div>
+      )}
+
+      {plan && rules && currentStep === "hp" && (
         <div className="space-y-4">
           {plan.isFirstLevelOverall ? (
             <p>At 1st level you get the maximum of your hit die: <b>d{hitDie} → {hitDie}</b>.</p>
@@ -228,14 +356,14 @@ export function LevelUpWizard({ c, update, onClose }: { c: Character; update: Up
         </div>
       )}
 
-      {plan && rules && step === "features" && (
-        <div className="space-y-4">
+      {plan && rules && currentStep === "features" && (
+        <div className="space-y-5">
           {plan.needsSubclass && (
             <div>
-              <h3 className="mb-2 font-display text-lg text-accent-400">Choose your {rules.name} subclass</h3>
+              <h3 className="mb-2 font-display text-lg text-accent-400">Choose your {rules.subclassTitle}</h3>
               <ContentBrowser
                 type="subclass"
-                filters={{ class: rules.index }}
+                filters={{ class: classFilter }}
                 allowAnyClass={false}
                 limit={1}
                 selected={subclass ? [subclass] : []}
@@ -244,23 +372,47 @@ export function LevelUpWizard({ c, update, onClose }: { c: Character; update: Up
             </div>
           )}
           <h3 className="font-display text-lg text-accent-400">You gain</h3>
-          {newFeatures.length === 0 && <p className="text-sm text-ink-400">No new class features at this level.</p>}
-          <div className="space-y-2">
-            {newFeatures.map((f) => (
-              <details key={f.key} className="rounded-lg border border-ink-800 bg-ink-850/50 p-3" open={newFeatures.length <= 2}>
-                <summary className="cursor-pointer font-semibold">{f.name} {f.kind === "subclass" && <span className="chip ml-2">{activeSubclass?.name}</span>}</summary>
-                <div className="mt-2"><ContentDetailView type="feature" item={f} /></div>
-              </details>
+          {newFeatures.length === 0 && plan.progressions.length === 0 && <p className="text-sm text-ink-400">No new class features at this level.</p>}
+          <div className="space-y-3">
+            {newFeatures.map((f, i) => {
+              const det = detailOf(i);
+              const choices = det?.choices ?? [];
+              return (
+                <div key={f.key} className="rounded-lg border border-ink-800 bg-ink-850/50 p-3">
+                  <details open={newFeatures.length <= 2 && !choices.length}>
+                    <summary className="cursor-pointer font-semibold">
+                      {f.name} {f.kind === "subclass" && <span className="chip ml-2">{activeSubclass?.name}</span>}
+                      {choices.length > 0 && <span className="chip ml-2 border-accent-600 text-accent-400">choice</span>}
+                    </summary>
+                    <div className="mt-2">{det ? <Markdown text={det.description || "_No description._"} /> : <Spinner />}</div>
+                  </details>
+                  {choices.length > 0 && (
+                    <div className="mt-3 border-t border-ink-800 pt-3">
+                      <ChoiceList choices={choices} character={preview} selections={featureSel[f.key] ?? {}} onChange={(s) => setFeatureSel({ ...featureSel, [f.key]: s })} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {plan.progressions.map((p) => (
+              <div key={p.name} className="rounded-lg border border-ink-800 bg-ink-850/50 p-3">
+                <ChoicePicker
+                  choice={{ id: p.name, kind: "feature", count: p.gained, label: `${p.name}: learn ${p.gained} (you'll know ${p.total})`, options: p.options } satisfies Choice}
+                  taken={progressionTaken(p.name)}
+                  selected={progressionSel[p.name] ?? []}
+                  onChange={(keys) => setProgressionSel({ ...progressionSel, [p.name]: keys })}
+                />
+              </div>
             ))}
           </div>
         </div>
       )}
 
-      {plan && step === "asi" && (
+      {plan && currentStep === "asi" && (
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <Choice active={asiMode === "asi"} onClick={() => setAsiMode("asi")} title="Ability Score Improvement" desc="+2 to one score, or +1 to two (max 20)" />
-            <Choice active={asiMode === "feat"} onClick={() => setAsiMode("feat")} title="Take a feat" desc="Pick from SRD, Open5e or your homebrew" />
+            <Choice active={asiMode === "feat"} onClick={() => setAsiMode("feat")} title="Take a feat" desc="Pick from any enabled source or your homebrew" />
           </div>
           {asiMode === "asi" ? (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -282,36 +434,43 @@ export function LevelUpWizard({ c, update, onClose }: { c: Character; update: Up
               })}
             </div>
           ) : (
-            <ContentBrowser
-              type="feat"
-              limit={1}
-              selected={feat ? [feat] : []}
-              disabledIds={new Set(c.features.filter((f) => f.kind === "feat" && f.ref).map((f) => contentId(f.ref!)))}
-              onToggle={(f) => setFeat(feat && contentId(feat) === contentId(f) ? null : f)}
-            />
+            <>
+              <ContentBrowser
+                type="feat"
+                limit={1}
+                selected={feat ? [feat] : []}
+                disabledIds={new Set(c.features.filter((f) => f.kind === "feat" && f.ref).map((f) => contentId(f.ref!)))}
+                onToggle={(f) => { setFeat(feat && contentId(feat) === contentId(f) ? null : f); setFeatSel({}); }}
+              />
+              {featDetail?.choices?.length ? (
+                <div className="rounded-lg border border-ink-800 p-3">
+                  <ChoiceList choices={featDetail.choices} selections={featSel} onChange={setFeatSel} character={c} />
+                </div>
+              ) : null}
+            </>
           )}
         </div>
       )}
 
-      {plan && rules && step === "spells" && (
+      {plan && rules && currentStep === "spells" && (
         <div className="space-y-6">
           {plan.preparedNote && <p className="rounded-lg border border-arcane-500/40 bg-arcane-500/10 p-3 text-sm">{plan.preparedNote}</p>}
           {plan.cantripPicks > 0 && (
             <div>
               <h3 className="mb-2 font-display text-lg text-accent-400">Learn {plan.cantripPicks} cantrip{plan.cantripPicks > 1 ? "s" : ""}</h3>
-              <ContentBrowser type="spell" filters={{ class: rules.index, level: 0 }} classLabel={rules.name} limit={plan.cantripPicks} selected={cantrips} disabledIds={ownedSpells} onToggle={toggle(setCantrips)} />
+              <ContentBrowser type="spell" filters={{ class: spellListClass(rules, subRulesQuery.data), level: 0 }} classLabel={spellListLabel(rules, subRulesQuery.data)} limit={plan.cantripPicks} selected={cantrips} disabledIds={ownedSpells} onToggle={toggle(setCantrips)} />
             </div>
           )}
           {(plan.spellPicks > 0 || plan.freeSpellPicks) && (
             <div>
               <h3 className="mb-2 font-display text-lg text-accent-400">
-                {plan.freeSpellPicks ? "Add spells (optional)" : spellModel(rules.index) === "spellbook" ? `Add ${plan.spellPicks} spells to your spellbook` : `Learn ${plan.spellPicks} new spell${plan.spellPicks > 1 ? "s" : ""}`}
+                {plan.freeSpellPicks ? "Add spells (optional)" : plan.spellModel === "spellbook" ? `Add ${plan.spellPicks} spells to your spellbook` : `Learn ${plan.spellPicks} new spell${plan.spellPicks > 1 ? "s" : ""}`}
                 <span className="ml-2 text-sm text-ink-400">up to {plan.maxSpellLevel === 0 ? "cantrips" : `level ${plan.maxSpellLevel}`}</span>
               </h3>
               <ContentBrowser
                 type="spell"
-                filters={{ class: rules.index, minLevel: 1, maxLevel: plan.maxSpellLevel }}
-                classLabel={rules.name}
+                filters={{ class: spellListClass(rules, subRulesQuery.data), minLevel: 1, maxLevel: plan.maxSpellLevel }}
+                classLabel={spellListLabel(rules, subRulesQuery.data)}
                 limit={plan.freeSpellPicks ? undefined : plan.spellPicks}
                 selected={spells}
                 disabledIds={ownedSpells}
@@ -327,20 +486,31 @@ export function LevelUpWizard({ c, update, onClose }: { c: Character; update: Up
                 {knownForClass.map((s) => <option key={s.id} value={s.id}>{s.ref.name} (level {s.level})</option>)}
               </select>
               {swapOut && (
-                <ContentBrowser type="spell" filters={{ class: rules.index, minLevel: 1, maxLevel: plan.maxSpellLevel }} classLabel={rules.name} limit={1} selected={swapIn} disabledIds={ownedSpells} onToggle={(s) => setSwapIn(swapIn[0] && contentId(swapIn[0]) === contentId(s) ? [] : [s])} />
+                <ContentBrowser type="spell" filters={{ class: spellListClass(rules, subRulesQuery.data), minLevel: 1, maxLevel: plan.maxSpellLevel }} classLabel={spellListLabel(rules, subRulesQuery.data)} limit={1} selected={swapIn} disabledIds={ownedSpells} onToggle={(s) => setSwapIn(swapIn[0] && contentId(swapIn[0]) === contentId(s) ? [] : [s])} />
               )}
             </div>
           )}
         </div>
       )}
 
-      {plan && rules && step === "review" && (
+      {plan && rules && currentStep === "review" && (
         <div className="space-y-4">
           <ul className="space-y-2 text-sm">
             <ReviewRow label="Class">{rules.name} {plan.newLevel}{plan.isNewClass && !plan.isFirstLevelOverall ? " (multiclass)" : ""}</ReviewRow>
+            {skillPicks.length > 0 && <ReviewRow label="Skills">{skillPicks.map(skillName).join(", ")}</ReviewRow>}
             <ReviewRow label="Hit points">+{hpGain} (max {c.hp.max + hpGain})</ReviewRow>
-            {subclass && <ReviewRow label="Subclass">{subclass.name}</ReviewRow>}
-            {newFeatures.length > 0 && <ReviewRow label="Features">{newFeatures.map((f) => f.name).join(", ")}</ReviewRow>}
+            {subclass && <ReviewRow label={rules.subclassTitle}>{subclass.name}</ReviewRow>}
+            {newFeatures.length > 0 && (
+              <ReviewRow label="Features">
+                {newFeatures.map((f, i) => {
+                  const picks = (detailOf(i)?.choices ?? []).flatMap((ch) => (featureSel[f.key]?.[ch.id] ?? []).map((k) => ch.options.find((o) => o.key === k)?.name));
+                  return <div key={f.key}>{f.name}{picks.length ? <span className="text-ink-400">: {picks.join(", ")}</span> : null}</div>;
+                })}
+              </ReviewRow>
+            )}
+            {plan.progressions.map((p) => (
+              <ReviewRow key={p.name} label={p.name}>{(progressionSel[p.name] ?? []).map((k) => p.options.find((o) => o.key === k)?.name).join(", ") || "—"}</ReviewRow>
+            ))}
             {plan.grantsAsi && (
               <ReviewRow label={asiMode === "asi" ? "Ability scores" : "Feat"}>
                 {asiMode === "asi" ? Object.entries(asi).filter(([, n]) => n).map(([a, n]) => `${a.toUpperCase()} +${n}`).join(", ") || "—" : feat?.name ?? "—"}
@@ -362,12 +532,16 @@ export function LevelUpWizard({ c, update, onClose }: { c: Character; update: Up
   );
 }
 
-function feature(name: string, origin: string, kind: Feature["kind"], description: string, ref?: Feature["ref"]): Feature {
-  return { id: uid(), name, origin, kind, description, ref: ref && { source: ref.source, key: ref.key, name: ref.name, type: ref.type } };
+/** Spell list to draw from: the class's own, or the subclass's parent list (Eldritch Knight → Wizard). */
+function spellListClass(rules: ClassRules, sub?: { spellcastingAbility: Ability | null }) {
+  if (!rules.spellcastingAbility && sub?.spellcastingAbility) return "wizard";
+  return rules.source === "srd" ? rules.index : rules.name;
 }
+const spellListLabel = (rules: ClassRules, sub?: { spellcastingAbility: Ability | null }) =>
+  !rules.spellcastingAbility && sub?.spellcastingAbility ? "Wizard" : rules.name;
 
 function ClassStep({ c, selected, onSelect }: { c: Character; selected: ContentRef | null; onSelect: (k: ContentRef) => void }) {
-  const { data, isLoading } = useQuery({ queryKey: ["content", "class"], queryFn: () => api.search("class"), staleTime: Infinity });
+  const { data, isLoading } = useQuery({ queryKey: ["content", "class"], queryFn: () => api.search("class"), staleTime: 60_000 });
   const isSel = (k: ContentRef) => selected?.key === k.key && selected.source === k.source;
   const others = (data ?? []).filter((k) => !c.classes.some((x) => x.key === k.key && x.source === k.source));
   return (
@@ -384,15 +558,24 @@ function ClassStep({ c, selected, onSelect }: { c: Character; selected: ContentR
       )}
       <div>
         <h3 className="label mb-2">{c.classes.length ? "Or multiclass into" : "Choose your class"}</h3>
-        {c.classes.length > 0 && <p className="mb-2 text-xs text-ink-400">Multiclassing usually requires 13+ in the primary ability of both classes. Not enforced; check with your DM.</p>}
         {isLoading && <Spinner />}
         <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-4">
           {others.map((k) => (
-            <Choice key={`${k.source}:${k.key}`} active={isSel(k)} onClick={() => onSelect(k)} title={k.name} desc={k.source === "homebrew" ? "Homebrew" : ""} />
+            <Choice key={`${k.source}:${k.key}`} active={isSel(k)} onClick={() => onSelect(k)} title={k.name} desc={k.sourceLabel ?? ""} />
           ))}
         </div>
       </div>
+      {selected && <ContentDetailPeek item={selected} />}
     </div>
+  );
+}
+
+function ContentDetailPeek({ item }: { item: ContentRef }) {
+  return (
+    <details className="rounded-lg border border-ink-800 p-3 text-sm">
+      <summary className="cursor-pointer text-ink-400">About {item.name}</summary>
+      <div className="mt-2"><ContentDetailView type="class" item={item} /></div>
+    </details>
   );
 }
 
@@ -406,7 +589,7 @@ function Choice({ active, onClick, title, desc, children }: { active: boolean; o
       className={`cursor-pointer rounded-xl border p-3 text-left transition ${active ? "border-accent-500 bg-accent-500/10" : "border-ink-700 bg-ink-850 hover:border-ink-600"}`}
     >
       <div className="font-semibold">{title}</div>
-      {desc && <div className="text-xs text-ink-400">{desc}</div>}
+      {desc && <div className="truncate text-xs text-ink-400">{desc}</div>}
       {children}
     </div>
   );

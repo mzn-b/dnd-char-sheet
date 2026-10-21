@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { api } from "../../lib/api";
-import { uid } from "../../lib/defaults";
+import { buildFeature, grantFeature, replaceOrigin } from "../../lib/apply";
 import { ALIGNMENTS, classSummary, totalLevel, xpForNextLevel, XP_THRESHOLDS } from "../../lib/rules";
-import type { Ability, Character, ContentSummary } from "../../lib/types";
+import type { Character, ContentDetail, Selections } from "../../lib/types";
 import type { SaveState, Update } from "../../lib/useCharacter";
-import { ContentPicker } from "../ContentBrowser";
+import { ContentApplyDialog } from "../ChoicePicker";
 import { Modal, NumberField, TextField } from "../ui";
 
 export function SheetHeader({
@@ -15,28 +14,15 @@ export function SheetHeader({
   const level = totalLevel(c);
   const canLevel = level > 0 && level < 20 && c.xp >= XP_THRESHOLDS[level];
 
-  const applyPick = async ([p]: ContentSummary[]) => {
+  const applyOrigin = async (det: ContentDetail, selections: Selections) => {
     const kind = picking!;
-    setPicking(null);
-    const det = await api.detail(kind, p.source, p.key);
+    const feature = await buildFeature(det, selections, kind === "race" ? "Race" : "Background", kind);
     update((d) => {
-      // Replace anything granted by the previous race/background.
-      d.features = d.features.filter((f) => f.kind !== kind);
-      if (kind === "race") {
-        d.race = det.name;
-        d.raceRef = { source: det.source, key: det.key, name: det.name };
-        const speed = parseInt(det.meta.Speed ?? "", 10);
-        if (speed) d.speed = speed;
-        for (const e of det.effects ?? []) if (e.kind === "ability") d.abilities[e.ability as Ability] += e.amount;
-      } else {
-        d.background = det.name;
-        d.backgroundRef = { source: det.source, key: det.key, name: det.name };
-      }
-      d.features.push({
-        id: uid(), name: det.name, origin: kind === "race" ? "Race" : "Background", kind,
-        description: [det.description, ...Object.entries(det.meta).map(([k, v]) => `**${k}.** ${v}`)].filter(Boolean).join("\n\n"),
-        ref: { source: det.source, key: det.key, name: det.name, type: kind },
-      });
+      replaceOrigin(d, kind);
+      const ref = { source: det.source, key: det.key, name: det.name };
+      if (kind === "race") Object.assign(d, { race: det.name, raceRef: ref });
+      else Object.assign(d, { background: det.name, backgroundRef: ref });
+      grantFeature(d, feature, det);
     });
   };
 
@@ -85,7 +71,7 @@ export function SheetHeader({
       </div>
 
       {picking && (
-        <ContentPicker title={`Choose ${picking}`} type={picking} limit={1} confirmLabel="Apply" onClose={() => setPicking(null)} onConfirm={applyPick} />
+        <ContentApplyDialog title={`Choose ${picking}`} type={picking} character={c} onClose={() => setPicking(null)} onApply={applyOrigin} />
       )}
       {editingClasses && <ClassesEditor c={c} update={update} onClose={() => setEditingClasses(false)} />}
     </div>

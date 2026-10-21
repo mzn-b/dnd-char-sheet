@@ -1,4 +1,4 @@
-import type { Ability, CasterType, Character, ClassEntry, ProfLevel } from "./types";
+import type { Ability, CasterType, Character, ClassEntry, ProfLevel, SpellModel } from "./types";
 
 export const ABILITY_NAMES: Record<Ability, string> = {
   str: "Strength",
@@ -84,21 +84,22 @@ export const CASTER_TYPE: Record<string, CasterType> = {
   paladin: "half", ranger: "half", warlock: "pact",
 };
 
-/** How a class gains spells: picks them as "known", or "prepares" from a list each day. */
-export const SPELL_MODEL: Record<string, "known" | "prepared" | "spellbook"> = {
+/** Fallback for characters saved before the class carried its own spell model. */
+const SPELL_MODEL: Record<string, SpellModel> = {
   bard: "known", ranger: "known", sorcerer: "known", warlock: "known",
-  cleric: "prepared", druid: "prepared", paladin: "prepared",
+  cleric: "prepared", druid: "prepared", paladin: "prepared", artificer: "prepared",
   wizard: "spellbook",
 };
 
-export const spellModel = (classKey: string) => SPELL_MODEL[classKey] ?? "known";
+/** How a class gains spells: picks them as "known", "prepares" from its list, or keeps a spellbook. */
+export const spellModel = (k: Pick<ClassEntry, "key" | "name" | "spellModel"> | undefined): SpellModel =>
+  k?.spellModel ?? SPELL_MODEL[k?.key ?? ""] ?? SPELL_MODEL[(k?.name ?? "").toLowerCase()] ?? "known";
 
 /** Number of spells a prepared caster (or wizard) can have prepared. */
 export function maxPrepared(c: Character, k: ClassEntry): number | null {
-  const model = spellModel(k.key);
-  if (model === "known" || !k.spellcastingAbility) return null;
-  const level = k.key === "paladin" ? Math.floor(k.level / 2) : k.level;
-  return Math.max(1, abilityMod(c, k.spellcastingAbility) + level);
+  if (spellModel(k) === "known" || !k.spellcastingAbility) return null;
+  const divisor = k.preparedDivisor ?? (k.name.toLowerCase() === "paladin" ? 2 : 1);
+  return Math.max(1, abilityMod(c, k.spellcastingAbility) + Math.floor(k.level / divisor));
 }
 
 export const spellSaveDC = (c: Character, a: Ability) => 8 + profBonus(c) + abilityMod(c, a);
@@ -113,7 +114,7 @@ const MULTICLASS_SLOTS: number[][] = [
 ];
 
 export function casterType(k: ClassEntry): CasterType {
-  return k.casterType ?? CASTER_TYPE[k.key] ?? (k.spellcastingAbility ? "full" : "none");
+  return k.casterType ?? CASTER_TYPE[k.key] ?? CASTER_TYPE[k.name.toLowerCase()] ?? (k.spellcastingAbility ? "full" : "none");
 }
 
 /**
@@ -125,6 +126,7 @@ export function multiclassSlots(classes: ClassEntry[]): number[] {
     const t = casterType(k);
     if (t === "full") return sum + k.level;
     if (t === "half") return sum + Math.floor(k.level / 2);
+    if (t === "artificer") return sum + Math.ceil(k.level / 2);
     if (t === "third") return sum + Math.floor(k.level / 3);
     return sum;
   }, 0);
@@ -142,3 +144,23 @@ export function pactSlots(warlockLevel: number): { max: number; level: number } 
 
 export const ordinal = (n: number) => (n === 1 ? "1st" : n === 2 ? "2nd" : n === 3 ? "3rd" : `${n}th`);
 export const spellLevelLabel = (n: number) => (n === 0 ? "Cantrips" : `${ordinal(n)} level`);
+
+export const skillName = (key: string) => SKILLS.find((s) => s.key === key)?.name ?? key;
+
+/** Standard array, point-buy costs and the multiclass rule helpers used by the creator and wizard. */
+export const STANDARD_ARRAY = [15, 14, 13, 12, 10, 8];
+export const POINT_BUY_COST: Record<number, number> = { 8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9 };
+export const POINT_BUY_BUDGET = 27;
+
+/** Whether ability scores meet a class's multiclass prerequisite ("13 Str or 13 Dex", "13 Str and 13 Cha"). */
+export function meetsRequirements(
+  scores: Record<Ability, number>,
+  req: { any: boolean; scores: Partial<Record<Ability, number>> } | null | undefined,
+): boolean {
+  if (!req) return true;
+  const checks = Object.entries(req.scores).map(([a, min]) => scores[a as Ability] >= (min ?? 0));
+  return req.any ? checks.some(Boolean) : checks.every(Boolean);
+}
+
+export const requirementText = (req: { any: boolean; scores: Partial<Record<Ability, number>> } | null | undefined) =>
+  req ? Object.entries(req.scores).map(([a, n]) => `${a.toUpperCase()} ${n}`).join(req.any ? " or " : " and ") : "none";

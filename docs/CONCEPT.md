@@ -52,6 +52,49 @@
 
 **Characters store references plus copies.** Spells and features keep a `{source, key, name}` reference so their details can always be fetched again. Features also copy their description, so a sheet still reads correctly if the API is offline or a homebrew entry is deleted.
 
+## 5etools
+
+5etools has no API: its data is static JSON (`data/class/class-wizard.json`, `data/spells/spells-phb.json`, …). The server loads the files from a mirror (`FIVETOOLS_DATA_URL`, by default the community GitHub mirror). It also loads any files the user enabled from the 5etools homebrew repository, which use the same format. Everything is cached in Postgres and merged in memory.
+
+- **2014 rules only.** Entries marked `edition: "one"` and books published from the 2024 PHB onward (XPHB, XDMG, XMM, …) are dropped.
+- **Text.** Nested `entries` with `{@spell fireball}`-style tags are rendered to the app's markdown subset. References to sub-features are inlined.
+- **Keys.** Keys are the 5etools identity, `Name|Source`. Class features use `cf|Name|Class|ClassSource|Level|Source`, subclass features `scf|…`, and optional features `of|Name|Source`.
+- **Duplicates.** When 5etools is on, SRD and Open5e entries with the same name are hidden in favour of the full 5etools text.
+- **Opt-in.** The provider is off by default because 5etools mirrors content beyond the SRD.
+
+## Choices and sub-features
+
+A feature, feat, race or background can carry **choices** (`Choice { kind, count, options }`):
+
+| kind | Examples | Effect when picked |
+| --- | --- | --- |
+| `feature` | Fighting Style, Metamagic, Pact Boon, a subclass's options | sub-feature with the option's full text |
+| `expertise` | Rogue/Bard Expertise | skill set to expertise |
+| `skill` | Half-Elf Skill Versatility, Skilled | skill proficiency |
+| `ability` | Half-Elf +1/+1, Resilient | ability score +amount |
+| `save` | Resilient | saving-throw proficiency |
+| `text` | Favored Enemy, Natural Explorer | sub-feature with that label |
+
+Picks become `subfeatures` on the character's feature, each with its own description. The feature also keeps its `choices`, so **Change choices** on the Features tab can re-pick at any time. The old pick's mechanics are undone and the new one's applied.
+
+**Progressions** are options gained by count rather than by a feature: Eldritch Invocations known, Battle Master maneuvers, Blood Curses. They come from the class table (`invocations_known`, `optionalfeatureProgression`). The wizard asks for the new picks and adds them as sub-features of the matching feature.
+
+Sources of choices: the SRD API's `feature_specific` option sets, 5etools `{type: "options"}` blocks and ability/skill/save `choose` blocks, and homebrew entries (Homebrew Workshop → Choices).
+
+## Character creator
+
+`/new` walks through name and target level, then race and background (with their choices), then ability scores (standard array, 27-point buy, 4d6-drop-lowest or manual, with a live preview of racial bonuses). Next comes the **class plan**: the starting class plus multiclass rows, with prerequisites checked against the final scores. After that come starting equipment, details and review.
+
+Creating the character applies race, background, scores and equipment, then stores the plan as `pendingLevelUps`. The sheet opens the level-up wizard in **build mode** once per queued level ("Build: level 3 of 5"). Every level gets the same HP, feature, choice and spell steps as a normal level-up. A build can be paused and continued later from a banner on the sheet.
+
+## Multiclassing
+
+- The class step and the creator check each class's multiclass prerequisite (e.g. "STR 13 or DEX 13"). Unmet prerequisites are flagged, not blocked.
+- The first class grants its saving throws and full proficiencies. Later classes grant only their multiclass proficiencies and skill picks.
+- Hit dice are tracked per die size.
+- Spell slots follow the PHB multiclass table: full + half (rounded down) + third (rounded down) + artificer (rounded up). Pact magic is tracked separately.
+- Each class keeps its own spell list, spellcasting ability, save DC, and known/prepared limits (from its own class level).
+
 ## Level-up wizard
 
 `planLevel()` compares the class's progression table at the new level with the previous level. It works out which steps are needed, and steps that don't apply are skipped.
@@ -88,9 +131,9 @@ The Homebrew Workshop has forms for each content type:
 
 ## Roadmap / ideas
 
-- Class skill and starting equipment choices at level 1 (the SRD API exposes `proficiency_choices`).
-- Feature sub-choices (Fighting Style, Metamagic, Eldritch Invocations) as wizard steps.
-- 2024 rules (the SRD API offers `/api/2024`), selectable per character.
+- Replace-on-level-up for invocations and maneuvers (currently: remove and re-add on the Features tab).
+- Apply 5etools `additionalSpells` (racial and subclass spells such as Drow magic or domain spells) automatically.
+- 2024 rules, selectable per character.
 - Dice roller and roll log; clickable bonuses that roll.
 - User accounts and sharing a read-only sheet with the DM.
 - PDF export laid out like the official sheet.

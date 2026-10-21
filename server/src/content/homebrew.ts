@@ -25,7 +25,7 @@ export async function listHomebrew(type: ContentType, opts: { cls?: string }): P
   const { rows } = await pool.query<Row>("SELECT id, type, name, data FROM homebrew WHERE type = $1 ORDER BY name", [type]);
   return rows
     .map(toDetail)
-    .filter((d) => !opts.cls || !d.classes?.length || d.classes.includes(opts.cls))
+    .filter((d) => !opts.cls || !d.classes?.length || d.classes.some((c) => c.toLowerCase() === opts.cls))
     .map(({ source, key, type, name, level, classes, sourceLabel }) => ({ source, key, type, name, level, classes, sourceLabel }));
 }
 

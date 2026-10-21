@@ -9,7 +9,11 @@ export const CONTENT_TYPES = [
   "class",
 ] as const;
 export type ContentType = (typeof CONTENT_TYPES)[number];
-export type ContentSource = "srd" | "open5e" | "homebrew";
+export type ContentSource = "srd" | "open5e" | "5etools" | "homebrew";
+export const CONTENT_SOURCES: ContentSource[] = ["srd", "open5e", "5etools", "homebrew"];
+
+export type Ability = "str" | "dex" | "con" | "int" | "wis" | "cha";
+export const ABILITIES: Ability[] = ["str", "dex", "con", "int", "wis", "cha"];
 
 /** Lightweight entry used in search results / pickers. */
 export interface ContentSummary {
@@ -19,9 +23,9 @@ export interface ContentSummary {
   name: string;
   /** Spell level (0 = cantrip). */
   level?: number;
-  /** Classes that can use this (spells, subclasses). Lowercase class indexes. */
+  /** Classes that can use this (spells, subclasses). Lowercase class names. */
   classes?: string[];
-  /** Short label for where it came from, e.g. "SRD 5.1" or "Tome of Heroes". */
+  /** Short label for where it came from, e.g. "SRD 5.1" or "Xanathar's Guide to Everything". */
   sourceLabel?: string;
 }
 
@@ -33,13 +37,146 @@ export interface ContentDetail extends ContentSummary {
   meta: Record<string, string>;
   /** Spell-specific fields used by the sheet. */
   spell?: { school?: string; ritual?: boolean; concentration?: boolean };
-  /** Structured, machine-applicable effects (mostly from homebrew), e.g. ability score increases. */
+  /** Fixed, machine-applicable effects, e.g. +2 Dex from a race. */
   effects?: Effect[];
+  /** Decisions the player makes when gaining this (Fighting Style, Expertise, Half-Elf +1/+1…). */
+  choices?: Choice[];
 }
 
 export type Effect =
-  | { kind: "ability"; ability: string; amount: number }
+  | { kind: "ability"; ability: Ability; amount: number }
   | { kind: "speed"; amount: number }
-  | { kind: "hp-per-level"; amount: number }
-  | { kind: "ac"; amount: number }
+  | { kind: "skill"; skill: string }
+  | { kind: "save"; ability: Ability }
   | { kind: "proficiency"; value: string };
+
+/**
+ * A choice inside a feature, feat, race or background. Selections are stored on the
+ * character as sub-features of the parent so their text and values stay accessible.
+ *  - feature:   pick option(s) that are themselves features (Fighting Style, Metamagic, Invocations)
+ *  - expertise: double proficiency in skill(s) you're proficient in
+ *  - skill:     gain proficiency in skill(s)
+ *  - ability:   increase ability score(s) by `amount`
+ *  - save:      gain saving-throw proficiency
+ *  - text:      pick a label (Favored Enemy type, Natural Explorer terrain)
+ */
+export interface Choice {
+  id: string;
+  label: string;
+  kind: "feature" | "expertise" | "skill" | "ability" | "save" | "text";
+  count: number;
+  options: ChoiceOption[];
+  /** For "ability" choices: how much each pick adds. */
+  amount?: number;
+}
+
+export interface ChoiceOption {
+  key: string;
+  name: string;
+  /** For feature options whose text is fetched on demand. */
+  source?: ContentSource;
+  type?: ContentType;
+  /** Inline text, when the option isn't a separately fetchable entry. */
+  description?: string;
+  prerequisite?: string;
+}
+
+/** Class progression, normalized across SRD / 5etools / homebrew for the level-up wizard. */
+export interface ClassRules {
+  source: ContentSource;
+  index: string;
+  name: string;
+  sourceLabel?: string;
+  hitDie: number;
+  savingThrows: Ability[];
+  spellcastingAbility: Ability | null;
+  casterType: "full" | "half" | "third" | "pact" | "artificer" | "none";
+  spellModel: "known" | "prepared" | "spellbook" | null;
+  /** Prepared casters prepare (ability mod + level / divisor) spells. */
+  preparedDivisor?: number;
+  subclassLevel: number;
+  subclassTitle: string;
+  subclasses: { source: ContentSource; key: string; name: string; sourceLabel?: string }[];
+  proficiencies: string[];
+  skillChoices: { count: number; from: string[] } | null;
+  multiclass: {
+    requirements: { any: boolean; scores: Partial<Record<Ability, number>> } | null;
+    proficiencies: string[];
+    skillChoices: { count: number; from: string[] } | null;
+  };
+  startingEquipment: EquipmentChoice[];
+  levels: LevelRules[];
+}
+
+export interface EquipmentChoice {
+  label: string;
+  options: { label: string; items: { name: string; qty: number }[] }[];
+}
+
+export interface FeatureRef {
+  source: ContentSource;
+  key: string;
+  name: string;
+}
+
+export interface LevelRules {
+  level: number;
+  profBonus: number;
+  abilityScoreBonuses: number;
+  features: FeatureRef[];
+  spellcasting: { cantripsKnown: number; spellsKnown: number | null; slots: number[] } | null;
+  /** Options gained by count rather than by a feature (Invocations known, Maneuvers…). */
+  progressions: Progression[];
+  classSpecific?: Record<string, unknown>;
+}
+
+export interface Progression {
+  /** Name of the feature the picks belong to, e.g. "Eldritch Invocations". */
+  name: string;
+  total: number;
+  gained: number;
+  options: ChoiceOption[];
+}
+
+export const SKILL_KEYS = [
+  "acrobatics", "animal-handling", "arcana", "athletics", "deception", "history", "insight", "intimidation",
+  "investigation", "medicine", "nature", "perception", "performance", "persuasion", "religion",
+  "sleight-of-hand", "stealth", "survival",
+];
+
+export const toSkillKey = (s: string) => s.toLowerCase().replace(/^skill-/, "").replace(/\s+/g, "-");
+
+export const skillName = (key: string) =>
+  key.split("-").map((w) => (w === "of" ? w : w[0].toUpperCase() + w.slice(1))).join(" ");
+
+export const expertiseChoice = (id: string, count = 2): Choice => ({
+  id,
+  label: `Choose ${count} skill proficiencies to gain expertise`,
+  kind: "expertise",
+  count,
+  options: [...SKILL_KEYS.map((k) => ({ key: k, name: skillName(k) })), { key: "thieves-tools", name: "Thieves' Tools" }],
+});
+
+/** Slots for a single-classed caster, by caster type and class level (PHB tables). */
+const FULL_SLOTS: number[][] = [
+  [2], [3], [4, 2], [4, 3], [4, 3, 2], [4, 3, 3], [4, 3, 3, 1], [4, 3, 3, 2], [4, 3, 3, 3, 1], [4, 3, 3, 3, 2],
+  [4, 3, 3, 3, 2, 1], [4, 3, 3, 3, 2, 1], [4, 3, 3, 3, 2, 1, 1], [4, 3, 3, 3, 2, 1, 1],
+  [4, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1, 1],
+  [4, 3, 3, 3, 3, 1, 1, 1, 1], [4, 3, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 3, 2, 2, 1, 1],
+];
+
+export function singleClassSlots(type: ClassRules["casterType"], level: number): number[] {
+  const effective =
+    type === "full" ? level
+    : type === "half" ? (level < 2 ? 0 : Math.ceil(level / 2))
+    : type === "artificer" ? Math.ceil(level / 2)
+    : type === "third" ? (level < 3 ? 0 : Math.ceil(level / 3))
+    : 0;
+  if (type === "pact") {
+    const count = level === 1 ? 1 : level <= 10 ? 2 : level <= 16 ? 3 : 4;
+    const slotLevel = Math.min(5, Math.ceil(level / 2));
+    return Array.from({ length: 9 }, (_, i) => (i + 1 === slotLevel ? count : 0));
+  }
+  const row = effective > 0 ? FULL_SLOTS[effective - 1] : [];
+  return Array.from({ length: 9 }, (_, i) => row[i] ?? 0);
+}

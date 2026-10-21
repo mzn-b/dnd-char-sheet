@@ -44,12 +44,13 @@ export default function CharacterList() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl text-ink-200">Your Characters</h1>
-          <p className="text-sm text-ink-400">Create a character, then use <em>Level Up</em> to pick a class and walk through each level.</p>
+          <p className="text-sm text-ink-400">Create a character at level 1 or any higher level. The wizard walks you through every choice.</p>
         </div>
         <div className="flex gap-2">
           <input ref={fileInput} type="file" accept="application/json" hidden onChange={(e) => e.target.files?.[0] && importFile(e.target.files[0])} />
           <button className="btn" onClick={() => fileInput.current?.click()}>Import JSON</button>
-          <button className="btn-primary" onClick={() => create.mutate(newCharacter())} disabled={create.isPending}>+ New character</button>
+          <button className="btn" onClick={() => create.mutate(newCharacter())} disabled={create.isPending} title="Blank sheet: fill everything in yourself">Blank sheet</button>
+          <button className="btn-primary" onClick={() => navigate("/new")}>+ Create character</button>
         </div>
       </div>
 
@@ -59,7 +60,7 @@ export default function CharacterList() {
         <div className="panel py-16 text-center">
           <p className="font-display text-xl">No characters yet</p>
           <p className="mt-1 text-sm text-ink-400">Every legend starts with a blank sheet.</p>
-          <button className="btn-primary mt-4" onClick={() => create.mutate(newCharacter())}>Create your first character</button>
+          <button className="btn-primary mt-4" onClick={() => navigate("/new")}>Create your first character</button>
         </div>
       )}
 

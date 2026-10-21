@@ -2,7 +2,7 @@ export const ABILITIES = ["str", "dex", "con", "int", "wis", "cha"] as const;
 export type Ability = (typeof ABILITIES)[number];
 
 export type ContentType = "spell" | "feat" | "item" | "race" | "background" | "feature" | "subclass" | "class";
-export type ContentSource = "srd" | "open5e" | "homebrew";
+export type ContentSource = "srd" | "open5e" | "5etools" | "homebrew";
 
 /** A pointer to a piece of content in the rules API or homebrew store. */
 export interface ContentRef {
@@ -24,6 +24,7 @@ export interface ContentDetail extends ContentSummary {
   meta: Record<string, string>;
   spell?: { school?: string; ritual?: boolean; concentration?: boolean };
   effects?: Effect[];
+  choices?: Choice[];
   // Homebrew-only extras (class/subclass definitions)
   hitDie?: number;
   spellcastingAbility?: Ability | null;
@@ -34,11 +35,37 @@ export interface ContentDetail extends ContentSummary {
 export type Effect =
   | { kind: "ability"; ability: Ability; amount: number }
   | { kind: "speed"; amount: number }
-  | { kind: "hp-per-level"; amount: number }
-  | { kind: "ac"; amount: number }
+  | { kind: "skill"; skill: string }
+  | { kind: "save"; ability: Ability }
   | { kind: "proficiency"; value: string };
 
-export type CasterType = "full" | "half" | "third" | "pact" | "none";
+/**
+ * A decision inside a feature, feat, race or background (Fighting Style, Expertise, +1 to two
+ * abilities…). The picks become sub-features of the parent so their text stays on the sheet.
+ */
+export interface Choice {
+  id: string;
+  label: string;
+  kind: "feature" | "expertise" | "skill" | "ability" | "save" | "text";
+  count: number;
+  options: ChoiceOption[];
+  amount?: number;
+}
+
+export interface ChoiceOption {
+  key: string;
+  name: string;
+  source?: ContentSource;
+  type?: ContentType;
+  description?: string;
+  prerequisite?: string;
+}
+
+/** Selected option keys per choice id. */
+export type Selections = Record<string, string[]>;
+
+export type CasterType = "full" | "half" | "third" | "pact" | "artificer" | "none";
+export type SpellModel = "known" | "prepared" | "spellbook";
 
 /** Proficiency in a skill: none, half (Jack of All Trades), proficient, expertise. */
 export type ProfLevel = 0 | 0.5 | 1 | 2;
@@ -48,8 +75,10 @@ export interface ClassEntry extends ContentRef {
   hitDie: number;
   subclass?: ContentRef;
   spellcastingAbility?: Ability | null;
-  /** Only set for homebrew classes; SRD classes are looked up in rules.ts. */
   casterType?: CasterType;
+  spellModel?: SpellModel | null;
+  /** Prepared casters prepare (ability mod + level / divisor) spells. */
+  preparedDivisor?: number;
 }
 
 export interface Attack {
@@ -73,6 +102,17 @@ export interface Item {
   ref?: ContentRef & { type: ContentType };
 }
 
+/** A choice made inside a feature (a Fighting Style, an Invocation, an expertise skill…). */
+export interface SubFeature {
+  id: string;
+  choiceId: string;
+  /** Option key within the choice. */
+  key: string;
+  name: string;
+  description: string;
+  ref?: ContentRef & { type: ContentType };
+}
+
 export interface Feature {
   id: string;
   name: string;
@@ -83,6 +123,11 @@ export interface Feature {
   ref?: ContentRef & { type: ContentType };
   /** Optional limited-use tracking, e.g. Rage 3/long rest. */
   uses?: { max: number; used: number; reset: "short" | "long" };
+  /** The choices this feature offers, kept so picks can be changed later. */
+  choices?: Choice[];
+  subfeatures?: SubFeature[];
+  /** Fixed effects granted (kept so a race or background can be swapped cleanly). */
+  effects?: Effect[];
 }
 
 export interface SpellEntry {
@@ -174,6 +219,8 @@ export interface Character {
 
   notes: string;
   levelHistory: LevelRecord[];
+  /** Level-ups queued by the character creator, applied one by one with the wizard. */
+  pendingLevelUps?: ContentRef[];
 }
 
 export interface CharacterSummary {
@@ -190,13 +237,44 @@ export interface ClassRules {
   source: ContentSource;
   index: string;
   name: string;
+  sourceLabel?: string;
   hitDie: number;
   savingThrows: Ability[];
   spellcastingAbility: Ability | null;
-  casterType?: CasterType;
+  casterType: CasterType;
+  spellModel: SpellModel | null;
+  preparedDivisor?: number;
   subclassLevel: number;
+  subclassTitle: string;
   subclasses: ContentRef[];
+  proficiencies: string[];
+  skillChoices: { count: number; from: string[] } | null;
+  multiclass: {
+    requirements: { any: boolean; scores: Partial<Record<Ability, number>> } | null;
+    proficiencies: string[];
+    skillChoices: { count: number; from: string[] } | null;
+  };
+  startingEquipment: EquipmentChoice[];
   levels: LevelRules[];
+}
+
+export interface EquipmentChoice {
+  label: string;
+  options: { label: string; items: { name: string; qty: number }[] }[];
+}
+
+export interface SpellProgression {
+  cantripsKnown: number;
+  spellsKnown: number | null;
+  slots: number[];
+}
+
+/** Picks gained by count rather than by a feature (Invocations known, Maneuvers…). */
+export interface Progression {
+  name: string;
+  total: number;
+  gained: number;
+  options: ChoiceOption[];
 }
 
 export interface LevelRules {
@@ -204,6 +282,14 @@ export interface LevelRules {
   profBonus?: number;
   abilityScoreBonuses: number;
   features: ContentRef[];
-  spellcasting: { cantripsKnown: number; spellsKnown: number | null; slots: number[] } | null;
+  spellcasting: SpellProgression | null;
+  progressions: Progression[];
   classSpecific?: Record<string, unknown>;
+}
+
+export interface SubclassRules {
+  spellcastingAbility: Ability | null;
+  casterType: CasterType | null;
+  spellModel: SpellModel | null;
+  levels: { level: number; features: ContentRef[]; progressions: Progression[]; spellcasting: SpellProgression | null }[];
 }

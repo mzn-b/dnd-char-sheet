@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useCharacter } from "../lib/useCharacter";
 import { SheetHeader } from "../components/sheet/SheetHeader";
@@ -7,7 +7,7 @@ import { CombatPanel } from "../components/sheet/CombatPanel";
 import { AttacksPanel } from "../components/sheet/AttacksPanel";
 import { SpellsTab } from "../components/sheet/SpellsTab";
 import { InventoryTab } from "../components/sheet/InventoryTab";
-import { FeaturesTab } from "../components/sheet/FeaturesTab";
+import { FeaturesTab, SubFeatureRow } from "../components/sheet/FeaturesTab";
 import { BioTab } from "../components/sheet/BioTab";
 import { HistoryTab } from "../components/sheet/HistoryTab";
 import { LevelUpWizard } from "../components/levelup/LevelUpWizard";
@@ -23,13 +23,38 @@ export default function CharacterSheet() {
   const { character: c, update, saveState, isLoading, error } = useCharacter(id!);
   const [tab, setTab] = useState<Tab>("Overview");
   const [levelingUp, setLevelingUp] = useState(false);
+  const [building, setBuilding] = useState(false);
+  const justApplied = useRef(false);
+  const pending = c?.pendingLevelUps ?? [];
+
+  // A character fresh from the creator opens straight into its queued level-ups.
+  const autoOpened = useRef(false);
+  useEffect(() => {
+    if (c && !autoOpened.current) {
+      autoOpened.current = true;
+      if (c.pendingLevelUps?.length) setBuilding(true);
+    }
+  }, [c]);
 
   if (isLoading || (!c && !error)) return <Spinner label="Opening character sheet…" />;
   if (error || !c) return <p className="text-blood-500">Couldn't load character. <Link to="/" className="underline">Back to list</Link></p>;
 
   return (
     <div className="space-y-4">
-      <SheetHeader c={c} update={update} saveState={saveState} onLevelUp={() => setLevelingUp(true)} />
+      <SheetHeader c={c} update={update} saveState={saveState} onLevelUp={() => (pending.length ? setBuilding(true) : setLevelingUp(true))} />
+
+      {pending.length > 0 && !building && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-accent-600/50 bg-accent-500/10 px-4 py-3 text-sm">
+          <span>
+            Your build has <b>{pending.length}</b> level-up{pending.length > 1 ? "s" : ""} left
+            ({pending.map((p) => p.name).join(", ")}).
+          </span>
+          <div className="flex gap-2">
+            <button className="btn-ghost text-xs" onClick={() => update((d) => void (d.pendingLevelUps = []))}>Discard plan</button>
+            <button className="btn-primary" onClick={() => setBuilding(true)}>Continue build</button>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-1 overflow-x-auto border-b border-ink-800">
         {TABS.map((t) => (
@@ -55,6 +80,26 @@ export default function CharacterSheet() {
       {tab === "History" && <HistoryTab c={c} />}
 
       {levelingUp && <LevelUpWizard c={c} update={update} onClose={() => setLevelingUp(false)} />}
+      {building && pending[0] && (
+        <LevelUpWizard
+          key={pending.length}
+          c={c}
+          update={update}
+          queue={{ cls: pending[0], index: c.classes.reduce((s, k) => s + k.level, 0) + 1, total: c.classes.reduce((s, k) => s + k.level, 0) + pending.length }}
+          onApplied={(d) => {
+            justApplied.current = true;
+            d.pendingLevelUps = (d.pendingLevelUps ?? []).slice(1);
+          }}
+          onClose={() => {
+            // After an applied level the next queued one opens; "Pause build" closes the wizard.
+            if (justApplied.current && pending.length > 1) justApplied.current = false;
+            else {
+              justApplied.current = false;
+              setBuilding(false);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -87,6 +132,11 @@ function Overview({ c, update }: { c: Character; update: Update }) {
                   </summary>
                   <div className="mt-1 max-h-60 overflow-y-auto pl-4"><Markdown text={f.description || "_No description._"} /></div>
                 </details>
+                {(f.subfeatures?.length ?? 0) > 0 && (
+                  <div className="ml-4 mt-1 space-y-1 border-l-2 border-accent-600/40 pl-2">
+                    {f.subfeatures!.map((s) => <SubFeatureRow key={s.id} s={s} />)}
+                  </div>
+                )}
               </li>
             ))}
           </ul>

@@ -1,9 +1,12 @@
 import { Router } from "express";
 import { getContent, searchContent } from "../content/index.js";
 import { getClassRules, getSubclassLevels } from "../content/srd.js";
+import { classRules5etools, subclassLevels5etools } from "../content/fivetools/index.js";
 import { getHomebrew } from "../content/homebrew.js";
 import { HttpError } from "../content/http.js";
-import { CONTENT_TYPES, type ContentDetail, type ContentSource, type ContentType } from "../content/types.js";
+import {
+  CONTENT_TYPES, singleClassSlots, type ClassRules, type ContentDetail, type ContentSource, type ContentType,
+} from "../content/types.js";
 
 export const content = Router();
 
@@ -31,19 +34,23 @@ content.get("/content/:type/:source/:key", async (req, res) => {
   res.json(await getContent(contentType(req.params.type), req.params.source as ContentSource, req.params.key));
 });
 
-/** Class progression for the level-up wizard. Homebrew classes are expanded from their compact definition. */
+/** Class progression for the level-up wizard. */
 content.get("/rules/classes/:source/:key", async (req, res) => {
-  if (req.params.source === "srd") return void res.json(await getClassRules(req.params.key));
-  const hb = await getHomebrew(req.params.key);
+  const { source, key } = req.params;
+  if (source === "srd") return void res.json(await getClassRules(key));
+  if (source === "5etools") return void res.json(await classRules5etools(key));
+  const hb = await getHomebrew(key);
   if (!hb || hb.type !== "class") throw new HttpError(404, "Homebrew class not found");
   res.json(await homebrewClassRules(hb));
 });
 
 content.get("/rules/subclasses/:source/:key/levels", async (req, res) => {
-  if (req.params.source === "srd") return void res.json(await getSubclassLevels(req.params.key));
-  const hb = await getHomebrew(req.params.key);
+  const { source, key } = req.params;
+  if (source === "srd") return void res.json(await getSubclassLevels(key));
+  if (source === "5etools") return void res.json(await subclassLevels5etools(key));
+  const hb = await getHomebrew(key);
   if (!hb) throw new HttpError(404, "Homebrew subclass not found");
-  res.json(featuresByLevel((hb as any).featureLevels));
+  res.json({ spellcastingAbility: null, casterType: null, spellModel: null, levels: featuresByLevel((hb as any).featureLevels).map((l) => ({ ...l, progressions: [], spellcasting: null })) });
 });
 
 type FeatureLevel = { level: number; key: string; name: string };
@@ -51,33 +58,45 @@ type FeatureLevel = { level: number; key: string; name: string };
 function featuresByLevel(featureLevels: FeatureLevel[] = []) {
   return Array.from({ length: 20 }, (_, i) => ({
     level: i + 1,
-    features: featureLevels.filter((f) => f.level === i + 1).map((f) => ({ key: f.key, name: f.name, source: "homebrew" })),
+    features: featureLevels.filter((f) => f.level === i + 1 && f.key).map((f) => ({ key: f.key, name: f.name, source: "homebrew" as const })),
   }));
 }
 
 /**
  * A homebrew class is stored compactly: hit die, ASI levels, features per level, and
- * optionally "spellProgressionFrom" to borrow an SRD class's spell slot table.
+ * optionally "spellProgressionFrom" to borrow an SRD class's spell tables.
  */
-async function homebrewClassRules(hb: ContentDetail) {
+async function homebrewClassRules(hb: ContentDetail): Promise<ClassRules> {
   const d = hb as any;
   const asiLevels: number[] = d.asiLevels ?? [4, 8, 12, 16, 19];
   const borrowed = d.spellProgressionFrom ? await getClassRules(d.spellProgressionFrom).catch(() => null) : null;
+  const casterType = d.casterType ?? (d.spellcastingAbility ? "full" : "none");
   return {
     source: "homebrew",
     index: hb.key,
     name: hb.name,
+    sourceLabel: "Homebrew",
     hitDie: Number(d.hitDie ?? 8),
     savingThrows: d.savingThrows ?? [],
     spellcastingAbility: d.spellcastingAbility || null,
-    casterType: d.casterType ?? (d.spellcastingAbility ? "full" : "none"),
+    casterType,
+    spellModel: borrowed?.spellModel ?? (d.spellcastingAbility ? "known" : null),
+    preparedDivisor: borrowed?.preparedDivisor ?? 1,
     subclassLevel: Number(d.subclassLevel ?? 3),
+    subclassTitle: "Subclass",
     subclasses: [],
+    proficiencies: d.proficiencies ? [d.proficiencies] : [],
+    skillChoices: d.skillChoices ?? null,
+    multiclass: { requirements: d.multiclassRequirements ?? null, proficiencies: [], skillChoices: null },
+    startingEquipment: [],
     levels: featuresByLevel(d.featureLevels).map((l) => ({
       ...l,
       profBonus: Math.ceil(l.level / 4) + 1,
       abilityScoreBonuses: asiLevels.filter((a) => a <= l.level).length,
-      spellcasting: borrowed?.levels[l.level - 1]?.spellcasting ?? null,
+      spellcasting:
+        borrowed?.levels[l.level - 1]?.spellcasting ??
+        (d.spellcastingAbility ? { cantripsKnown: 0, spellsKnown: null, slots: singleClassSlots(casterType, l.level) } : null),
+      progressions: [],
     })),
   };
 }

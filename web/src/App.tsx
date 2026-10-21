@@ -2,6 +2,8 @@ import { NavLink, Route, Routes } from "react-router-dom";
 import CharacterList from "./pages/CharacterList";
 import CharacterSheet from "./pages/CharacterSheet";
 import Homebrew from "./pages/Homebrew";
+import CharacterCreator from "./pages/CharacterCreator";
+import Settings from "./pages/Settings";
 
 export default function App() {
   const link = ({ isActive }: { isActive: boolean }) =>
@@ -13,6 +15,7 @@ export default function App() {
           <NavLink to="/" className="mr-auto whitespace-nowrap font-display text-lg font-bold tracking-wide text-accent-400 sm:mr-4">⚔ <span className="hidden sm:inline">Character Vault</span></NavLink>
           <NavLink to="/" end className={link}>Characters</NavLink>
           <NavLink to="/homebrew" className={link}>Homebrew</NavLink>
+          <NavLink to="/settings" className={link}>Sources</NavLink>
         </nav>
       </header>
       <main className="mx-auto max-w-7xl px-4 py-6">
@@ -20,6 +23,8 @@ export default function App() {
           <Route path="/" element={<CharacterList />} />
           <Route path="/characters/:id" element={<CharacterSheet />} />
           <Route path="/homebrew" element={<Homebrew />} />
+          <Route path="/new" element={<CharacterCreator />} />
+          <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
     </div>

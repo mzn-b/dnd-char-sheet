@@ -5,6 +5,7 @@ import { migrate } from "./db.js";
 import { characters } from "./routes/characters.js";
 import { homebrew } from "./routes/homebrew.js";
 import { content } from "./routes/content.js";
+import { sources } from "./routes/sources.js";
 import { HttpError } from "./content/http.js";
 
 const app = express();
@@ -14,6 +15,7 @@ app.get("/api/health", (_req, res) => void res.json({ ok: true }));
 app.use("/api/characters", characters);
 app.use("/api/homebrew", homebrew);
 app.use("/api", content);
+app.use("/api/sources", sources);
 app.use("/api", (_req, _res) => {
   throw new HttpError(404, "Not found");
 });

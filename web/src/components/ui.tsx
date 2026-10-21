@@ -117,11 +117,13 @@ export function Pips({
 const SOURCE_STYLES: Record<ContentSource, string> = {
   srd: "border-sky-800 text-sky-300",
   open5e: "border-emerald-800 text-emerald-300",
+  "5etools": "border-orange-800 text-orange-300",
   homebrew: "border-fuchsia-800 text-fuchsia-300",
 };
 
 export function SourceBadge({ source, label }: { source: ContentSource; label?: string }) {
-  return <span className={`chip ${SOURCE_STYLES[source]}`} title={label}>{source === "srd" ? "SRD" : source === "open5e" ? label ?? "Open5e" : "Homebrew"}</span>;
+  const text = source === "srd" ? "SRD" : source === "homebrew" ? "Homebrew" : label ?? source;
+  return <span className={`chip max-w-[10rem] shrink-0 truncate ${SOURCE_STYLES[source]}`} title={label}>{text}</span>;
 }
 
 /** Tiny markdown subset: paragraphs, **bold**, *italic*, "- " bullets, and | tables | as preformatted text. */

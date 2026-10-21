@@ -8,10 +8,16 @@ import type { Update } from "../../lib/useCharacter";
 import { ContentDetailView, ContentPicker, contentId } from "../ContentBrowser";
 import { Modal, NumberField, Pips, Section } from "../ui";
 
+/** Class whose spell list a class draws from; subclass casters (Eldritch Knight…) use the wizard list. */
+const spellList = (k: ClassEntry, r: ClassRules | undefined) => (r && !r.spellcastingAbility ? "wizard" : k.source === "srd" ? k.key : k.name);
+
+/** Eldritch Knight / Arcane Trickster: 1st-level spells at 3, 2nd at 7, 3rd at 13, 4th at 19. */
+const thirdCasterMaxLevel = (level: number) => [3, 7, 13, 19].filter((l) => level >= l).length;
+
 /** Highest spell level a class can cast at its current level, per its own table. */
 export function maxSpellLevel(rules: ClassRules | undefined, level: number): number {
   const slots = rules?.levels.find((l) => l.level === level)?.spellcasting?.slots;
-  if (!slots) return 9;
+  if (!slots) return rules && !rules.spellcastingAbility ? thirdCasterMaxLevel(level) : 9;
   const highest = slots.reduce((hi, n, i) => (n > 0 ? i + 1 : hi), 0);
   return highest;
 }
@@ -49,7 +55,7 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
           level: p.level ?? 0,
           classKey: cls?.key,
           // Cantrips and spells of "known" casters are always ready to cast.
-          prepared: (p.level ?? 0) === 0 || !cls || spellModel(cls.key) === "known",
+          prepared: (p.level ?? 0) === 0 || !cls || spellModel(cls) === "known",
           alwaysPrepared: false,
           notes: "",
         });
@@ -79,7 +85,7 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
           const cantrips = mine.filter((s) => s.level === 0).length;
           const leveled = mine.filter((s) => s.level > 0);
           const prepared = leveled.filter((s) => s.prepared && !s.alwaysPrepared).length;
-          const model = spellModel(k.key);
+          const model = spellModel(k);
           const prepLimit = maxPrepared(c, k);
           return (
             <div key={k.key} className="panel space-y-3">
@@ -139,7 +145,7 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
               <ul>
                 {spells.map((s) => {
                   const cls = c.classes.find((k) => k.key === s.classKey);
-                  const needsPrep = s.level > 0 && cls && spellModel(cls.key) !== "known";
+                  const needsPrep = s.level > 0 && cls && spellModel(cls) !== "known";
                   return (
                     <li key={s.id} className="group flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-ink-850">
                       {needsPrep ? (
@@ -169,7 +175,7 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
           title={adding.cls ? `${adding.cls.name} spells` : "Add spells"}
           type="spell"
           classLabel={adding.cls?.name}
-          filters={adding.cls ? { class: adding.cls.key, maxLevel: maxSpellLevel(rules[adding.cls.key], adding.cls.level) } : {}}
+          filters={adding.cls ? { class: spellList(adding.cls, rules[adding.cls.key]), maxLevel: maxSpellLevel(rules[adding.cls.key], adding.cls.level) } : {}}
           disabledIds={owned}
           onClose={() => setAdding(null)}
           onConfirm={(p) => addSpells(p, adding.cls)}

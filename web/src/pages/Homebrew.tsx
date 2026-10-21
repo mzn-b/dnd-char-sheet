@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
-import { ABILITY_NAMES } from "../lib/rules";
-import { ABILITIES, type Ability, type ContentDetail, type ContentType, type Effect } from "../lib/types";
+import { ABILITY_NAMES, SKILLS } from "../lib/rules";
+import { ABILITIES, type Ability, type Choice, type ContentDetail, type ContentType, type Effect } from "../lib/types";
 import { DetailBody } from "../components/ContentBrowser";
 import { Modal, NumberField, Spinner, TextField } from "../components/ui";
 
@@ -214,6 +214,10 @@ function HomebrewEditor({ initial, onClose }: { initial: Draft; onClose: () => v
         {(d.type === "feat" || d.type === "race") && (
           <EffectsEditor effects={d.effects ?? []} onChange={(effects) => set({ effects })} />
         )}
+
+        {["feat", "feature", "race", "background"].includes(d.type ?? "") && (
+          <ChoicesEditor choices={d.choices ?? []} onChange={(choices) => set({ choices })} />
+        )}
       </div>
     </Modal>
   );
@@ -255,6 +259,59 @@ function EffectsEditor({ effects, onChange }: { effects: Effect[]; onChange: (e:
         ))}
         <button className="btn text-xs" onClick={() => onChange([...effects, { kind: "ability", ability: "str", amount: 1 }])}>+ Ability bonus</button>
       </div>
+    </div>
+  );
+}
+
+const KIND_LABEL: Record<Choice["kind"], string> = {
+  feature: "Options with their own text (like Fighting Styles)",
+  text: "Simple labels (like a favored enemy type)",
+  skill: "Skill proficiencies",
+  expertise: "Skill expertise",
+  ability: "Ability score increases",
+  save: "Saving throw proficiency",
+};
+
+/** Built-in choices: picks become sub-features on the character sheet. */
+function ChoicesEditor({ choices, onChange }: { choices: Choice[]; onChange: (c: Choice[]) => void }) {
+  const edit = (i: number, patch: Partial<Choice>) => onChange(choices.map((c, j) => (j === i ? { ...c, ...patch } : c)));
+  const withDefaults = (kind: Choice["kind"]): Choice["options"] =>
+    kind === "skill" || kind === "expertise" ? SKILLS.map((s) => ({ key: s.key, name: s.name }))
+    : kind === "ability" || kind === "save" ? ABILITIES.map((a) => ({ key: a, name: a.toUpperCase() }))
+    : [];
+  return (
+    <div className="col-span-full space-y-2">
+      <span className="label">Choices (picked when this is gained; shown as sub-features)</span>
+      {choices.map((ch, i) => (
+        <div key={ch.id} className="space-y-2 rounded-lg border border-ink-700 p-3">
+          <div className="grid gap-2 sm:grid-cols-[1fr_auto_5rem_auto]">
+            <TextField className="field-boxed" placeholder="Choose a combat technique" value={ch.label} onChange={(v) => edit(i, { label: v })} />
+            <select className="field-boxed w-auto" value={ch.kind} onChange={(e) => { const kind = e.target.value as Choice["kind"]; edit(i, { kind, options: withDefaults(kind).length ? withDefaults(kind) : ch.options }); }}>
+              {Object.entries(KIND_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+            <label className="flex items-center gap-1 text-xs text-ink-400">pick<NumberField className="field-boxed text-center" value={ch.count} min={1} onChange={(n) => edit(i, { count: n })} /></label>
+            <button className="btn-ghost px-2" onClick={() => onChange(choices.filter((_, j) => j !== i))}>✕</button>
+          </div>
+          {ch.kind === "ability" && (
+            <label className="flex items-center gap-2 text-sm">Increase by<NumberField className="field-boxed w-14 text-center" value={ch.amount ?? 1} min={1} onChange={(n) => edit(i, { amount: n })} /></label>
+          )}
+          {(ch.kind === "feature" || ch.kind === "text") && (
+            <div className="space-y-2">
+              {ch.options.map((o, oi) => (
+                <div key={o.key} className="grid gap-2 sm:grid-cols-[12rem_1fr_auto]">
+                  <TextField className="field-boxed" placeholder="Option name" value={o.name} onChange={(v) => edit(i, { options: ch.options.map((x, j) => (j === oi ? { ...x, name: v } : x)) })} />
+                  {ch.kind === "feature" ? (
+                    <textarea className="field-boxed resize-y text-sm" rows={2} placeholder="What it does" value={o.description ?? ""} onChange={(e) => edit(i, { options: ch.options.map((x, j) => (j === oi ? { ...x, description: e.target.value } : x)) })} />
+                  ) : <span />}
+                  <button className="btn-ghost px-2" onClick={() => edit(i, { options: ch.options.filter((_, j) => j !== oi) })}>✕</button>
+                </div>
+              ))}
+              <button className="btn text-xs" onClick={() => edit(i, { options: [...ch.options, { key: crypto.randomUUID(), name: "" }] })}>+ Option</button>
+            </div>
+          )}
+        </div>
+      ))}
+      <button className="btn text-xs" onClick={() => onChange([...choices, { id: crypto.randomUUID(), label: "Choose one", kind: "feature", count: 1, options: [] }])}>+ Choice</button>
     </div>
   );
 }
