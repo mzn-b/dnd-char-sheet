@@ -5,6 +5,8 @@ import type { ContentDetail, ContentSummary, ContentType } from "../lib/types";
 import { spellLevelLabel } from "../lib/rules";
 import { Markdown, Modal, SourceBadge, Spinner } from "./ui";
 import { BOOK_FILTERED, useBookFilter } from "../lib/books";
+import { FacetFilters } from "./FacetFilters";
+import { matches as matchesFacets, sortBy, type FilterState } from "../lib/facets";
 import { RollList, SpellRollBreakdown } from "./rolls";
 import { extractRolls } from "../lib/rollText";
 
@@ -90,15 +92,19 @@ export function ContentBrowser({
   const hiddenByBooks = filtering ? (data ?? []).length - (data ?? []).filter(bookFilter.allowed).length : 0;
   const sources = useMemo(() => [...new Set(merged.map((c) => c.sourceLabel ?? c.source))].sort(), [merged]);
 
+  const [facetState, setFacetState] = useState<FilterState>({});
+  const [sort, setSort] = useState({ key: "default", desc: false });
   const results = useMemo(() => {
     const term = q.trim().toLowerCase();
-    return merged.filter(
+    const list = merged.filter(
       (c) => (!term || c.name.toLowerCase().includes(term)) &&
         (levelFilter == null || c.level === levelFilter) &&
         (filters.minLevel == null || (c.level ?? 0) >= filters.minLevel) &&
-        (!sourceFilter || (c.sourceLabel ?? c.source) === sourceFilter),
+        (!sourceFilter || (c.sourceLabel ?? c.source) === sourceFilter) &&
+        matchesFacets(c, type, facetState),
     );
-  }, [merged, q, levelFilter, filters.minLevel, sourceFilter]);
+    return sortBy(list, type, sort.key, sort.desc);
+  }, [merged, q, levelFilter, filters.minLevel, sourceFilter, facetState, type, sort]);
 
   const levels = useMemo(
     () =>
@@ -158,6 +164,7 @@ export function ContentBrowser({
             <span className={`ml-auto text-xs ${full ? "text-accent-400" : "text-ink-400"}`}>{selected.length} / {limit} chosen</span>
           )}
         </div>
+        <FacetFilters items={merged} type={type} state={facetState} onChange={setFacetState} sort={sort} onSort={setSort} />
         <div className="max-h-[50vh] min-h-0 flex-1 overflow-y-auto rounded-lg border border-ink-800">
           {isLoading && <div className="p-3"><Spinner label="Loading… (the first search of a source can take a few seconds)" /></div>}
           {warnings.map((w) => (

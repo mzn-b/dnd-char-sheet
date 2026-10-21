@@ -2,6 +2,7 @@ import { cachedFetch } from "./http.js";
 import { excludedDocuments } from "./open5e.js";
 import { DATA_URL, brewFileUrl, enabledBrews, getDataset } from "./fivetools/data.js";
 import { renderEntries, renderTags } from "./fivetools/render.js";
+import { monsterFacets5e, monsterFacetsOpen5e, monsterFacetsSrd } from "./facets.js";
 import { ABILITIES, type Ability, type ContentDetail, type ContentSummary, type MonsterData, type MonsterEntry } from "./types.js";
 
 /**
@@ -122,7 +123,7 @@ export async function list5etoolsMonsters(): Promise<ContentSummary[]> {
   return (await loadBestiary()).map((m) => {
     const data = { type: typeof m.type === "string" ? m.type : m.type?.type?.choose?.[0] ?? m.type?.type ?? "", cr: typeof m.cr === "string" ? m.cr : m.cr?.cr ?? "0", speed: {} as Record<string, number> };
     for (const [k, v] of Object.entries(m.speed ?? {})) if (k !== "canHover") data.speed[k] = feet((v as any)?.number ?? v);
-    return summaryOf("5etools", `${m.name}|${m.source}`, m.name, ds.sourceNames[m.source] ?? m.source, data);
+    return { ...summaryOf("5etools", `${m.name}|${m.source}`, m.name, ds.sourceNames[m.source] ?? m.source, data), facets: monsterFacets5e(m) };
   });
 }
 
@@ -141,12 +142,17 @@ export async function get5etoolsMonster(key: string): Promise<ContentDetail | un
 const SRD = process.env.SRD_API_URL ?? "https://www.dnd5eapi.co";
 
 export async function listSrdMonsters(): Promise<ContentSummary[]> {
-  const q = { query: "{ monsters(limit: 1000) { index name challenge_rating type speed { walk fly swim climb burrow } } }" };
+  const ac = "armor_class { ... on ArmorClassNatural { value } ... on ArmorClassDex { value } ... on ArmorClassArmor { value } ... on ArmorClassSpell { value } ... on ArmorClassCondition { value } }";
+  const q = {
+    query: `{ monsters(limit: 1000) { index name challenge_rating type size alignment ${ac} hit_points speed { walk fly swim climb burrow }
+      strength dexterity constitution intelligence wisdom charisma damage_resistances damage_immunities condition_immunities { name }
+      senses { darkvision blindsight tremorsense truesight } legendary_actions { name } } }`,
+  };
   const { data } = await cachedFetch<{ data: { monsters: any[] } }>(`${SRD}/graphql/2014`, q);
   return data.monsters.map((m) => {
     const speed: Record<string, number> = {};
     for (const [k, v] of Object.entries(m.speed ?? {})) if (v) speed[k] = feet(v);
-    return summaryOf("srd", m.index, m.name, "SRD 5.1", { type: m.type, cr: crText(m.challenge_rating), speed });
+    return { ...summaryOf("srd", m.index, m.name, "SRD 5.1", { type: m.type, cr: crText(m.challenge_rating), speed }), facets: monsterFacetsSrd(m) };
   });
 }
 
@@ -239,7 +245,7 @@ export async function listOpen5eMonsters(): Promise<ContentSummary[]> {
     .map((m) => {
       const speed: Record<string, number> = {};
       for (const [k, v] of Object.entries(m.speed ?? {})) if (typeof v === "number") speed[k] = v;
-      return summaryOf("open5e", m.slug, m.name, m.document__title, { type: m.type, cr: m.challenge_rating, speed });
+      return { ...summaryOf("open5e", m.slug, m.name, m.document__title, { type: m.type, cr: m.challenge_rating, speed }), facets: monsterFacetsOpen5e(m) };
     });
 }
 

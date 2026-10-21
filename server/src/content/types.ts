@@ -16,6 +16,9 @@ export const CONTENT_SOURCES: ContentSource[] = ["srd", "open5e", "5etools", "ho
 export type Ability = "str" | "dex" | "con" | "int" | "wis" | "cha";
 export const ABILITIES: Ability[] = ["str", "dex", "con", "int", "wis", "cha"];
 
+/** Values a search result can be filtered or sorted by. */
+export type Facets = Record<string, string | number | boolean | string[]>;
+
 /** Lightweight entry used in search results / pickers. */
 export interface ContentSummary {
   source: ContentSource;
@@ -28,6 +31,8 @@ export interface ContentSummary {
   classes?: string[];
   /** Short label for where it came from, e.g. "SRD 5.1" or "Xanathar's Guide to Everything". */
   sourceLabel?: string;
+  /** Filterable values (school, casting time, ability increases, cost, AC…), see facets.ts. */
+  facets?: Facets;
   /** Monsters: creature type ("beast") and special movement ("fly", "swim"…), for Wild Shape filters. */
   creatureType?: string;
   movement?: string[];

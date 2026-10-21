@@ -4,6 +4,8 @@ import { api } from "../lib/api";
 import { PRESETS, ROLE_LABEL, creatureFromDetail, crNumber, fitsPreset, wildShapeLimits, type Preset } from "../lib/extras";
 import type { Character, Companion, ContentSummary } from "../lib/types";
 import { StatBlock } from "./StatBlock";
+import { FacetFilters } from "./FacetFilters";
+import { matches as matchesFacets, sortBy, type FilterState } from "../lib/facets";
 import { Modal, Spinner } from "./ui";
 
 const MAX_SHOWN = 200;
@@ -36,14 +38,19 @@ export function MonsterPicker({
     enabled: !!focused,
     staleTime: Infinity,
   });
+  const [facetState, setFacetState] = useState<FilterState>({});
+  const [sort, setSort] = useState({ key: "default", desc: false });
+  // What the preset allows, before value filters (so the filters offer every value in it).
+  const presetMatches = useMemo(() => (all.data ?? []).filter((m) => fitsPreset(c, preset, m)), [all.data, preset, c]);
   const matches = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const cap = maxCr === "" ? Infinity : crNumber(maxCr);
     const rank = (m: ContentSummary) => { const n = m.name.toLowerCase(); return n === needle ? 0 : n.startsWith(needle) ? 1 : 2; };
-    return (all.data ?? [])
-      .filter((m) => (!needle || m.name.toLowerCase().includes(needle)) && (m.level ?? 0) <= cap && fitsPreset(c, preset, m))
+    const list = presetMatches
+      .filter((m) => (!needle || m.name.toLowerCase().includes(needle)) && (m.level ?? 0) <= cap && matchesFacets(m, "monster", facetState))
       .sort((a, b) => (needle ? rank(a) - rank(b) : 0) || SOURCE_RANK[a.source] - SOURCE_RANK[b.source] || (a.level ?? 0) - (b.level ?? 0) || a.name.localeCompare(b.name));
-  }, [all.data, q, maxCr, preset, c]);
+    return sortBy(list, "monster", sort.key, sort.desc);
+  }, [presetMatches, q, maxCr, facetState, sort]);
   const role = PRESETS.find((p) => p.id === preset)!.role;
 
   const add = async (m: ContentSummary) => {
@@ -78,6 +85,7 @@ export function MonsterPicker({
             {["0", "1/8", "1/4", "1/2", "1", "2", "3", "4", "5", "6", "8", "10", "15", "20"].map((cr) => <option key={cr} value={cr}>CR ≤ {cr}</option>)}
           </select>
         </div>
+        <FacetFilters items={presetMatches} type="monster" state={facetState} onChange={setFacetState} sort={sort} onSort={setSort} />
         <div className="grid gap-3 md:grid-cols-[1fr_1.3fr]">
           <div className="max-h-[60vh] overflow-y-auto rounded-lg border border-ink-800">
             {all.isLoading && <Spinner label="Loading the bestiary…" />}

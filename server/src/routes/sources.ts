@@ -19,6 +19,7 @@ sources.put("/providers", async (req, res) => {
     Object.fromEntries(Object.entries({ srd, open5e, "5etools": fivetools }).filter(([, v]) => typeof v === "boolean")),
   );
   if (next["5etools"]) getDataset().catch(() => {}); // warm the cache
+  booksCache = null;
   res.json(next);
 });
 
@@ -29,7 +30,10 @@ interface BookInfo { label: string; provider: string; counts: Record<string, num
 
 /** Every book (source label) that has character options, with how many of each it adds. */
 sources.get("/books", async (_req, res) => {
-  if (booksCache && booksCache.complete && Date.now() - booksCache.at < 10 * 60_000) return void res.json({ books: booksCache.data, warnings: [] });
+  const providers = await getProviders();
+  // Lets the picker explain missing official books (5etools off, downloading or failing).
+  const fivetools = { enabled: providers["5etools"], ...datasetState() };
+  if (booksCache && booksCache.complete && Date.now() - booksCache.at < 10 * 60_000) return void res.json({ books: booksCache.data, warnings: [], providers, fivetools });
   const byLabel = new Map<string, BookInfo>();
   const warnings = new Set<string>();
   for (const type of BOOK_TYPES) {
@@ -44,12 +48,15 @@ sources.get("/books", async (_req, res) => {
   }
   const data = [...byLabel.values()].sort((a, b) => a.label.localeCompare(b.label));
   booksCache = { at: Date.now(), data, complete: warnings.size === 0 };
-  res.json({ books: data, warnings: [...warnings] });
+  res.json({ books: data, warnings: [...warnings], providers, fivetools: { enabled: providers["5etools"], ...datasetState() } });
 });
 
 /** Reports whether 5etools data is loaded, still downloading or failed, without waiting for it. */
 sources.get("/5etools/status", async (req, res) => {
-  if (req.query.retry) invalidateDataset();
+  if (req.query.retry) {
+    invalidateDataset();
+    booksCache = null;
+  }
   const loading = getDataset();
   loading.catch(() => {});
   const state = datasetState();
@@ -91,12 +98,14 @@ sources.post("/5etools/brew", async (req, res) => {
   await cachedFetch(brewFileUrl(path)); // validate it exists before saving
   await pool.query("INSERT INTO fivetools_brew (path) VALUES ($1) ON CONFLICT (path) DO UPDATE SET enabled = true", [path]);
   invalidateDataset();
+  booksCache = null;
   res.status(201).json({ path, enabled: true });
 });
 
 sources.delete("/5etools/brew", async (req, res) => {
   await pool.query("DELETE FROM fivetools_brew WHERE path = $1", [String(req.query.path ?? "")]);
   invalidateDataset();
+  booksCache = null;
   res.status(204).end();
 });
 
@@ -110,6 +119,7 @@ sources.put("/open5e/documents", async (req, res) => {
   const excluded = req.body?.excluded;
   if (!Array.isArray(excluded) || !excluded.every((x) => typeof x === "string")) throw new HttpError(400, "excluded must be a list of document slugs");
   await setExcludedDocuments(excluded);
+  booksCache = null;
   res.json({ excluded });
 });
 

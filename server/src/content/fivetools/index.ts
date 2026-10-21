@@ -6,6 +6,9 @@ import {
 } from "../types.js";
 import { diceFromText, mergeDice } from "../spellDice.js";
 import { getDataset, type Dataset } from "./data.js";
+import {
+  backgroundFacets5e, classFacets5e, featFacets5e, itemFacets5e, optionalFeatureFacets5e, raceFacets5e, spellFacets5e, subclassFacets5e,
+} from "../facets.js";
 import { plain, renderEntries, renderTags } from "./render.js";
 
 const SOURCE = "5etools" as const;
@@ -26,22 +29,23 @@ export async function list5etools(type: ContentType, opts: { cls?: string }): Pr
       return ds.spell
         .map((s) => ({ s, classes: spellClasses(ds, s) }))
         .filter(({ classes }) => !opts.cls || classes.includes(lc(opts.cls)))
-        .map(({ s, classes }) => summary(ds, type, s.name, key(s.name, s.source), s.source, { level: s.level, classes }));
+        .map(({ s, classes }) => summary(ds, type, s.name, key(s.name, s.source), s.source, { level: s.level, classes, facets: spellFacets5e(s) }));
     case "feat":
+      return ds.feat.filter((x) => !x._copy || x.entries).map((x) => summary(ds, type, x.name, key(x.name, x.source), x.source, { facets: featFacets5e(x) }));
     case "background":
-      return ds[type].filter((x) => !x._copy || x.entries).map((x) => summary(ds, type, x.name, key(x.name, x.source), x.source));
+      return ds.background.filter((x) => !x._copy || x.entries).map((x) => summary(ds, type, x.name, key(x.name, x.source), x.source, { facets: backgroundFacets5e(x) }));
     case "item":
-      return [...ds.baseitem, ...ds.item].map((x) => summary(ds, type, x.name, key(x.name, x.source), x.source));
+      return [...ds.baseitem, ...ds.item].map((x) => summary(ds, type, x.name, key(x.name, x.source), x.source, { facets: itemFacets5e(x) }));
     case "race":
-      return races(ds).map((r) => summary(ds, type, r.name, r.key, r.source));
+      return races(ds).map((r) => summary(ds, type, r.name, r.key, r.source, { facets: raceFacets5e(r.race, r.sub) }));
     case "class":
-      return ds.class.map((c) => summary(ds, type, c.name, key(c.name, c.source), c.source));
+      return ds.class.map((c) => summary(ds, type, c.name, key(c.name, c.source), c.source, { facets: classFacets5e(c) }));
     case "subclass":
       return ds.subclass
         .filter((s) => !opts.cls || lc(s.className) === lc(opts.cls.split("|")[0]))
-        .map((s) => summary(ds, type, s.name, key(s.shortName, s.source, s.className, s.classSource), s.source, { classes: [lc(s.className)] }));
+        .map((s) => summary(ds, type, s.name, key(s.shortName, s.source, s.className, s.classSource), s.source, { classes: [lc(s.className)], facets: subclassFacets5e(s) }));
     case "feature":
-      return ds.optionalfeature.map((o) => summary(ds, type, o.name, key("of", o.name, o.source), o.source));
+      return ds.optionalfeature.map((o) => summary(ds, type, o.name, key("of", o.name, o.source), o.source, { facets: optionalFeatureFacets5e(o) }));
     default:
       return [];
   }

@@ -1,4 +1,5 @@
 import express, { type ErrorRequestHandler } from "express";
+import compression from "compression";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { migrate, pool, waitForDatabase } from "./db.js";
@@ -9,6 +10,8 @@ import { sources } from "./routes/sources.js";
 import { HttpError } from "./content/http.js";
 
 const app = express();
+// Search results (thousands of spells, items, monsters with their filter values) compress ~10×.
+app.use(compression());
 app.use(express.json({ limit: "2mb" }));
 
 app.get("/api/health", (_req, res) => void res.json({ ok: true }));

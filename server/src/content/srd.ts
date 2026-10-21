@@ -2,11 +2,13 @@ import { cachedFetch } from "./http.js";
 import {
   SKILL_KEYS, skillName, toSkillKey, singleClassSlots,
   type Ability, type Choice, type ChoiceOption, type ClassRules, type ContentDetail, type ContentSummary,
-  type ContentType, type Effect, type EquipmentChoice, type ExpandedSpell, type GrantedSpell, type ItemData, type LevelRules, type SpellDice,
+  type ContentType, type Effect, type Facets, type EquipmentChoice, type ExpandedSpell, type GrantedSpell, type ItemData, type LevelRules, type SpellDice,
 } from "./types.js";
 import { diceFromText, mergeDice } from "./spellDice.js";
+import { raceFacetsSrd, spellFacetsSrd } from "./facets.js";
 
 const BASE = (process.env.SRD_API_URL ?? "https://www.dnd5eapi.co") + "/api/2014";
+const GRAPHQL = (process.env.SRD_API_URL ?? "https://www.dnd5eapi.co") + "/graphql/2014";
 const LABEL = "SRD 5.1";
 
 const ENDPOINT: Record<ContentType, string> = {
@@ -25,12 +27,34 @@ const srd = <T = any>(path: string) => cachedFetch<T>(`${BASE}/${path}`);
 const join = (parts?: string[]) => (parts ?? []).join("\n\n");
 const optionsOf = (o: any): any[] => o?.from?.options ?? [];
 
+/** Filter values for SRD spells and races, fetched with one GraphQL query each (the REST lists only have names). */
+async function srdFacets(kind: "spells" | "races"): Promise<Map<string, Facets | undefined>> {
+  const query =
+    kind === "spells"
+      ? "{ spells(limit: 1000) { index school { name } casting_time concentration ritual components material range duration attack_type damage { damage_type { name } } dc { dc_type { name } } heal_at_slot_level { level } } }"
+      : "{ races { index name size speed ability_bonuses { bonus ability_score { index } } subraces { index ability_bonuses { bonus ability_score { index } } } } }";
+  try {
+    const { data } = await cachedFetch<{ data: Record<string, any[]> }>(`${GRAPHQL}`, { query });
+    const map = new Map<string, Facets | undefined>();
+    for (const x of data[kind] ?? []) {
+      if (kind === "spells") map.set(x.index, spellFacetsSrd(x));
+      else {
+        map.set(x.index, raceFacetsSrd(x));
+        for (const sub of x.subraces ?? []) map.set(`${x.index}/${sub.index}`, raceFacetsSrd(x, sub));
+      }
+    }
+    return map;
+  } catch {
+    return new Map(); // filters just won't know these entries' values
+  }
+}
+
 export async function listSrd(type: ContentType, opts: { cls?: string }): Promise<ContentSummary[]> {
   const base = (r: any): ContentSummary => ({ source: "srd", key: r.index, type, name: r.name, sourceLabel: LABEL });
   if (type === "spell") {
     const path = opts.cls ? `classes/${opts.cls}/spells` : "spells";
-    const { results } = await srd<{ results: any[] }>(path).catch(() => ({ results: [] }));
-    return results.map((r) => ({ ...base(r), level: r.level, classes: opts.cls ? [opts.cls] : undefined }));
+    const [{ results }, facets] = await Promise.all([srd<{ results: any[] }>(path).catch(() => ({ results: [] as any[] })), srdFacets("spells")]);
+    return results.map((r) => ({ ...base(r), level: r.level, classes: opts.cls ? [opts.cls] : undefined, facets: facets.get(r.index) }));
   }
   if (type === "subclass" && opts.cls) {
     const { results } = await srd<{ results: any[] }>(`classes/${opts.cls}/subclasses`).catch(() => ({ results: [] }));
@@ -39,11 +63,11 @@ export async function listSrd(type: ContentType, opts: { cls?: string }): Promis
   if (type === "race") {
     // List each subrace as its own option ("High Elf"), plus races without subraces.
     const { results } = await srd<{ results: any[] }>("races");
-    const races = await Promise.all(results.map((r) => srd<any>(`races/${r.index}`)));
+    const [races, facets] = await Promise.all([Promise.all(results.map((r) => srd<any>(`races/${r.index}`))), srdFacets("races")]);
     return races.flatMap((r) =>
       r.subraces?.length
-        ? r.subraces.map((s: any) => ({ ...base(r), key: `${r.index}/${s.index}`, name: s.name }))
-        : [base(r)],
+        ? r.subraces.map((s: any) => ({ ...base(r), key: `${r.index}/${s.index}`, name: s.name, facets: facets.get(`${r.index}/${s.index}`) }))
+        : [{ ...base(r), facets: facets.get(r.index) }],
     );
   }
   const { results } = await srd<{ results: any[] }>(ENDPOINT[type]);

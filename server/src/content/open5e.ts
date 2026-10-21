@@ -2,6 +2,9 @@ import { cachedFetch } from "./http.js";
 import { pool } from "../db.js";
 import { diceFromText } from "./spellDice.js";
 import {
+  armorFacetsOpen5e, backgroundFacetsOpen5e, featFacetsOpen5e, magicItemFacetsOpen5e, raceFacetsOpen5e, spellFacetsOpen5e, weaponFacetsOpen5e,
+} from "./facets.js";
+import {
   ABILITIES, SKILL_KEYS, toSkillKey,
   type Ability, type Choice, type ContentDetail, type ContentSummary, type ContentType, type Effect, type ExpandedSpell, type ItemData,
 } from "./types.js";
@@ -121,23 +124,23 @@ export async function listOpen5e(type: ContentType, opts: { cls?: string }): Pro
         .filter(keep)
         .map((x) => ({ x, classes: (x.spell_lists ?? []).map((c: string) => c.toLowerCase()) }))
         .filter(({ classes }) => !opts.cls || classes.includes(opts.cls))
-        .map(({ x, classes }) => summary(type, x, x.slug, { level: x.level_int, classes }));
+        .map(({ x, classes }) => summary(type, x, x.slug, { level: x.level_int, classes, facets: spellFacetsOpen5e(x) }));
     case "feat":
-      return (await all("feats")).filter(keep).map((x) => summary(type, x, x.slug));
+      return (await all("feats")).filter(keep).map((x) => summary(type, x, x.slug, { facets: featFacetsOpen5e(x) }));
     case "background":
-      return (await allWithV2("backgrounds")).filter(keep).map((x) => summary(type, x, x.slug));
+      return (await allWithV2("backgrounds")).filter(keep).map((x) => summary(type, x, x.slug, { facets: backgroundFacetsOpen5e(x) }));
     case "race":
       return (await all("races")).filter(keep).flatMap((r) =>
         r.subraces?.length
-          ? r.subraces.map((s: any) => summary(type, { ...r, name: `${r.name} (${s.name})` }, `${r.slug}/${s.slug}`))
-          : [summary(type, r, r.slug)],
+          ? r.subraces.map((s: any) => summary(type, { ...r, name: `${r.name} (${s.name})` }, `${r.slug}/${s.slug}`, { facets: raceFacetsOpen5e(r, s) }))
+          : [summary(type, r, r.slug, { facets: raceFacetsOpen5e(r) })],
       );
     case "item": {
       const [magic, weapons, armor] = await Promise.all([all("magicitems"), all("weapons"), all("armor")]);
       return [
-        ...magic.filter(keep).map((x) => summary(type, x, `magic/${x.slug}`)),
-        ...weapons.filter(keep).map((x) => summary(type, x, `weapon/${x.slug}`)),
-        ...armor.filter(keep).map((x) => summary(type, x, `armor/${x.slug}`)),
+        ...magic.filter(keep).map((x) => summary(type, x, `magic/${x.slug}`, { facets: magicItemFacetsOpen5e(x) })),
+        ...weapons.filter(keep).map((x) => summary(type, x, `weapon/${x.slug}`, { facets: weaponFacetsOpen5e(x) })),
+        ...armor.filter(keep).map((x) => summary(type, x, `armor/${x.slug}`, { facets: armorFacetsOpen5e(x) })),
       ];
     }
     case "subclass": {

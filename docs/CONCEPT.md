@@ -209,6 +209,10 @@ Actions that need a follow-up choice return a `Decision` (`lib/featureUse.ts`). 
 
 Every upstream request has a timeout and one retry, and at most 8 run at once. The 5etools dataset tolerates missing files (they're listed on the Sources page), serves the previous copy while refreshing, and after a failed first load waits a minute before trying again. `searchWithWarnings` gives each provider 20 seconds; a slower one is reported in the `X-Content-Warnings` header and the picker shows the rest.
 
+## Filtering by values
+
+Search results carry `facets`: plain values to filter and sort by (`server/src/content/facets.ts`). Each provider maps its own fields to the same keys (5etools from its structured data, Open5e from its fields and text, the SRD from one GraphQL query per type). The client (`web/src/lib/facets.ts`) builds the filter panel from whatever keys are present: numbers become ranges, booleans Any/Yes/No, strings and lists become chips. A new facet on the server shows up as a filter with no client change; a label table only adds nice names and units. Responses are gzip-compressed (the full creature list is ~150 KB).
+
 ## Books per character
 
 `Character.options.books` lists the allowed source labels. `BooksContext` carries them to every picker (`useBookFilter`), so the creator, level-up wizard and sheet all apply the same filter to character options. `/api/sources/books` lists the books that currently have content, with counts.

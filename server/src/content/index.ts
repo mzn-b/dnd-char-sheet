@@ -62,7 +62,13 @@ export async function searchWithWarnings(type: ContentType, opts: SearchOptions)
   const all = lists.flat();
   // 5etools contains the full PHB text of everything in the SRD, so prefer it over the SRD copy.
   // (Other publishers' same-named variants, e.g. Level Up's Fireball, are kept and labelled.)
-  const fromFivetools = new Set(all.filter((c) => c.source === "5etools").map((c) => `${c.type}:${c.name.toLowerCase()}`));
+  // Subraces are named differently ("High Elf" in the SRD, "Elf (High)" in 5etools), so compare both spellings.
+  const variants = (name: string) => {
+    const n = name.toLowerCase();
+    const m = n.match(/^(.+?) \((.+)\)$/);
+    return m ? [n, `${m[2]} ${m[1]}`] : [n];
+  };
+  const fromFivetools = new Set(all.filter((c) => c.source === "5etools").flatMap((c) => variants(c.name).map((v) => `${c.type}:${v}`)));
   const results = all
     .filter((c) => !(c.source === "srd" && fromFivetools.has(`${c.type}:${c.name.toLowerCase()}`)))
     .filter((c) => !q || c.name.toLowerCase().includes(q))

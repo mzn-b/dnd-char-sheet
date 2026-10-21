@@ -35,7 +35,7 @@ export default function Settings() {
   };
 
   const refreshContent = () => {
-    for (const k of ["content", "detail", "classRules", "subclassRules", "5etools-status", "brews"]) qc.invalidateQueries({ queryKey: [k] });
+    for (const k of ["content", "detail", "classRules", "subclassRules", "5etools-status", "brews", "books", "search"]) qc.invalidateQueries({ queryKey: [k] });
   };
   const setP = useMutation({
     mutationFn: (p: Partial<Providers>) => api.setProviders(p),

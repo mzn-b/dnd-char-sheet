@@ -18,6 +18,8 @@ export interface ContentSummary extends ContentRef {
   level?: number;
   classes?: string[];
   sourceLabel?: string;
+  /** Filterable values (school, casting time, ability increases, cost, AC, CR…). */
+  facets?: Record<string, string | number | boolean | string[]>;
   /** Monsters: printed CR, creature type and special movement (fly, swim…). */
   cr?: string;
   creatureType?: string;

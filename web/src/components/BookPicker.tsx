@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type BookInfo } from "../lib/api";
 import { PHB } from "../lib/books";
 import { Spinner } from "./ui";
@@ -20,12 +20,34 @@ const GROUPS: { provider: BookInfo["provider"]; title: string }[] = [
   { provider: "homebrew", title: "Your homebrew (always included)" },
 ];
 
+const PLURAL: Record<string, [string, string]> = {
+  race: ["race", "races"], class: ["class", "classes"], subclass: ["subclass", "subclasses"], background: ["background", "backgrounds"],
+  feat: ["feat", "feats"], spell: ["spell", "spells"], feature: ["class option", "class options"],
+};
 const summary = (b: BookInfo) =>
-  Object.entries(b.counts).map(([t, n]) => `${n} ${t === "class" ? "classes" : t === "feature" ? "options" : `${t}s`}`).join(", ");
+  Object.entries(b.counts).map(([t, n]) => `${n} ${(PLURAL[t] ?? [t, `${t}s`])[n === 1 ? 0 : 1]}`).join(", ");
 
 /** Choose which books a character's options may come from. Empty selection = everything enabled. */
 export function BookPicker({ value, onChange }: { value: string[]; onChange: (books: string[]) => void }) {
-  const { data, isLoading, refetch } = useQuery({ queryKey: ["books"], queryFn: api.books, staleTime: 5 * 60_000 });
+  const qc = useQueryClient();
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ["books"],
+    queryFn: api.books,
+    staleTime: 60_000,
+    // While 5etools downloads, check again every few seconds so its books appear on their own.
+    refetchInterval: (q) => (q.state.data?.fivetools.enabled && !q.state.data.fivetools.loaded && !q.state.data.fivetools.error ? 4000 : false),
+  });
+  const [enabling, setEnabling] = useState(false);
+  const enableFivetools = async () => {
+    setEnabling(true);
+    try {
+      await api.setProviders({ "5etools": true });
+      for (const k of ["providers", "content", "detail", "classRules", "books", "search", "5etools-status"]) qc.invalidateQueries({ queryKey: [k] });
+    } finally {
+      setEnabling(false);
+    }
+  };
+  const ft = data?.fivetools;
   const [q, setQ] = useState("");
   const selected = new Set(value);
   const toggle = (label: string) => onChange(selected.has(label) ? value.filter((b) => b !== label) : [...value, label]);
@@ -52,7 +74,23 @@ export function BookPicker({ value, onChange }: { value: string[]; onChange: (bo
       {data?.warnings.map((w) => (
         <p key={w} className="text-xs text-accent-400">⚠ {w} <button type="button" className="underline" onClick={() => refetch()}>Retry</button></p>
       ))}
-      {missing.length > 0 && <p className="text-xs text-accent-400">Selected but not currently available: {missing.join(", ")} (is its source turned on?)</p>}
+      {ft && !ft.enabled && (
+        <div className="rounded-lg border border-accent-600/60 bg-accent-500/5 p-3 text-sm">
+          <b className="text-accent-400">The Player's Handbook, Xanathar's, Tasha's and the other official books come from 5etools, which is turned off.</b>
+          <p className="mt-1 text-xs text-ink-400">Without it you only get the free SRD (a subset of the PHB) and Open5e's third-party books.</p>
+          <button type="button" className="btn-primary mt-2" disabled={enabling} onClick={enableFivetools}>{enabling ? "Turning on…" : "Turn on 5etools"}</button>
+        </div>
+      )}
+      {ft?.enabled && !ft.loaded && !ft.error && (
+        <div className="text-xs text-ink-400"><Spinner label="Downloading 5etools data… the official books appear here when it's done (the first time can take a minute or two)." /></div>
+      )}
+      {ft?.enabled && ft.error && (
+        <p className="text-xs text-blood-500">
+          5etools couldn't be loaded, so the official books are missing: {ft.error}. The server needs to reach raw.githubusercontent.com.{" "}
+          <button type="button" className="underline" onClick={async () => { await api.retryFivetools(); refetch(); }}>Retry</button>
+        </p>
+      )}
+      {missing.length > 0 && ft?.loaded !== false && <p className="text-xs text-accent-400">Selected but not currently available: {missing.join(", ")}.</p>}
       <div className="max-h-72 space-y-3 overflow-y-auto rounded-lg border border-ink-800 p-2">
         {GROUPS.map((g) => {
           const list = books.filter((b) => b.provider === g.provider);

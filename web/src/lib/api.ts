@@ -53,7 +53,12 @@ export const api = {
   providers: () => request<Providers>("/sources/providers"),
   setProviders: (p: Partial<Providers>) => request<Providers>("/sources/providers", { method: "PUT", body: JSON.stringify(p) }),
   fivetoolsStatus: () => request<FivetoolsStatus>("/sources/5etools/status"),
-  books: () => request<{ books: BookInfo[]; warnings: string[] }>("/sources/books"),
+  books: () =>
+    request<{
+      books: BookInfo[];
+      warnings: string[];
+      fivetools: { enabled: boolean; loaded: boolean; loading: boolean; error: string | null; failures: string[] };
+    }>("/sources/books"),
   retryFivetools: () => request<FivetoolsStatus>("/sources/5etools/status?retry=1"),
   brewCatalog: (q: string, folder?: string, library?: string) => request<BrewFile[]>(`/sources/5etools/brew/catalog${qs({ q, folder, library })}`),
   open5eDocuments: () => request<{ slug: string; title: string; organization: string; enabled: boolean }[]>("/sources/open5e/documents"),
