@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { pool } from "../db.js";
 import { getProviders, setProviders } from "../content/settings.js";
-import { brewCatalog, brewFileUrl, datasetState, invalidateDataset, getDataset, DATA_URL } from "../content/fivetools/data.js";
+import { brewCatalog, brewFileUrl, datasetState, invalidateDataset, getDataset, modernBookNames, DATA_URL } from "../content/fivetools/data.js";
 import { cachedFetch, HttpError, within } from "../content/http.js";
 import { excludedDocuments, listDocuments, setExcludedDocuments } from "../content/open5e.js";
 import { searchWithWarnings } from "../content/index.js";
@@ -33,7 +33,9 @@ sources.get("/books", async (_req, res) => {
   const providers = await getProviders();
   // Lets the picker explain missing official books (5etools off, downloading or failing).
   const fivetools = { enabled: providers["5etools"], ...datasetState() };
-  if (booksCache && booksCache.complete && Date.now() - booksCache.at < 10 * 60_000) return void res.json({ books: booksCache.data, warnings: [], providers, fivetools });
+  // Books the 2014-rules filter leaves out, so the picker can say why a preset's book is missing.
+  const excluded2024 = providers["5etools"] ? await modernBookNames().catch(() => []) : [];
+  if (booksCache && booksCache.complete && Date.now() - booksCache.at < 10 * 60_000) return void res.json({ books: booksCache.data, warnings: [], providers, fivetools, excluded2024 });
   const byLabel = new Map<string, BookInfo>();
   const warnings = new Set<string>();
   for (const type of BOOK_TYPES) {
@@ -48,7 +50,7 @@ sources.get("/books", async (_req, res) => {
   }
   const data = [...byLabel.values()].sort((a, b) => a.label.localeCompare(b.label));
   booksCache = { at: Date.now(), data, complete: warnings.size === 0 };
-  res.json({ books: data, warnings: [...warnings], providers, fivetools: { enabled: providers["5etools"], ...datasetState() } });
+  res.json({ books: data, warnings: [...warnings], providers, fivetools: { enabled: providers["5etools"], ...datasetState() }, excluded2024 });
 });
 
 /** Reports whether 5etools data is loaded, still downloading or failed, without waiting for it. */

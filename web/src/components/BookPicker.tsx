@@ -7,8 +7,24 @@ import { Spinner } from "./ui";
 const XGE = "Xanathar's Guide to Everything";
 const TCE = "Tasha's Cauldron of Everything";
 
-const PRESETS: { label: string; books: string[] }[] = [
+/** "Core": the 2014 core books plus the supplements and setting books usually allowed at the table. */
+const CORE = [
+  "Acquisitions Incorporated", "Astarion's Book of Hungers", "Astral Adventurer's Guide", "Dungeon Master's Guide (2014)",
+  "Eberron: Forge of the Artificer", "Eberron: Rising from the Last War", "Elemental Evil Player's Companion",
+  "Explorer's Guide to Wildemount", "Fizban's Treasury of Dragons", "Guildmasters' Guide to Ravnica", "Lorwyn: First Light",
+  "Mordenkainen Presents: Monsters of the Multiverse", "Mordenkainen's Tome of Foes", "Mythic Odysseys of Theros",
+  PHB, "Sword Coast Adventurer's Guide", TCE, "Van Richten's Guide to Ravenloft", "Volo's Guide to Monsters",
+];
+/** "Vanilla": a minimal set built around the 2024 Player's Handbook. */
+const VANILLA = [
+  "Astarion's Book of Hungers", "Fizban's Treasury of Dragons", "Mordenkainen Presents: Monsters of the Multiverse",
+  "Player's Handbook (2024)", "Sword Coast Adventurer's Guide", TCE,
+];
+
+const PRESETS: { label: string; books: string[]; title?: string }[] = [
   { label: "All books", books: [] },
+  { label: "Core", books: CORE, title: CORE.join(", ") },
+  { label: "Vanilla", books: VANILLA, title: VANILLA.join(", ") },
   { label: "PHB only", books: [PHB] },
   { label: "PHB + Xanathar's + Tasha's", books: [PHB, XGE, TCE] },
 ];
@@ -60,7 +76,7 @@ export function BookPicker({ value, onChange }: { value: string[]; onChange: (bo
         {PRESETS.map((p) => {
           const active = p.books.length === value.length && p.books.every((b) => selected.has(b));
           return (
-            <button key={p.label} type="button" className={`rounded-lg px-3 py-1 ${active ? "bg-ink-800 text-accent-400" : "text-ink-400 hover:text-ink-200"}`} onClick={() => onChange(p.books)}>
+            <button key={p.label} type="button" title={p.title} className={`rounded-lg px-3 py-1 ${active ? "bg-ink-800 text-accent-400" : "text-ink-400 hover:text-ink-200"}`} onClick={() => onChange(p.books)}>
               {p.label}
             </button>
           );
@@ -90,7 +106,22 @@ export function BookPicker({ value, onChange }: { value: string[]; onChange: (bo
           <button type="button" className="underline" onClick={async () => { await api.retryFivetools(); refetch(); }}>Retry</button>
         </p>
       )}
-      {missing.length > 0 && ft?.loaded !== false && <p className="text-xs text-accent-400">Selected but not currently available: {missing.join(", ")}.</p>}
+      {(() => {
+        if (!missing.length || ft?.loaded === false) return null;
+        const modern = missing.filter((m) => data?.excluded2024?.includes(m));
+        const other = missing.filter((m) => !modern.includes(m));
+        return (
+          <>
+            {modern.length > 0 && (
+              <p className="text-xs text-accent-400">
+                Not loaded because this app uses 2014 rules: {modern.join(", ")}.
+                {modern.includes("Player's Handbook (2024)") && !selected.has(PHB) && " Without a PHB, add Player's Handbook (2014) for the core classes and races."}
+              </p>
+            )}
+            {other.length > 0 && <p className="text-xs text-accent-400">Selected but not currently available: {other.join(", ")}.</p>}
+          </>
+        );
+      })()}
       <div className="max-h-72 space-y-3 overflow-y-auto rounded-lg border border-ink-800 p-2">
         {GROUPS.map((g) => {
           const list = books.filter((b) => b.provider === g.provider);

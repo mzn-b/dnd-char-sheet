@@ -77,6 +77,12 @@ export function getDataset(): Promise<Dataset> {
 /** Whether the dataset is loaded, still downloading, or failed (for status displays and search warnings). */
 export const datasetState = () => ({ loaded: !!ready, loading: !!cache && !ready, error: lastError, failures: ready?.failures ?? [] });
 
+/** Names of the books dropped by the 2014-rules filter (2024 PHB and everything after it). */
+export async function modernBookNames(): Promise<string[]> {
+  const books = await cachedFetch<{ book: any[] }>(`${DATA_URL}/books.json`);
+  return books.book.filter((b) => b.published >= "2024-09-17").map((b) => b.name);
+}
+
 export function invalidateDataset() {
   cache = null;
   ready = null;

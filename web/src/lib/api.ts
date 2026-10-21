@@ -58,6 +58,8 @@ export const api = {
       books: BookInfo[];
       warnings: string[];
       fivetools: { enabled: boolean; loaded: boolean; loading: boolean; error: string | null; failures: string[] };
+      /** Books left out because this app uses 2014 rules. */
+      excluded2024?: string[];
     }>("/sources/books"),
   retryFivetools: () => request<FivetoolsStatus>("/sources/5etools/status?retry=1"),
   brewCatalog: (q: string, folder?: string, library?: string) => request<BrewFile[]>(`/sources/5etools/brew/catalog${qs({ q, folder, library })}`),
