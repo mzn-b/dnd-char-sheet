@@ -18,6 +18,7 @@ const ENDPOINT: Record<ContentType, string> = {
   feature: "features",
   subclass: "subclasses",
   class: "classes",
+  monster: "monsters",
 };
 
 const srd = <T = any>(path: string) => cachedFetch<T>(`${BASE}/${path}`);

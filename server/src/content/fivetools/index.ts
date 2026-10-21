@@ -42,6 +42,8 @@ export async function list5etools(type: ContentType, opts: { cls?: string }): Pr
         .map((s) => summary(ds, type, s.name, key(s.shortName, s.source, s.className, s.classSource), s.source, { classes: [lc(s.className)] }));
     case "feature":
       return ds.optionalfeature.map((o) => summary(ds, type, o.name, key("of", o.name, o.source), o.source));
+    default:
+      return [];
   }
 }
 

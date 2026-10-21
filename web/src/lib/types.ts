@@ -3,7 +3,7 @@ import type { CombatState } from "./combat";
 export const ABILITIES = ["str", "dex", "con", "int", "wis", "cha"] as const;
 export type Ability = (typeof ABILITIES)[number];
 
-export type ContentType = "spell" | "feat" | "item" | "race" | "background" | "feature" | "subclass" | "class";
+export type ContentType = "spell" | "feat" | "item" | "race" | "background" | "feature" | "subclass" | "class" | "monster";
 export type ContentSource = "srd" | "open5e" | "5etools" | "homebrew";
 
 /** A pointer to a piece of content in the rules API or homebrew store. */
@@ -18,6 +18,10 @@ export interface ContentSummary extends ContentRef {
   level?: number;
   classes?: string[];
   sourceLabel?: string;
+  /** Monsters: printed CR, creature type and special movement (fly, swim…). */
+  cr?: string;
+  creatureType?: string;
+  movement?: string[];
 }
 
 export interface ContentDetail extends ContentSummary {
@@ -31,6 +35,7 @@ export interface ContentDetail extends ContentSummary {
   suggestions?: { traits: string[]; ideals: string[]; bonds: string[]; flaws: string[] };
   startingEquipment?: EquipmentChoice[];
   grantedSpells?: GrantedSpell[];
+  monster?: MonsterData;
   // Homebrew-only extras (class/subclass definitions)
   hitDie?: number;
   spellcastingAbility?: Ability | null;
@@ -247,9 +252,49 @@ export interface Companion {
   name: string;
   kind: string;
   ac: number;
-  hp: { max: number; current: number };
+  hp: { max: number; current: number; temp?: number };
   speed: string;
   notes: string;
+  /** What it is to the character: a Wild Shape form, familiar, steed, summon… */
+  role?: CreatureRole;
+  ref?: ContentRef;
+  /** Stat block captured when added, so it works offline and can be edited. */
+  monster?: MonsterData;
+}
+
+export type CreatureRole = "wildshape" | "familiar" | "steed" | "companion" | "summon" | "other";
+
+export interface MonsterEntry {
+  name: string;
+  text: string;
+}
+
+/** A stat block normalized across 5etools, the SRD API and Open5e. */
+export interface MonsterData {
+  size: string;
+  type: string;
+  alignment: string;
+  ac: number;
+  acNote?: string;
+  hp: number;
+  hpFormula?: string;
+  speed: Record<string, number>;
+  speedNote?: string;
+  abilities: Record<Ability, number>;
+  saves: Partial<Record<Ability, number>>;
+  skills: Record<string, number>;
+  senses: string;
+  languages: string;
+  cr: string;
+  vulnerabilities?: string;
+  resistances?: string;
+  immunities?: string;
+  conditionImmunities?: string;
+  traits: MonsterEntry[];
+  actions: MonsterEntry[];
+  bonusActions: MonsterEntry[];
+  reactions: MonsterEntry[];
+  legendary: MonsterEntry[];
 }
 
 export interface LevelRecord {
@@ -346,6 +391,8 @@ export interface Character {
   progression?: "xp" | "milestone";
   /** Round tracker, action economy and active effects while in combat. */
   combat?: CombatState;
+  /** The Wild Shape form currently assumed (a companion with role "wildshape"). */
+  wildShape?: { companionId: string } | null;
   /** Extra bonuses typed in by the player. */
   customModifiers?: CustomModifier[];
   /** Ids of automatic modifiers the player switched off. */

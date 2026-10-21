@@ -3,6 +3,7 @@ import { getHomebrew, listHomebrew } from "./homebrew.js";
 import { getSrd, listSrd } from "./srd.js";
 import { get5etools, list5etools } from "./fivetools/index.js";
 import { getProviders } from "./settings.js";
+import { get5etoolsMonster, getOpen5eMonster, getSrdMonster, list5etoolsMonsters, listOpen5eMonsters, listSrdMonsters } from "./monsters.js";
 import { HttpError } from "./http.js";
 import type { ContentDetail, ContentSource, ContentSummary, ContentType } from "./types.js";
 
@@ -18,10 +19,11 @@ export interface SearchOptions {
 export async function searchContent(type: ContentType, opts: SearchOptions): Promise<ContentSummary[]> {
   const providers = await getProviders();
   const className = opts.cls?.split("|")[0].toLowerCase();
+  const monster = type === "monster";
   const sources = await Promise.allSettled([
-    providers.srd ? listSrd(type, { cls: className }) : [],
-    providers.open5e ? listOpen5e(type, { cls: className }) : [],
-    providers["5etools"] ? list5etools(type, { cls: className }) : [],
+    providers.srd ? (monster ? listSrdMonsters() : listSrd(type, { cls: className })) : [],
+    providers.open5e ? (monster ? listOpen5eMonsters() : listOpen5e(type, { cls: className })) : [],
+    providers["5etools"] ? (monster ? list5etoolsMonsters() : list5etools(type, { cls: className })) : [],
     listHomebrew(type, { cls: className }),
   ]);
   for (const s of sources) if (s.status === "rejected") console.warn(`content source failed for ${type}:`, s.reason?.message);
@@ -39,7 +41,9 @@ export async function searchContent(type: ContentType, opts: SearchOptions): Pro
 }
 
 export async function getContent(type: ContentType, source: ContentSource, key: string): Promise<ContentDetail> {
-  const detail =
+  const detail = type === "monster" && source !== "homebrew"
+    ? source === "srd" ? await getSrdMonster(key) : source === "open5e" ? await getOpen5eMonster(key) : await get5etoolsMonster(key)
+    :
     source === "srd" ? await getSrd(type, key)
     : source === "open5e" ? await getOpen5e(type, key)
     : source === "5etools" ? await get5etools(type, key)

@@ -33,6 +33,8 @@ export interface Dataset {
   sourceNames: Record<string, string>;
   /** sources that came from homebrew files */
   brewSources: Set<string>;
+  /** 2024-rules books (excluded) */
+  modernSources: Set<string>;
 }
 
 let cache: { at: number; data: Promise<Dataset> } | null = null;
@@ -57,6 +59,8 @@ const EXTRA_SOURCE_NAMES: Record<string, string> = {
   RoTOS: "The Rise of Tiamat Online Supplement", EET: "Elemental Evil: Trinkets", EEPC: "Elemental Evil Player's Companion",
   MCV2DC: "Monstrous Compendium Vol. 2: Dragonlance Creatures", UATheMysticClass: "Unearthed Arcana: The Mystic Class",
   AWM: "Adventure with Muk", OGA: "One Grung Above", LR: "Locathah Rising", TTP: "The Tortle Package",
+  MCV3MC: "Monstrous Compendium Vol. 3: Minecraft Creatures", MFF: "Mordenkainen's Fiendish Folio Vol. 1",
+  MisMV1: "Misplaced Monsters: Volume One", SADS: "Sapphire Anniversary Dice Set", VD: "Vecna Dossier",
 };
 
 const get = <T = any>(path: string) => cachedFetch<T>(`${DATA_URL}/${path}`);
@@ -66,6 +70,7 @@ async function load(): Promise<Dataset> {
     spellClasses: {},
     sourceNames: {},
     brewSources: new Set<string>(),
+    modernSources: new Set<string>(),
   }) as Dataset;
 
   const [classIndex, spellIndex, books, adventures, spellSources, ...singles] = await Promise.all([
@@ -84,6 +89,7 @@ async function load(): Promise<Dataset> {
 
   // Only 2014-era rules: drop the 2024 core books and everything published after them.
   const modern = new Set(books.book.filter((b) => b.published >= "2024-09-17").map((b) => b.id));
+  ds.modernSources = modern;
   for (const b of books.book) ds.sourceNames[b.id] = b.name;
   // Adventures and supplements (Curse of Strahd, Plane Shift…) so sources show names, not codes.
   for (const a of adventures.adventure) ds.sourceNames[a.id] ??= a.name;
@@ -125,7 +131,7 @@ export const brewFileUrl = (path: string) => {
   return `${lib.base}/${lib.path.split("/").map(encodeURIComponent).join("/")}`;
 };
 
-async function enabledBrews(): Promise<{ path: string }[]> {
+export async function enabledBrews(): Promise<{ path: string }[]> {
   const { rows } = await pool.query<{ path: string }>("SELECT path FROM fivetools_brew WHERE enabled ORDER BY added_at");
   return rows;
 }

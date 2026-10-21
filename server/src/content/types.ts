@@ -7,6 +7,7 @@ export const CONTENT_TYPES = [
   "feature",
   "subclass",
   "class",
+  "monster",
 ] as const;
 export type ContentType = (typeof CONTENT_TYPES)[number];
 export type ContentSource = "srd" | "open5e" | "5etools" | "homebrew";
@@ -27,6 +28,11 @@ export interface ContentSummary {
   classes?: string[];
   /** Short label for where it came from, e.g. "SRD 5.1" or "Xanathar's Guide to Everything". */
   sourceLabel?: string;
+  /** Monsters: creature type ("beast") and special movement ("fly", "swim"…), for Wild Shape filters. */
+  creatureType?: string;
+  movement?: string[];
+  /** Monsters: challenge rating as printed ("1/4"); level holds the numeric value. */
+  cr?: string;
 }
 
 /** Full entry, normalized across all sources so the UI renders one shape. */
@@ -35,6 +41,8 @@ export interface ContentDetail extends ContentSummary {
   prerequisite?: string;
   /** Display facts, e.g. { "Casting Time": "1 action", "Range": "60 feet" }. */
   meta: Record<string, string>;
+  /** Monster stat block. */
+  monster?: MonsterData;
   /** Spell-specific fields used by the sheet. */
   spell?: { school?: string; ritual?: boolean; concentration?: boolean; dice?: SpellDice };
   /** Fixed, machine-applicable effects, e.g. +2 Dex from a race. */
@@ -260,4 +268,37 @@ export function singleClassSlots(type: ClassRules["casterType"], level: number):
   }
   const row = effective > 0 ? FULL_SLOTS[effective - 1] : [];
   return Array.from({ length: 9 }, (_, i) => row[i] ?? 0);
+}
+
+export interface MonsterEntry {
+  name: string;
+  text: string;
+}
+
+/** A stat block normalized across 5etools, the SRD API and Open5e. */
+export interface MonsterData {
+  size: string;
+  type: string;
+  alignment: string;
+  ac: number;
+  acNote?: string;
+  hp: number;
+  hpFormula?: string;
+  speed: Record<string, number>;
+  speedNote?: string;
+  abilities: Record<Ability, number>;
+  saves: Partial<Record<Ability, number>>;
+  skills: Record<string, number>;
+  senses: string;
+  languages: string;
+  cr: string;
+  vulnerabilities?: string;
+  resistances?: string;
+  immunities?: string;
+  conditionImmunities?: string;
+  traits: MonsterEntry[];
+  actions: MonsterEntry[];
+  bonusActions: MonsterEntry[];
+  reactions: MonsterEntry[];
+  legendary: MonsterEntry[];
 }

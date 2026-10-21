@@ -11,6 +11,7 @@ import { CombatBar } from "../components/sheet/CombatTracker";
 import { InventoryTab } from "../components/sheet/InventoryTab";
 import { FeaturesTab, SubFeatureRow } from "../components/sheet/FeaturesTab";
 import { BioTab } from "../components/sheet/BioTab";
+import { ExtrasTab, WildShapeBanner } from "../components/sheet/ExtrasTab";
 import { HistoryTab } from "../components/sheet/HistoryTab";
 import { RestDialog } from "../components/sheet/RestDialog";
 import { LevelUpWizard } from "../components/levelup/LevelUpWizard";
@@ -18,7 +19,7 @@ import { Markdown, Section, Spinner, TextArea } from "../components/ui";
 import type { Character } from "../lib/types";
 import type { Update } from "../lib/useCharacter";
 
-const TABS = ["Overview", "Actions", "Spells", "Inventory", "Features", "Bio & Notes", "History"] as const;
+const TABS = ["Overview", "Actions", "Spells", "Inventory", "Features", "Extras", "Bio & Notes", "History"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function CharacterSheet() {
@@ -103,12 +104,14 @@ export default function CharacterSheet() {
       </div>
 
       <CombatBar c={c} update={update} onEnded={setEndedEffects} />
+      {tab !== "Extras" && <WildShapeBanner c={c} update={update} />}
 
       {tab === "Overview" && <Overview c={c} update={update} />}
       {tab === "Actions" && <ActionsTab c={c} update={update} endedEffects={endedEffects} />}
       {tab === "Spells" && <SpellsTab c={c} update={update} />}
       {tab === "Inventory" && <InventoryTab c={c} update={update} />}
       {tab === "Features" && <FeaturesTab c={c} update={update} />}
+      {tab === "Extras" && <ExtrasTab c={c} update={update} />}
       {tab === "Bio & Notes" && <BioTab c={c} update={update} />}
       {tab === "History" && <HistoryTab c={c} />}
 

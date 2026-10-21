@@ -5,7 +5,8 @@ import { d20 } from "../../lib/dice";
 import {
   ABILITY_NAMES, STANDARD_ACTIONS, armorClass, fmt, hpMax, initiative, speed, saveBonus, spellAttack, spellLevelLabel, spellModel, spellSaveDC,
 } from "../../lib/rules";
-import type { Character, Companion, SpellEntry } from "../../lib/types";
+import type { Character, SpellEntry } from "../../lib/types";
+import { EntryRow } from "../StatBlock";
 import type { Update } from "../../lib/useCharacter";
 import { RollButton } from "../dice";
 import { CastButton, SpellBadges, SpellRollInfo, spellRollContext, actionType, useSpellDetails } from "../spells";
@@ -198,40 +199,28 @@ function SlotSummary({ c }: { c: Character }) {
   );
 }
 
-/** Familiars, mounts, animal companions, summons. */
+/** Quick view of tracked creatures; full stat blocks live on the Extras tab. */
 function Companions({ c, update }: { c: Character; update: Update }) {
-  const list = c.companions ?? [];
-  const edit = (id: string, patch: Partial<Companion>) => update((d) => void Object.assign(d.companions!.find((x) => x.id === id)!, patch));
+  const list = (c.companions ?? []).filter((p) => p.role !== "wildshape" || c.wildShape?.companionId === p.id);
+  if (!list.length) return null;
+  const setHp = (id: string, n: number) => update((d) => void (d.companions!.find((x) => x.id === id)!.hp.current = n));
   return (
-    <Section
-      title="Companions"
-      action={
-        <button
-          className="btn-ghost px-2 py-0.5 text-xs"
-          onClick={() => update((d) => void (d.companions = [...(d.companions ?? []), { id: uid(), name: "", kind: "", ac: 10, hp: { max: 1, current: 1 }, speed: "30 ft", notes: "" }]))}
-        >
-          + Add
-        </button>
-      }
-    >
-      {list.length === 0 && <p className="text-sm text-ink-600">Familiars, mounts, animal companions or summons.</p>}
+    <Section title="Creatures">
       <div className="space-y-3">
         {list.map((p) => (
           <div key={p.id} className="space-y-1 rounded-lg border border-ink-800 p-2 text-sm">
-            <div className="flex gap-1">
-              <TextField className="field font-semibold" placeholder="Name" value={p.name} onChange={(v) => edit(p.id, { name: v })} />
-              <TextField className="field text-ink-400" placeholder="Owl, warhorse…" value={p.kind} onChange={(v) => edit(p.id, { kind: v })} />
-              <button className="btn-ghost px-1.5 text-xs hover:text-blood-500" onClick={() => update((d) => void (d.companions = d.companions!.filter((x) => x.id !== p.id)))}>✕</button>
+            <div className="flex items-center gap-2">
+              <b className="flex-1">{p.name}</b>
+              <span className="text-xs text-ink-400">AC {p.ac}</span>
+              <label className="flex items-center gap-1 text-xs text-ink-400">
+                HP<NumberField className="field-boxed w-12 py-0.5 text-center" value={p.hp.current} onChange={(n) => setHp(p.id, n)} />/ {p.hp.max}
+              </label>
             </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-ink-400">
-              <label className="flex items-center gap-1">AC<NumberField className="field-boxed w-12 py-0.5 text-center" value={p.ac} onChange={(n) => edit(p.id, { ac: n })} /></label>
-              <label className="flex items-center gap-1">HP<NumberField className="field-boxed w-12 py-0.5 text-center" value={p.hp.current} onChange={(n) => edit(p.id, { hp: { ...p.hp, current: n } })} />/<NumberField className="field-boxed w-12 py-0.5 text-center" value={p.hp.max} onChange={(n) => edit(p.id, { hp: { ...p.hp, max: n } })} /></label>
-              <TextField className="field-boxed w-20 py-0.5" value={p.speed} onChange={(v) => edit(p.id, { speed: v })} />
-            </div>
-            <textarea className="field-boxed resize-y text-xs" rows={2} placeholder="Attacks, abilities…" value={p.notes} onChange={(e) => edit(p.id, { notes: e.target.value })} />
+            {p.monster?.actions.filter((a) => /to hit|saving throw|\d+d\d+/.test(a.text)).slice(0, 3).map((a, i) => <EntryRow key={i} e={a} name={p.name} />)}
           </div>
         ))}
       </div>
+      <p className="mt-2 text-xs text-ink-600">Manage creatures, Wild Shape and stat blocks on the Extras tab.</p>
     </Section>
   );
 }

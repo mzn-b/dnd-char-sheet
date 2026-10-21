@@ -179,6 +179,26 @@ The Homebrew Workshop has forms for each content type:
 - **Subclass**: parent class(es) and features by level. It appears in the wizard's subclass step.
 - **Class**: hit die, saving throws, subclass level, ASI levels, spellcasting ability, and a spell slot table borrowed from an SRD class ("same as wizard"), plus features by level. The wizard uses it like any SRD class.
 
+## Automatic modifiers
+
+`web/src/lib/modifiers.ts` collects every bonus that applies to the character as a list of modifiers, each with a stable id, a target and a source:
+
+- **Items**: rules data carries `bonuses` (5etools `bonusAc`, `bonusWeapon`, `bonusSavingThrow`, `bonusSpellAttack`, `ability.static`…; Open5e magic items are read from their text). Worn bonuses need the item equipped, and attuned if it requires attunement. Weapon bonuses are linked to the attack made from that item (`Attack.itemId`, falling back to a name match).
+- **Features and feats**, matched by name: Tough, Alert, Mobile, Observant, Unarmored Movement, Archery, Jack of All Trades… Values that depend on level or abilities are computed when read.
+- **Custom** modifiers the player adds.
+
+`rules.ts` asks for sums per target (`ac`, `save:dex`, `initiative`, `speed`, `hp`, `attack:ranged`…), so every number on the sheet, the print view and the roller agree. The stored values (ability scores, `hp.max`, `speed`) stay the base values the player typed. Any modifier can be switched off (`disabledModifiers`). Results are memoized per character object (each edit makes a new one).
+
+## Optional rules
+
+`Character.options` holds the table's variants: Customizing Your Origin (applied in the creator by moving the race's increases), optional class features (5etools `isClassFeatureVariant` → `optional` on the level's feature refs, filtered by the wizard), feats, encumbrance (`carrying()` and `speedBreakdown()`), strict multiclass prerequisites, and the level-up HP method.
+
+## Monsters and Extras
+
+Monsters are a content type like the others. `server/src/content/monsters.ts` normalizes three sources into one `MonsterData` stat block: the 5etools bestiary (all 2014 books plus enabled homebrew, loaded on first use, `_copy` variants resolved), the SRD API (listed with one GraphQL query, details via REST) and Open5e. Summaries carry the CR, creature type and special movement so the client can apply the Wild Shape table, familiar and steed lists without fetching every stat block.
+
+Creatures live in `Character.companions` with a role (Wild Shape form, familiar, steed, companion, summon) and a snapshot of their stat block. `Character.wildShape` points at the assumed form; damage goes to the beast first and the excess carries over when it drops to 0 (`lib/extras.ts`).
+
 ## Playing at the table
 
 | Need | Where |
@@ -195,11 +215,11 @@ The Homebrew Workshop has forms for each content type:
 
 ## Roadmap / ideas
 
-- Expanded spell lists (warlock patrons) shown in the spell picker.
 - Party initiative order (other combatants) and shared combat state for the table.
 - Character sharing with the DM (read-only link), online party view.
 - 2024 rules, selectable per character.
-- Dice roller and roll log; clickable bonuses that roll.
+- Conditional modifiers (Dual Wielder, Bracers of Defense without armor) as toggles in combat.
+- Summon spells whose stat blocks scale with the slot level (Tasha's Summon Beast…).
 - User accounts and sharing a read-only sheet with the DM.
 - PDF export laid out like the official sheet.
 - Offline/PWA mode using the cached content.
