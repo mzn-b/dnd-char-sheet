@@ -5,12 +5,14 @@ import type { Character, ContentDetail, Selections } from "../../lib/types";
 import type { SaveState, Update } from "../../lib/useCharacter";
 import { ContentApplyDialog } from "../ChoicePicker";
 import { Modal, NumberField, TextField } from "../ui";
+import { RuleOptionsEditor } from "../RuleOptions";
 
 export function SheetHeader({
   c, update, saveState, onLevelUp, restButtons,
 }: { c: Character; update: Update; saveState: SaveState; onLevelUp: () => void; restButtons?: React.ReactNode }) {
   const [picking, setPicking] = useState<"race" | "background" | null>(null);
   const [editingClasses, setEditingClasses] = useState(false);
+  const [editingRules, setEditingRules] = useState(false);
   const level = totalLevel(c);
   const milestone = c.progression === "milestone";
   const [xpGain, setXpGain] = useState("");
@@ -86,6 +88,7 @@ export function SheetHeader({
       <div className="flex items-center gap-3 lg:flex-col lg:items-end">
         <div className="flex flex-wrap justify-end gap-2">
           {restButtons}
+          <button className="btn" title="Optional rules for this character" onClick={() => setEditingRules(true)}>⚙ Rules</button>
           <button className={`btn-primary ${canLevel ? "animate-pulse" : ""}`} onClick={onLevelUp}>
             {level === 0 ? "Choose a class" : "▲ Level up"}
           </button>
@@ -95,6 +98,12 @@ export function SheetHeader({
         </span>
       </div>
 
+      {editingRules && (
+        <Modal title="Optional rules" onClose={() => setEditingRules(false)} footer={<button className="btn-primary" onClick={() => setEditingRules(false)}>Done</button>}>
+          <RuleOptionsEditor value={c.options ?? {}} onChange={(v) => update((d) => void (d.options = v))} />
+          <p className="mt-4 text-xs text-ink-600">Customizing Your Origin is applied in the character creator. On an existing sheet, move racial increases by editing the ability scores directly.</p>
+        </Modal>
+      )}
       {picking && (
         <ContentApplyDialog title={`Choose ${picking}`} type={picking} character={c} onClose={() => setPicking(null)} onApply={applyOrigin} />
       )}

@@ -196,6 +196,8 @@ export interface FeatureRef {
   source: ContentSource;
   key: string;
   name: string;
+  /** Optional class feature (Tasha's), offered only when the table uses them. */
+  optional?: boolean;
 }
 
 export interface LevelRules {

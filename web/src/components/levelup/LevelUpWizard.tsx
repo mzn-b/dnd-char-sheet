@@ -34,7 +34,8 @@ export function LevelUpWizard({
   const qc = useQueryClient();
   const [cls, setCls] = useState<ContentRef | null>(queue?.cls ?? (c.classes.length === 1 ? c.classes[0] : null));
   const [step, setStep] = useState<StepId>(queue ? "proficiencies" : "class");
-  const [hpMode, setHpMode] = useState<"average" | "roll">("average");
+  const opts = c.options ?? {};
+  const [hpMode, setHpMode] = useState<"average" | "roll">(opts.hpMethod === "roll" ? "roll" : "average");
   const [hpRoll, setHpRoll] = useState<number | null>(null);
   const [skillPicks, setSkillPicks] = useState<string[]>([]);
   const [subclass, setSubclass] = useState<ContentSummary | null>(null);
@@ -75,8 +76,10 @@ export function LevelUpWizard({
     const fromClass = (plan.current?.features ?? []).map((f) => ({ ...f, kind: "class" as const }));
     const fromSub = (subRulesQuery.data?.levels.find((l) => l.level === plan.newLevel)?.features ?? []).map((f) => ({ ...f, kind: "subclass" as const }));
     // ASI is represented by the choice step instead of a feature entry.
-    return [...fromClass, ...fromSub].filter((f) => !/ability score improvement/i.test(f.name));
-  }, [plan, subRulesQuery.data]);
+    return [...fromClass, ...fromSub]
+      .filter((f) => !/ability score improvement/i.test(f.name))
+      .filter((f) => opts.optionalClassFeatures !== false || !f.optional);
+  }, [plan, subRulesQuery.data, opts.optionalClassFeatures]);
 
   const featureDetails = useQueries({
     queries: newFeatures.map((f) => ({
@@ -148,7 +151,7 @@ export function LevelUpWizard({
   const progressionTaken = (name: string) => c.features.find((f) => f.name === name)?.subfeatures?.map((s) => s.key) ?? [];
 
   const warnings = [
-    ...multiclassProblems.map((p) => `Multiclass prerequisite not met: ${p}`),
+    ...(opts.strictMulticlass === false ? [] : multiclassProblems.map((p) => `Multiclass prerequisite not met: ${p}`)),
     skillChoices && skillPicks.length < skillChoices.count && `${skillChoices.count - skillPicks.length} class skill(s) left to choose`,
     plan?.needsSubclass && !subclass && `No ${rules?.subclassTitle ?? "subclass"} chosen`,
     ...newFeatures.flatMap((f, i) => unfinishedChoices(detailOf(i)?.choices, featureSel[f.key] ?? {}).map((ch) => `${f.name}: ${ch.label}`)),
@@ -335,7 +338,7 @@ export function LevelUpWizard({
       {rulesQuery.error && <p className="text-blood-500">{(rulesQuery.error as Error).message}</p>}
       {currentStep === "class" && multiclassProblems.length > 0 && (
         <div className="mt-4 rounded-lg border border-blood-500/50 bg-blood-500/10 p-3 text-sm">
-          <p className="font-semibold text-blood-500">Multiclass prerequisites not met</p>
+          <p className="font-semibold text-blood-500">Multiclass prerequisites not met{opts.strictMulticlass === false ? " (allowed by your table's rules)" : ""}</p>
           <ul className="mt-1 list-disc pl-5">{multiclassProblems.map((p) => <li key={p}>{p}</li>)}</ul>
           <p className="mt-1 text-ink-400">You can continue anyway if your DM allows it.</p>
         </div>
@@ -370,12 +373,26 @@ export function LevelUpWizard({
             <p>At 1st level you get the maximum of your hit die: <b>d{hitDie} → {hitDie}</b>.</p>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
-              <Choice active={hpMode === "average"} onClick={() => setHpMode("average")} title="Take the average" desc={`${Math.floor(hitDie / 2) + 1} (fixed)`} />
-              <Choice active={hpMode === "roll"} onClick={() => setHpMode("roll")} title={`Roll a d${hitDie}`} desc={hpRoll ? `You rolled ${hpRoll}` : "Feeling lucky?"}>
-                {hpMode === "roll" && (
-                  <button className="btn mt-2" onClick={(e) => { e.stopPropagation(); setHpRoll(1 + Math.floor(Math.random() * hitDie)); }}>🎲 {hpRoll ? "Reroll" : "Roll"}</button>
-                )}
-              </Choice>
+              {opts.hpMethod !== "roll" && (
+                <Choice active={hpMode === "average"} onClick={() => setHpMode("average")} title="Take the average" desc={`${Math.floor(hitDie / 2) + 1} (fixed)`} />
+              )}
+              {opts.hpMethod !== "average" && (
+                <Choice active={hpMode === "roll"} onClick={() => setHpMode("roll")} title={`Roll a d${hitDie}`} desc={hpRoll ? `You rolled ${hpRoll}` : "Roll here or type your real die"}>
+                  {hpMode === "roll" && (
+                    <div className="mt-2 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      <button className="btn" onClick={() => setHpRoll(1 + Math.floor(Math.random() * hitDie))}>🎲 {hpRoll ? "Reroll" : "Roll"}</button>
+                      <input
+                        className="field-boxed w-16 text-center"
+                        inputMode="numeric"
+                        placeholder={`1–${hitDie}`}
+                        aria-label="Your hit die roll"
+                        value={hpRoll ?? ""}
+                        onChange={(e) => { const n = parseInt(e.target.value, 10); setHpRoll(Number.isNaN(n) ? null : Math.max(1, Math.min(hitDie, n))); }}
+                      />
+                    </div>
+                  )}
+                </Choice>
+              )}
             </div>
           )}
           <p className="text-lg">
@@ -465,7 +482,11 @@ export function LevelUpWizard({
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <Choice active={asiMode === "asi"} onClick={() => setAsiMode("asi")} title="Ability Score Improvement" desc="+2 to one score, or +1 to two (max 20)" />
-            <Choice active={asiMode === "feat"} onClick={() => setAsiMode("feat")} title="Take a feat" desc="Pick from any enabled source or your homebrew" />
+            {opts.feats !== false ? (
+              <Choice active={asiMode === "feat"} onClick={() => setAsiMode("feat")} title="Take a feat" desc="Pick from any enabled source or your homebrew" />
+            ) : (
+              <p className="self-center text-sm text-ink-600">Feats are turned off in this character's optional rules.</p>
+            )}
           </div>
           {asiMode === "asi" ? (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">

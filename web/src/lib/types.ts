@@ -428,7 +428,7 @@ export interface LevelRules {
   level: number;
   profBonus?: number;
   abilityScoreBonuses: number;
-  features: ContentRef[];
+  features: (ContentRef & { optional?: boolean })[];
   spellcasting: SpellProgression | null;
   progressions: Progression[];
   classSpecific?: Record<string, unknown>;
@@ -440,5 +440,5 @@ export interface SubclassRules {
   spellcastingAbility: Ability | null;
   casterType: CasterType | null;
   spellModel: SpellModel | null;
-  levels: { level: number; features: ContentRef[]; progressions: Progression[]; spellcasting: SpellProgression | null }[];
+  levels: { level: number; features: (ContentRef & { optional?: boolean })[]; progressions: Progression[]; spellcasting: SpellProgression | null }[];
 }

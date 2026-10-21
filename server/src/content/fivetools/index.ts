@@ -711,7 +711,10 @@ export async function classRules5etools(k: string): Promise<ClassRules> {
         level,
         profBonus: Math.ceil(level / 4) + 1,
         abilityScoreBonuses: refs.filter((r: any) => r.level <= level && r.name === "Ability Score Improvement").length,
-        features: features.map((r: any): FeatureRef => ({ source: SOURCE, key: key("cf", r.name, r.className, r.classSource, r.level, r.source), name: r.name })),
+        features: features.map((r: any): FeatureRef => ({
+          source: SOURCE, key: key("cf", r.name, r.className, r.classSource, r.level, r.source), name: r.name,
+          ...(r.obj?.isClassFeatureVariant ? { optional: true } : {}),
+        })),
         spellcasting: cls.spellcastingAbility
           ? {
               cantripsKnown: cls.cantripProgression?.[i] ?? 0,
@@ -750,7 +753,10 @@ export async function subclassLevels5etools(k: string) {
       const here = feats.filter((f: any) => f.level === level);
       return {
         level,
-        features: here.map((r: any) => ({ source: SOURCE, key: key("scf", r.name, r.className, r.classSource, r.subShort, r.subSource, r.level, r.source), name: r.name })),
+        features: here.map((r: any) => ({
+          source: SOURCE, key: key("scf", r.name, r.className, r.classSource, r.subShort, r.subSource, r.level, r.source), name: r.name,
+          ...(r.obj?.isClassFeatureVariant ? { optional: true } : {}),
+        })),
         progressions: progressionsAt(ds, sc.optionalfeatureProgression, level, here),
         spellcasting: casterType
           ? { cantripsKnown: sc.cantripProgression?.[i] ?? 0, spellsKnown: sc.spellsKnownProgression?.[i] ?? null, slots: singleClassSlots(casterType, level) }

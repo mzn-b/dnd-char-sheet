@@ -8,7 +8,8 @@ import { attackFromItem, resolveItem } from "../lib/items";
 import {
   ABILITY_NAMES, ALIGNMENTS, POINT_BUY_BUDGET, POINT_BUY_COST, STANDARD_ARRAY, fmt, meetsRequirements, mod, requirementText,
 } from "../lib/rules";
-import { ABILITIES, type Ability, type ContentDetail, type ContentSummary, type Selections } from "../lib/types";
+import { ABILITIES, type Ability, type ContentDetail, type ContentSummary, type RuleOptions, type Selections } from "../lib/types";
+import { RuleOptionsEditor } from "../components/RuleOptions";
 import { ChoiceList, unfinishedChoices } from "../components/ChoicePicker";
 import { ContentBrowser, contentId } from "../components/ContentBrowser";
 import { NumberField, Section, Spinner, TextArea, TextField } from "../components/ui";
@@ -57,6 +58,9 @@ export default function CharacterCreator() {
   const [skipEquipment, setSkipEquipment] = useState(false);
   const [details, setDetails] = useState({ alignment: "", playerName: "", traits: "", ideals: "", bonds: "", flaws: "", backstory: "" });
   const [creating, setCreating] = useState(false);
+  const [options, setOptions] = useState<RuleOptions>({});
+  /** Customizing Your Origin: where each racial increase goes (from → to). */
+  const [originMap, setOriginMap] = useState<Partial<Record<Ability, Ability>>>({});
   const [error, setError] = useState("");
 
   const detailQuery = (type: "race" | "background", item: ContentSummary | null) => ({
@@ -88,13 +92,16 @@ export default function CharacterCreator() {
     return Object.fromEntries(ABILITIES.map((a) => [a, assigned[a] != null ? pool[assigned[a]!] ?? 8 : 8])) as Record<Ability, number>;
   }, [method, base, assigned, rolled]);
 
-  const bonuses = useMemo(() => racialBonuses(raceDetail, raceSel), [raceDetail, raceSel]);
+  const raceBonuses = useMemo(() => racialBonuses(raceDetail, raceSel), [raceDetail, raceSel]);
+  const bonuses = useMemo(() => (options.customOrigin ? remapBonuses(raceBonuses, originMap) : raceBonuses), [options.customOrigin, raceBonuses, originMap]);
+  const originTargets = Object.keys(raceBonuses).map((a) => originMap[a as Ability] ?? a);
+  const originClash = options.customOrigin && new Set(originTargets).size < originTargets.length;
   const finalScores = Object.fromEntries(ABILITIES.map((a) => [a, baseScores[a] + (bonuses[a] ?? 0)])) as Record<Ability, number>;
   const pointsSpent = ABILITIES.reduce((s, a) => s + (POINT_BUY_COST[base[a]] ?? 0), 0);
   const pool = method === "standard" ? STANDARD_ARRAY : rolled;
 
   const levelsPlanned = rows.reduce((s, r) => s + (r.cls ? r.levels : 0), 0);
-  const prereqProblems = rows.length > 1
+  const prereqProblems = rows.length > 1 && options.strictMulticlass !== false
     ? classRules.flatMap((q) => (q.data && !meetsRequirements(finalScores, q.data.multiclass.requirements) ? [`${q.data.name} needs ${requirementText(q.data.multiclass.requirements)}`] : []))
     : [];
 
@@ -106,6 +113,7 @@ export default function CharacterCreator() {
       method === "pointbuy" && pointsSpent > POINT_BUY_BUDGET && "Point buy is over budget",
       (method === "standard" || method === "roll") && Object.keys(assigned).length < 6 && "Assign all six scores",
       method === "pointbuy" && pointsSpent < POINT_BUY_BUDGET && `${POINT_BUY_BUDGET - pointsSpent} point-buy points unspent`,
+      originClash && "Each racial increase must go to a different ability",
     ].filter(Boolean) as string[],
     classes: [
       !rows[0].cls && "Choose a class",
@@ -122,6 +130,7 @@ export default function CharacterCreator() {
     setError("");
     try {
       const c = newCharacter(name.trim() || "Unnamed hero");
+      c.options = options;
       c.abilities = { ...baseScores };
       c.alignment = details.alignment;
       c.playerName = details.playerName;
@@ -133,6 +142,19 @@ export default function CharacterCreator() {
         c.raceRef = { source: raceDetail.source, key: raceDetail.key, name: raceDetail.name };
         c.senses = sensesFromRace(raceDetail);
         grantFeature(c, f, raceDetail);
+        if (options.customOrigin) {
+          // Move the increases the race just applied to the abilities the player picked.
+          const moved: string[] = [];
+          for (const [from, amount] of Object.entries(raceBonuses) as [Ability, number][]) {
+            const to = originMap[from];
+            if (!to || to === from) continue;
+            c.abilities[from] -= amount;
+            c.abilities[to] += amount;
+            for (const e of f.effects ?? []) if (e.kind === "ability" && e.ability === from) e.ability = to;
+            moved.push(`+${amount} ${from.toUpperCase()} → ${to.toUpperCase()}`);
+          }
+          if (moved.length) f.description += `\n\n*Customizing Your Origin:* ${moved.join(", ")}.`;
+        }
         addGrantedSpells(c, await prepareGrantedSpells(raceDetail.grantedSpells, 1, "race"));
       }
       if (bgDetail) {
@@ -206,11 +228,15 @@ export default function CharacterCreator() {
                 )}
               </Card>
             </div>
+            <details className="rounded-lg border border-ink-800 p-3">
+              <summary className="cursor-pointer text-sm text-ink-200">Optional rules <span className="text-ink-600">(Tasha's origins, feats, encumbrance, HP…) — changeable later from ⚙ Rules on the sheet</span></summary>
+              <div className="mt-3"><RuleOptionsEditor value={options} onChange={setOptions} /></div>
+            </details>
           </div>
         )}
 
         {step === "race" && (
-          <OriginStep type="race" picked={race} detail={raceDetail} selections={raceSel} onPick={(r) => { setRace(r); setRaceSel({}); }} onSelections={setRaceSel} />
+          <OriginStep type="race" picked={race} detail={raceDetail} selections={raceSel} onPick={(r) => { setRace(r); setRaceSel({}); setOriginMap({}); }} onSelections={setRaceSel} />
         )}
         {step === "background" && (
           <OriginStep type="background" picked={background} detail={bgDetail} selections={bgSel} onPick={(b) => { setBackground(b); setBgSel({}); }} onSelections={setBgSel} />
@@ -225,6 +251,22 @@ export default function CharacterCreator() {
                 </button>
               ))}
             </div>
+            {options.customOrigin && Object.keys(raceBonuses).length > 0 && (
+              <div className="rounded-lg border border-arcane-500/40 bg-arcane-500/5 p-3 text-sm">
+                <p className="mb-2"><b className="text-arcane-400">Customizing Your Origin</b> — move each racial increase to any ability (each to a different one).</p>
+                <div className="flex flex-wrap gap-3">
+                  {(Object.entries(raceBonuses) as [Ability, number][]).map(([from, amount]) => (
+                    <label key={from} className="flex items-center gap-1">
+                      +{amount} {from.toUpperCase()} →
+                      <select className="field-boxed w-auto py-1" value={originMap[from] ?? from} onChange={(e) => setOriginMap({ ...originMap, [from]: e.target.value as Ability })}>
+                        {ABILITIES.map((a) => <option key={a} value={a}>{a.toUpperCase()}</option>)}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+                {originClash && <p className="mt-2 text-blood-500">Two increases point at the same ability.</p>}
+              </div>
+            )}
             {method === "pointbuy" && (
               <PointBuy base={base} bonuses={bonuses} onChange={setBase} />
             )}
@@ -409,6 +451,15 @@ export default function CharacterCreator() {
       </div>
     </div>
   );
+}
+
+function remapBonuses(b: Partial<Record<Ability, number>>, map: Partial<Record<Ability, Ability>>) {
+  const out: Partial<Record<Ability, number>> = {};
+  for (const [from, n] of Object.entries(b) as [Ability, number][]) {
+    const to = map[from] ?? from;
+    out[to] = (out[to] ?? 0) + n;
+  }
+  return out;
 }
 
 function racialBonuses(detail: ContentDetail | undefined, sel: Selections): Partial<Record<Ability, number>> {
