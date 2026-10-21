@@ -6,6 +6,6 @@ nodes:
   - role: control-plane
     extraPortMappings:
       # The app's NodePort → http://localhost:8080
-      - containerPort: 30080
+      - containerPort: 30001
         hostPort: 8080
         protocol: TCP
