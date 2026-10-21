@@ -2,6 +2,7 @@ import type {
   Character, CharacterSummary, ClassRules, ContentDetail, ContentSource, ContentSummary, ContentType, SubclassRules,
 } from "./types";
 import { normalizeCharacter } from "./defaults";
+import { withTextChoices } from "./textChoices";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -43,8 +44,15 @@ export const api = {
     }
     return { results: (await res.json()) as ContentSummary[], warnings };
   },
-  detail: (type: ContentType, source: ContentSource, key: string) =>
-    request<ContentDetail>(`/content/${type}/${source}/${encodeURIComponent(key)}`),
+  detail: async (type: ContentType, source: ContentSource, key: string) => {
+    const d = await request<ContentDetail>(`/content/${type}/${source}/${encodeURIComponent(key)}`);
+    // Choices only described in the text (Deft Explorer's Canny, Otherworldly Glamour's skill…).
+    if (["feature", "feat", "race", "background", "subclass"].includes(type)) {
+      const choices = withTextChoices(d.choices, d.description ?? "");
+      if (choices.length) d.choices = choices;
+    }
+    return d;
+  },
   classRules: (source: ContentSource, key: string) =>
     request<ClassRules>(`/rules/classes/${source}/${encodeURIComponent(key)}`),
   subclassRules: (source: ContentSource, key: string) =>

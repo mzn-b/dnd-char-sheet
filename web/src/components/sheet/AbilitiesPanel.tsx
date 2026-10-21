@@ -1,5 +1,6 @@
 import { ABILITY_NAMES, SKILLS, abilityCheckBonus, abilityScore, fmt, passiveScore, profBonus, saveBonus, skillBonus } from "../../lib/rules";
 import { d20 } from "../../lib/dice";
+import { abilityNotes } from "../../lib/abilityNotes";
 import { RollButton } from "../dice";
 import { ABILITIES, type Character, type ProfLevel } from "../../lib/types";
 import { NumberField, Section, TextArea } from "../ui";
@@ -15,6 +16,7 @@ const PROF_STYLE: Record<string, string> = {
 const PROF_LABEL: Record<string, string> = { "0": "Not proficient", "0.5": "Half proficiency", "1": "Proficient", "2": "Expertise" };
 
 export function AbilitiesPanel({ c, update }: { c: Character; update: Update }) {
+  const notes = abilityNotes(c);
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-3 gap-2">
@@ -32,6 +34,15 @@ export function AbilitiesPanel({ c, update }: { c: Character; update: Update }) 
               aria-label={`${ABILITY_NAMES[a]} score`}
               onChange={(n) => update((d) => void (d.abilities[a] = n))}
             />
+            {notes[a].length > 0 && (
+              <ul className="mt-1 w-full space-y-0.5">
+                {notes[a].map((n) => (
+                  <li key={n.source + n.short} title={n.text} className="cursor-help rounded bg-arcane-500/10 px-1 text-[10px] leading-4 text-arcane-400">
+                    {n.short}
+                  </li>
+                ))}
+              </ul>
+            )}
             {abilityScore(c, a) !== c.abilities[a] && (
               <span className="mt-0.5 text-[10px] text-emerald-400" title={c.wildShape && ["str", "dex", "con"].includes(a) ? "Beast form (Wild Shape)" : "Changed by an item"}>
                 {c.wildShape && ["str", "dex", "con"].includes(a) ? "🐾 " : "→ "}{abilityScore(c, a)}

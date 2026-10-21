@@ -125,7 +125,7 @@ function featureModifiers(c: Character, chaMod: number, wisMod: number): Modifie
   if (classLevel(c, "paladin") >= 6 && has(names, "aura of protection"))
     add("aura-of-protection", "Aura of Protection", "save", Math.max(1, chaMod), "while conscious");
   // Fey Wanderer (Tasha's): add your Wisdom modifier to Charisma checks (minimum +1).
-  if (classLevel(c, "ranger") >= 3 && has(names, "otherworldly glamour")) add("otherworldly-glamour", "Otherworldly Glamour", "check:cha", Math.max(1, wisMod));
+  if (classLevel(c, "ranger") >= 3 && has(names, "otherworldly glamour")) add("otherworldly-glamour", "Otherworldly Glamour", "check:cha", Math.max(1, wisMod), "WIS");
   return out;
 }
 

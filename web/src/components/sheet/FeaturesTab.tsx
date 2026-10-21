@@ -1,3 +1,4 @@
+import { withTextChoices } from "../../lib/textChoices";
 import { ActionBadge } from "../ActionBadge";
 import { featureKind } from "../../lib/economy";
 import { ModifiersPanel } from "./ModifiersPanel";
@@ -79,7 +80,9 @@ function FeatureCard({ f, c, update }: { f: Feature; c: Character; update: Updat
   const [editing, setEditing] = useState(false);
   const [rechoosing, setRechoosing] = useState(false);
   const edit = (patch: Partial<Feature>) => update((d) => void Object.assign(d.features.find((x) => x.id === f.id)!, patch));
-  const pending = (f.choices ?? []).filter((ch) => (f.subfeatures ?? []).filter((s) => s.choiceId === ch.id).length < Math.min(ch.count, ch.options.length));
+  // Includes choices only described in the text (Canny), so features added earlier can still be chosen.
+  const choices = withTextChoices(f.choices, f.description);
+  const pending = choices.filter((ch) => (f.subfeatures ?? []).filter((s) => s.choiceId === ch.id).length < Math.min(ch.count, ch.options.length));
   return (
     <details className="group rounded-lg border border-ink-800 bg-ink-850/40" open={pending.length > 0 || undefined}>
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2">
@@ -142,7 +145,7 @@ function FeatureCard({ f, c, update }: { f: Feature; c: Character; update: Updat
         )}
 
         <div className="flex flex-wrap justify-end gap-2">
-          {(f.choices?.length ?? 0) > 0 && (
+          {choices.length > 0 && (
             <button className={pending.length ? "btn-primary py-0.5 text-xs" : "btn-ghost py-0.5 text-xs"} onClick={() => setRechoosing(true)}>
               {pending.length ? "Make choices" : "Change choices"}
             </button>
@@ -161,7 +164,7 @@ function FeatureCard({ f, c, update }: { f: Feature; c: Character; update: Updat
           </button>
         </div>
       </div>
-      {rechoosing && <RechooseDialog f={f} c={c} update={update} onClose={() => setRechoosing(false)} />}
+      {rechoosing && <RechooseDialog f={{ ...f, choices }} c={c} update={update} onClose={() => setRechoosing(false)} />}
     </details>
   );
 }
@@ -202,6 +205,7 @@ function RechooseDialog({ f, c, update, onClose }: { f: Feature; c: Character; u
     const newSubs = await resolveSubfeatures(f.choices ?? [], added);
     update((d) => {
       const feat = d.features.find((x) => x.id === f.id)!;
+      feat.choices = f.choices;
       applySubfeatureMechanics(d, f.choices ?? [], removed, -1);
       applySubfeatureMechanics(d, f.choices ?? [], newSubs, 1);
       feat.subfeatures = [...kept, ...newSubs];
