@@ -75,6 +75,29 @@ No rules content ships with the app. Each provider is fetched from its public AP
 
 Anything missing is filled in by parsing the text ("8d6 fire damage", "increases by 1d6 for each slot level above 3rd", "5th level (2d10)…"). That's also how Open5e and homebrew spells get their dice.
 
+## Reading rolls out of rules text
+
+No API structures conditional dice: 5etools and Open5e mark only the primary damage. `lib/rollText.ts` reads the prose instead:
+
+1. **Split** into paragraphs and sentences. "At Higher Levels" paragraphs and scaling phrases are removed from the dice search and kept as scaling rules.
+2. **Find dice** (`XdY`, `dY`, `XdY + N`, `+ your spellcasting ability modifier`, `+ your fighter level`), flat amounts ("takes 5 cold damage", "gain 5 temporary hit points"), and flat bonuses ("+10 to the attack's damage").
+3. **Classify** each from the surrounding words:
+   - kind: damage, healing, temporary HP, bonus, die, or roll
+   - damage type: directly after the dice, "X damage equal to…", or from the paragraph
+   - condition: a leading "If/When/While…" clause, a trailing "if…" clause, or a parenthetical
+   - "instead", timing (on a hit, on a failed save, whenever you hit, later turns, area triggers from the previous sentence), half on save
+4. **Scale**: per-slot rules are matched by damage type ("the cold damage increases…"), "every two slot levels", "initial damage" (not the repeated roll), cantrip tiers, "to a maximum of", and cantrip upgrades at 5th level.
+
+`resolveRoll` gives the dice for a cast, at a slot level or a character level. `featureRolls` overrides class-table values. The parser is tested against real texts in `lib/__tests__/` and was audited across the spell catalog: of ~200 sampled spells that contain dice, one yielded nothing.
+
+## Combat tracker
+
+`Character.combat` holds the round, whose turn it is, the action economy, active effects and a log.
+
+- **Turns**: `startTurn` advances the round after your first turn, resets the action economy, and expires effects. An effect expires when its rounds run out (`startedRound + rounds`) or, for until-next-turn effects such as Shield or Dodge, at the start of your next turn.
+- **Starting effects**: casting a spell with a duration or concentration creates an effect from `EFFECTS` (curated reminders and roll bonuses) or, for unknown spells, from reminders read out of its text. Activating a feature spends its class resource.
+- **Reminders**: `reminders()` merges active effects, `PASSIVES` (features and feats you own), reaction spells (from their casting-time trigger), conditions and concentration. The panel highlights the group for the current moment.
+
 ## Expanded spell lists
 
 Subclass rules include `expandedSpells` (spell level + spell):
@@ -169,7 +192,7 @@ The Homebrew Workshop has forms for each content type:
 ## Roadmap / ideas
 
 - Expanded spell lists (warlock patrons) shown in the spell picker.
-- Damage dice for spells (e.g. Fireball 8d6 + upcast scaling) as roll buttons.
+- Party initiative order (other combatants) and shared combat state for the table.
 - Character sharing with the DM (read-only link), online party view.
 - 2024 rules, selectable per character.
 - Dice roller and roll log; clickable bonuses that roll.

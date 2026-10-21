@@ -1,3 +1,5 @@
+import type { CombatState } from "./combat";
+
 export const ABILITIES = ["str", "dex", "con", "int", "wis", "cha"] as const;
 export type Ability = (typeof ABILITIES)[number];
 
@@ -177,7 +179,7 @@ export interface Feature {
   description: string;
   ref?: ContentRef & { type: ContentType };
   /** Optional limited-use tracking, e.g. Rage 3/long rest. */
-  uses?: { max: number; used: number; reset: "short" | "long" };
+  uses?: { max: number; used: number; reset: "short" | "long"; formula?: number | "prof" | Ability };
   /** The choices this feature offers, kept so picks can be changed later. */
   choices?: Choice[];
   subfeatures?: SubFeature[];
@@ -202,6 +204,8 @@ export interface SpellEntry {
   /** Limited innate casting, e.g. "1/long rest". */
   uses?: string;
   usesSpent?: number;
+  /** Times cast since the last rest. */
+  castCount?: number;
 }
 
 export interface JournalEntry {
@@ -313,6 +317,8 @@ export interface Character {
   journal?: JournalEntry[];
   companions?: Companion[];
   progression?: "xp" | "milestone";
+  /** Round tracker, action economy and active effects while in combat. */
+  combat?: CombatState;
 }
 
 export interface CharacterSummary {

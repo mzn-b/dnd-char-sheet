@@ -1,11 +1,15 @@
+import { lazy, Suspense } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import CharacterList from "./pages/CharacterList";
 import CharacterSheet from "./pages/CharacterSheet";
-import Homebrew from "./pages/Homebrew";
-import CharacterCreator from "./pages/CharacterCreator";
-import Settings from "./pages/Settings";
-import PrintSheet from "./pages/PrintSheet";
 import { DiceTray, RollProvider } from "./components/dice";
+import { Spinner } from "./components/ui";
+
+// Less-used pages load on demand to keep the first load small.
+const Homebrew = lazy(() => import("./pages/Homebrew"));
+const CharacterCreator = lazy(() => import("./pages/CharacterCreator"));
+const Settings = lazy(() => import("./pages/Settings"));
+const PrintSheet = lazy(() => import("./pages/PrintSheet"));
 
 export default function App() {
   const link = ({ isActive }: { isActive: boolean }) =>
@@ -22,6 +26,7 @@ export default function App() {
         </nav>
       </header>
       <main className="mx-auto max-w-7xl px-4 py-6 print:max-w-none print:p-0">
+        <Suspense fallback={<Spinner />}>
         <Routes>
           <Route path="/" element={<CharacterList />} />
           <Route path="/characters/:id" element={<CharacterSheet />} />
@@ -30,6 +35,7 @@ export default function App() {
           <Route path="/new" element={<CharacterCreator />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
+        </Suspense>
       </main>
       <DiceTray />
     </div>

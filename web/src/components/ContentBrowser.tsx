@@ -4,7 +4,8 @@ import { api } from "../lib/api";
 import type { ContentDetail, ContentSummary, ContentType } from "../lib/types";
 import { spellLevelLabel } from "../lib/rules";
 import { Markdown, Modal, SourceBadge, Spinner } from "./ui";
-import { SpellDiceTable } from "./spells";
+import { RollList, SpellRollBreakdown } from "./rolls";
+import { extractRolls } from "../lib/rollText";
 
 export const contentId = (c: { source: string; key: string }) => `${c.source}:${c.key}`;
 
@@ -200,9 +201,15 @@ export function useContentDetail(type: ContentType, item: { source: ContentSumma
   });
 }
 
+/** Character context for showing rolls resolved for this character (level, spellcasting modifier). */
+export interface RollContext {
+  characterLevel: number;
+  mod?: number;
+}
+
 export function ContentDetailView({
-  type, item, children,
-}: { type: ContentType; item: { source: ContentSummary["source"]; key: string; name: string }; children?: React.ReactNode }) {
+  type, item, children, rollContext,
+}: { type: ContentType; item: { source: ContentSummary["source"]; key: string; name: string }; children?: React.ReactNode; rollContext?: RollContext }) {
   const { data, isLoading, error } = useContentDetail(type, item);
   return (
     <div className="space-y-3">
@@ -220,13 +227,14 @@ export function ContentDetailView({
       </div>
       {isLoading && <Spinner />}
       {error && <p className="text-sm text-blood-500">{(error as Error).message}</p>}
-      {data && <DetailBody detail={data} />}
+      {data && <DetailBody detail={data} rollContext={rollContext} />}
       {children}
     </div>
   );
 }
 
-export function DetailBody({ detail }: { detail: ContentDetail }) {
+export function DetailBody({ detail, rollContext }: { detail: ContentDetail; rollContext?: RollContext }) {
+  const otherRolls = detail.type !== "spell" ? extractRolls(detail.description) : [];
   const meta = Object.entries(detail.meta ?? {}).filter(([k, v]) => v && k !== "Level" && k !== "School");
   return (
     <>
@@ -241,7 +249,14 @@ export function DetailBody({ detail }: { detail: ContentDetail }) {
           ))}
         </dl>
       )}
-      <SpellDiceTable detail={detail} />
+      {detail.type === "spell" ? (
+        <SpellRollBreakdown description={detail.description} spellLevel={detail.level ?? 0} characterLevel={rollContext?.characterLevel ?? 1} mod={rollContext?.mod} />
+      ) : otherRolls.length > 0 ? (
+        <div className="rounded-lg border border-ink-800 bg-ink-850/40 p-3">
+          <div className="label mb-1">What to roll</div>
+          <RollList rolls={otherRolls} at={{ characterLevel: rollContext?.characterLevel ?? 1 }} mod={rollContext?.mod} />
+        </div>
+      ) : null}
       {detail.classes?.length ? <p className="text-xs text-ink-400">Classes: {detail.classes.join(", ")}</p> : null}
       <Markdown text={detail.description || "_No description._"} />
     </>

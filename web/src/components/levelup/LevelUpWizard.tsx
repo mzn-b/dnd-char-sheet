@@ -5,6 +5,7 @@ import {
   addGrantedSpells, addProficiencyLine, applySubfeatureMechanics, prepareGrantedSpells, attachProgression, buildFeature, grantFeature, grantProgression, resolveSubfeatures,
 } from "../../lib/apply";
 import { uid } from "../../lib/defaults";
+import { applyDetectedUses } from "../../lib/uses";
 import { ABILITY_NAMES, abilityMod, fmt, meetsRequirements, mod, requirementText, skillName, totalLevel } from "../../lib/rules";
 import {
   ABILITIES, type Ability, type Character, type Choice, type ClassEntry, type ClassRules, type ContentDetail,
@@ -239,6 +240,7 @@ export function LevelUpWizard({
 
         for (const f of builtFeatures) {
           applySubfeatureMechanics(d, f.choices ?? [], f.subfeatures ?? []);
+          applyDetectedUses(d, f);
           d.features.push(f);
         }
         if (builtFeatures.length) summary.push(`New features: ${builtFeatures.map((f) => f.name).join(", ")}`);

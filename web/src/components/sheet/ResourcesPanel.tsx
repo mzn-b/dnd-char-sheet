@@ -1,4 +1,5 @@
 import { classResources } from "../../lib/resources";
+import { formulaLabel, usesMax } from "../../lib/uses";
 import type { Character } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
 import { NumberField, Pips, Section } from "../ui";
@@ -7,7 +8,8 @@ import { NumberField, Pips, Section } from "../ui";
 export function ResourcesPanel({ c, update }: { c: Character; update: Update }) {
   const resources = classResources(c);
   const limited = c.features.filter((f) => f.uses);
-  if (!resources.length && !limited.length) return null;
+  const spellUses = c.spellcasting.spells.filter((s) => s.uses && parseInt(s.uses, 10));
+  if (!resources.length && !limited.length && !spellUses.length) return null;
   const used = (id: string) => c.resourcesUsed?.[id] ?? 0;
   const setUsed = (id: string, n: number) => update((d) => void (d.resourcesUsed = { ...d.resourcesUsed, [id]: n }));
   return (
@@ -35,12 +37,26 @@ export function ResourcesPanel({ c, update }: { c: Character; update: Update }) 
             </li>
           );
         })}
-        {limited.map((f) => (
-          <li key={f.id} className="flex items-center gap-2 text-sm">
-            <span className="flex-1">{f.name} <span className="text-xs text-ink-600">{f.uses!.reset === "short" ? "☾" : "☀"}</span></span>
-            <Pips max={f.uses!.max} used={f.uses!.used} onChange={(u) => update((d) => void (d.features.find((x) => x.id === f.id)!.uses!.used = u))} />
-          </li>
-        ))}
+        {limited.map((f) => {
+          const max = usesMax(c, f.uses!.formula, f.uses!.max);
+          return (
+            <li key={f.id} className="flex items-center gap-2 text-sm">
+              <span className="flex-1">
+                {f.name} <span className="text-xs text-ink-600">{f.uses!.reset === "short" ? "☾" : "☀"}{f.uses!.formula && typeof f.uses!.formula !== "number" ? ` · ${formulaLabel(f.uses!.formula)}` : ""}</span>
+              </span>
+              <Pips max={max} used={Math.min(f.uses!.used, max)} onChange={(u) => update((d) => void (d.features.find((x) => x.id === f.id)!.uses!.used = u))} />
+            </li>
+          );
+        })}
+        {spellUses.map((s) => {
+          const max = parseInt(s.uses!, 10) || 1;
+          return (
+            <li key={s.id} className="flex items-center gap-2 text-sm">
+              <span className="flex-1">{s.ref.name} <span className="text-xs text-ink-600">{/short/.test(s.uses!) ? "☾" : "☀"} · free cast</span></span>
+              <Pips max={max} used={Math.min(s.usesSpent ?? 0, max)} color="bg-arcane-500" onChange={(u) => update((d) => void (d.spellcasting.spells.find((x) => x.id === s.id)!.usesSpent = u))} />
+            </li>
+          );
+        })}
       </ul>
     </Section>
   );

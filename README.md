@@ -16,11 +16,26 @@ A dark-mode web app for keeping multiple D&D 5e characters. It covers every fiel
 - **Play features**:
   - **Dice roller**: click any modifier to roll it (checks, saves, skills, initiative, attacks, damage, spell attacks, death saves, hit dice). Shift-click rolls with advantage, Ctrl-click with disadvantage. A natural 20 makes the next damage roll critical. There's a roll log and a custom-dice tray.
   - **Actions tab**: a combat dashboard. Vitals, attacks, spells grouped into action / bonus action / reaction, slot summary, class resources, saving throws, standard actions reference, companions.
+  - **Every roll in a text, including conditionals**: a roll extractor (`web/src/lib/rollText.ts`, unit-tested on real spell and feature texts) finds all dice and their context:
+    - alternatives ("instead takes 1d12 if the target is missing hit points")
+    - conditional extras ("+1d8 if the target is undead or a fiend")
+    - per-turn effects, area triggers, half damage on a save, temporary HP, flat bonuses (−5/+10)
+    - scaling per slot or every two slots, cantrip tiers, caps ("max 5d8") and cantrip upgrades that unlock at 5th level
+
+    Spell details show a "What to roll" list with a slot-level picker, and spell rows show "+N more" with a tooltip. Features and feats show their rolls too, with class-table values for Sneak Attack, Martial Arts, Bardic Inspiration and Rage.
   - **What to roll**: every spell shows its damage or healing dice and type (cantrips at your character level), how it scales, and its save DC or attack bonus. The Cast menu shows the dice for each slot level, and the spell details include a full table by slot level. Handy if you roll physical dice.
   - **Expanded spell lists**: warlock patron spells (SRD, 5etools and Open5e patrons) appear in the spell pickers with an "expanded" badge, behind a toggle that's remembered.
   - **Spellcasting**: Cast spends the right slot (with upcasting, pact slots or ritual casting) and starts concentration. Taking damage while concentrating prompts the Con save DC. Innate spells track their uses. Spells show casting-time, range, concentration and ritual badges, with search and a "prepared only" filter.
   - **Class resources tracked automatically**: Rage, Bardic Inspiration, Channel Divinity, Wild Shape, Second Wind / Action Surge / Indomitable, Ki, Lay on Hands, Sorcery Points, Superiority Dice, Arcane Recovery, Mystic Arcanum and more. Maximums follow your level and ability scores.
-  - **Rests**: short rests spend hit dice with real rolls. Long rests restore HP, slots, resources and half your hit dice, and reduce exhaustion.
+  - **Combat tracker**:
+    - Start combat with your initiative (rolled in-app or at the table).
+    - Rounds advance with your turns. Action, bonus action, reaction and movement are tracked each turn.
+    - A sticky round bar shows on every tab.
+    - Lasting spells you cast and features you activate (Rage, Reckless Attack, Wild Shape, Bladesong, Action Surge, Patient Defense, Dodge…) become **active effects** that count down and expire on their own.
+    - Reminders are grouped by moment (start of turn, attacking, on hit, when hit or damaged, end of turn, always). They come from active effects, your features and feats (Sneak Attack, Divine Smite, Great Weapon Master, maneuvers, invocations…), reaction spells you know, conditions and concentration.
+    - Bless-style bonuses are added to in-app attack and save rolls.
+  - **Usage tracking**: limited uses are detected from feature and feat text ("once per long rest", "proficiency bonus times", "Wisdom modifier (minimum of once)", Lucky's 3 points) when gained, or with **Detect limited uses** for existing characters. Maximums follow your proficiency bonus or ability modifiers. Any spell can get free casts per short or long rest, and every cast is counted.
+  - **Rests**: the ☾ Short rest and ☀ Long rest buttons in the header reset the matching resources, feature and feat uses, free spell casts, pact slots and cast counters. A long rest also restores HP, slots and hit dice, and ends combat. A short rest lets you spend hit dice. short rests spend hit dice with real rolls. Long rests restore HP, slots, resources and half your hit dice, and reduce exhaustion.
   - **Automatic AC**: from worn armor and shield, Unarmored Defense (Barbarian/Monk), Draconic Resilience and the Defense style, plus a misc bonus. It warns about Stealth disadvantage and armor too heavy for your Strength. You can switch to manual.
   - **Inventory**: items keep their weapon and armor stats. Wearing armor updates AC; +Atk turns a weapon into an attack. Attunement (x/3), charges, coin weight, wealth in gp, quick "+25 gp" adjustments.
   - **Conditions** with rules text, exhaustion effects, passive Perception / Insight / Investigation, senses (darkvision filled in from your race).
@@ -43,6 +58,7 @@ npm install
 npm run db:up                 # starts Postgres 16 in Docker (port 5432)
 npm run dev:server            # API on http://localhost:4000 (runs migrations on boot)
 npm run dev:web               # web app on http://localhost:5173 (proxies /api to the API)
+npm test                      # unit tests (roll extraction, usage detection, combat logic)
 ```
 
 Open http://localhost:5173 and press **Create character**. To use 5etools content, turn it on under **Sources** (the first load takes a few seconds).

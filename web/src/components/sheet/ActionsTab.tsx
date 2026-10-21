@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { uid } from "../../lib/defaults";
+import { featureRolls } from "../../lib/featureRolls";
 import { d20 } from "../../lib/dice";
 import {
   ABILITY_NAMES, STANDARD_ACTIONS, armorClass, fmt, initiative, saveBonus, spellAttack, spellLevelLabel, spellModel, spellSaveDC,
@@ -7,10 +8,13 @@ import {
 import type { Character, Companion, SpellEntry } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
 import { RollButton } from "../dice";
-import { CastButton, SpellBadges, SpellRollInfo, actionType, useSpellDetails } from "../spells";
+import { CastButton, SpellBadges, SpellRollInfo, spellRollContext, actionType, useSpellDetails } from "../spells";
 import { Modal, NumberField, Section, TextField } from "../ui";
 import { AttackRolls } from "./AttacksPanel";
 import { ResourcesPanel } from "./ResourcesPanel";
+import { CombatPanel } from "./CombatTracker";
+import { FeatureRolls } from "./FeaturesTab";
+import { activeRollBonus } from "../../lib/combat";
 import { ContentDetailView } from "../ContentBrowser";
 
 const GROUPS = [
@@ -21,7 +25,7 @@ const GROUPS = [
 ] as const;
 
 /** Everything you need on your turn: attacks, castable spells, resources and the standard actions. */
-export function ActionsTab({ c, update }: { c: Character; update: Update }) {
+export function ActionsTab({ c, update, endedEffects }: { c: Character; update: Update; endedEffects?: string[] }) {
   const [viewing, setViewing] = useState<SpellEntry | null>(null);
   const castable = useMemo(
     () =>
@@ -33,8 +37,11 @@ export function ActionsTab({ c, update }: { c: Character; update: Update }) {
   );
   const details = useSpellDetails(castable);
   const casters = c.classes.filter((k) => k.spellcastingAbility);
+  const featuresWithRolls = c.features.filter((f) => featureRolls(c, f).length > 0 && f.kind !== "race" && f.kind !== "background");
 
   return (
+    <div className="space-y-4">
+    <CombatPanel c={c} update={update} endedNotice={endedEffects} />
     <div className="grid gap-4 lg:grid-cols-[1fr_22rem]">
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -68,6 +75,19 @@ export function ActionsTab({ c, update }: { c: Character; update: Update }) {
           </ul>
           <p className="mt-2 text-[11px] text-ink-600">Click the bonus to attack, then the damage. A natural 20 makes the next damage roll a critical.</p>
         </Section>
+
+        {featuresWithRolls.length > 0 && (
+          <Section title="Feature & feat rolls">
+            <div className="space-y-2">
+              {featuresWithRolls.map((f) => (
+                <div key={f.id}>
+                  <div className="text-sm font-semibold">{f.name}</div>
+                  <FeatureRolls c={c} f={f} compact />
+                </div>
+              ))}
+            </div>
+          </Section>
+        )}
 
         {(castable.length > 0 || casters.length > 0) && (
           <Section
@@ -130,8 +150,9 @@ export function ActionsTab({ c, update }: { c: Character; update: Update }) {
           <div className="grid grid-cols-3 gap-1 text-center text-sm">
             {(["str", "dex", "con", "int", "wis", "cha"] as const).map((a) => {
               const bonus = saveBonus(c, a);
+              const extra = activeRollBonus(c, "save");
               return (
-                <RollButton key={a} expression={d20(bonus)} label={`${ABILITY_NAMES[a]} save`} kind="save" className="rounded-lg bg-ink-850 py-1.5">
+                <RollButton key={a} expression={d20(bonus) + (extra ? `+${extra.dice}` : "")} label={`${ABILITY_NAMES[a]} save${extra ? ` (+${extra.names.join(", ")})` : ""}`} kind="save" className="rounded-lg bg-ink-850 py-1.5">
                   <div className="text-[10px] uppercase text-ink-400">{a}</div>
                   <div className="font-display text-lg">{fmt(bonus)}</div>
                 </RollButton>
@@ -142,9 +163,10 @@ export function ActionsTab({ c, update }: { c: Character; update: Update }) {
         <Companions c={c} update={update} />
       </div>
 
+    </div>
       {viewing && (
         <Modal title={viewing.ref.name} onClose={() => setViewing(null)}>
-          <ContentDetailView type="spell" item={viewing.ref} />
+          <ContentDetailView type="spell" item={viewing.ref} rollContext={spellRollContext(c, viewing)} />
         </Modal>
       )}
     </div>

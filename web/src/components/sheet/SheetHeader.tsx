@@ -7,8 +7,8 @@ import { ContentApplyDialog } from "../ChoicePicker";
 import { Modal, NumberField, TextField } from "../ui";
 
 export function SheetHeader({
-  c, update, saveState, onLevelUp,
-}: { c: Character; update: Update; saveState: SaveState; onLevelUp: () => void }) {
+  c, update, saveState, onLevelUp, restButtons,
+}: { c: Character; update: Update; saveState: SaveState; onLevelUp: () => void; restButtons?: React.ReactNode }) {
   const [picking, setPicking] = useState<"race" | "background" | null>(null);
   const [editingClasses, setEditingClasses] = useState(false);
   const level = totalLevel(c);
@@ -84,9 +84,12 @@ export function SheetHeader({
       </div>
 
       <div className="flex items-center gap-3 lg:flex-col lg:items-end">
-        <button className={`btn-primary ${canLevel ? "animate-pulse" : ""}`} onClick={onLevelUp}>
-          {level === 0 ? "Choose a class" : "▲ Level up"}
-        </button>
+        <div className="flex flex-wrap justify-end gap-2">
+          {restButtons}
+          <button className={`btn-primary ${canLevel ? "animate-pulse" : ""}`} onClick={onLevelUp}>
+            {level === 0 ? "Choose a class" : "▲ Level up"}
+          </button>
+        </div>
         <span className="text-xs text-ink-600">
           {saveState === "saving" ? "Saving…" : saveState === "saved" ? "All changes saved" : saveState === "error" ? <span className="text-blood-500">Save failed — retrying on next edit</span> : ""}
         </span>

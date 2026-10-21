@@ -7,7 +7,7 @@ import type { Character, ClassEntry, ClassRules, ContentSummary, SpellEntry, Sub
 import type { Update } from "../../lib/useCharacter";
 import { ContentDetailView, ContentPicker, contentId, expandedEntries } from "../ContentBrowser";
 import { Modal, NumberField, Pips, Section } from "../ui";
-import { CastButton, SpellBadges, SpellRollInfo, useSpellDetails } from "../spells";
+import { CastButton, SpellBadges, SpellRollInfo, spellRollContext, useSpellDetails } from "../spells";
 import { RollButton } from "../dice";
 import { d20 } from "../../lib/dice";
 
@@ -201,6 +201,7 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
                       </button>
                       <SpellRollInfo c={c} spell={s} detail={details[s.id]} />
                         <SpellBadges detail={details[s.id]} />
+                      {(s.castCount ?? 0) > 0 && <span className="text-[10px] text-ink-600" title="Times cast since your last rest">cast {s.castCount}×</span>}
                       {isReady(s) && <CastButton c={c} update={update} spell={s} detail={details[s.id]} />}
                       {s.ref.source === "homebrew" && <span className="chip border-fuchsia-800 text-fuchsia-300">HB</span>}
                       <span className="text-xs text-ink-600">{cls?.name ?? "Other"}</span>
@@ -228,7 +229,8 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
       )}
       {viewing && (
         <Modal title={viewing.ref.name} onClose={() => setViewing(null)}>
-          <ContentDetailView type="spell" item={viewing.ref} />
+          <ContentDetailView type="spell" item={viewing.ref} rollContext={spellRollContext(c, viewing)} />
+          <FreeCastEditor spell={c.spellcasting.spells.find((x) => x.id === viewing.id) ?? viewing} update={update} />
           <label className="mt-4 flex items-center gap-2 text-sm">
             <input type="checkbox" className="accent-arcane-500" checked={viewing.alwaysPrepared} onChange={(e) => { editSpell(viewing.id, { alwaysPrepared: e.target.checked, prepared: true }); setViewing({ ...viewing, alwaysPrepared: e.target.checked }); }} />
             Always prepared (domain, oath or feature spell; doesn't count against your limit)
@@ -248,5 +250,29 @@ function Limit({ label, have, max }: { label: string; have: number; max: number 
         {have} / {max}
       </span>
     </li>
+  );
+}
+
+/** Free casts per rest (Fey Touched, Magic Initiate, racial magic…) for any spell. */
+function FreeCastEditor({ spell, update }: { spell: SpellEntry; update: Update }) {
+  const n = spell.uses ? parseInt(spell.uses, 10) || 0 : 0;
+  const reset = spell.uses && /short/.test(spell.uses) ? "short rest" : "long rest";
+  const set = (count: number, r: string) =>
+    update((d) => {
+      const s = d.spellcasting.spells.find((x) => x.id === spell.id)!;
+      s.uses = count > 0 ? `${count}/${r}` : undefined;
+      s.usesSpent = Math.min(s.usesSpent ?? 0, count);
+    });
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-ink-800 pt-3 text-sm">
+      <span className="text-ink-400">Free casts without a slot:</span>
+      <NumberField className="field-boxed w-14 py-0.5 text-center" value={n} min={0} max={9} onChange={(v) => set(v, reset)} />
+      <span className="text-ink-400">per</span>
+      <select className="field-boxed w-auto py-0.5" value={reset} onChange={(e) => set(Math.max(1, n), e.target.value)}>
+        <option value="long rest">long rest</option>
+        <option value="short rest">short rest</option>
+      </select>
+      {(spell.castCount ?? 0) > 0 && <span className="ml-auto text-xs text-ink-600">cast {spell.castCount}× since your last rest</span>}
+    </div>
   );
 }

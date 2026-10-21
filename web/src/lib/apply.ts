@@ -1,6 +1,7 @@
 import { api } from "./api";
 import { uid } from "./defaults";
 import { skillName } from "./rules";
+import { applyDetectedUses } from "./uses";
 import type {
   Ability, Character, Choice, ChoiceOption, ContentDetail, ContentType, Feature, GrantedSpell, Progression, Selections, SpellEntry, SubFeature,
 } from "./types";
@@ -145,6 +146,7 @@ export function addGrantedSpells(d: Character, entries: SpellEntry[]) {
 /** Add a built feature to the character with all of its effects and choice mechanics. */
 export function grantFeature(d: Character, feature: Feature, detail?: Pick<ContentDetail, "effects" | "name">) {
   if (detail) applyEffects(d, detail);
+  applyDetectedUses(d, feature);
   applySubfeatureMechanics(d, feature.choices ?? [], feature.subfeatures ?? []);
   d.features.push(feature);
 }

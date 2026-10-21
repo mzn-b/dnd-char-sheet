@@ -10,7 +10,10 @@ import { Modal } from "../ui";
 export function applyRest(d: Character, rest: "short" | "long") {
   resetResources(d, rest);
   for (const f of d.features) if (f.uses && (rest === "long" || f.uses.reset === "short")) f.uses.used = 0;
-  for (const s of d.spellcasting.spells) if (s.uses && (rest === "long" || /short/.test(s.uses))) s.usesSpent = 0;
+  for (const s of d.spellcasting.spells) {
+    if (s.uses && (rest === "long" || /short/.test(s.uses))) s.usesSpent = 0;
+    s.castCount = 0;
+  }
   d.spellcasting.pactSlots.used = 0;
   if (rest === "long") {
     d.hp.current = d.hp.max;
@@ -18,6 +21,7 @@ export function applyRest(d: Character, rest: "short" | "long") {
     d.deathSaves = { successes: 0, failures: 0 };
     d.exhaustion = Math.max(0, d.exhaustion - 1);
     d.concentration = null;
+    d.combat = undefined;
     for (const s of d.spellcasting.slots) s.used = 0;
     // Regain spent hit dice up to half your total (minimum 1), largest dice first.
     let regain = Math.max(1, Math.floor(totalLevel(d) / 2));
@@ -47,6 +51,7 @@ export function RestDialog({ c, update, kind, onClose }: { c: Character; update:
 
   const resets = classResources(c).filter((r) => kind === "long" || r.reset === "short").map((r) => r.name);
   const featureResets = c.features.filter((f) => f.uses && (kind === "long" || f.uses.reset === "short")).map((f) => f.name);
+  const spellResets = c.spellcasting.spells.filter((s) => s.uses && (kind === "long" || /short/.test(s.uses))).map((s) => s.ref.name);
 
   return (
     <Modal
@@ -56,7 +61,7 @@ export function RestDialog({ c, update, kind, onClose }: { c: Character; update:
         <>
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn-primary" onClick={() => { update((d) => applyRest(d, kind)); onClose(); }}>
-            {kind === "short" ? "Finish short rest" : "Take long rest"}
+            {kind === "short" ? "Finish short rest & reset" : "Take long rest & reset everything"}
           </button>
         </>
       }
@@ -82,10 +87,17 @@ export function RestDialog({ c, update, kind, onClose }: { c: Character; update:
             Regain all hit points and spell slots, up to {Math.max(1, Math.floor(totalLevel(c) / 2))} spent hit dice, and reduce exhaustion by 1. Concentration ends.
           </p>
         )}
-        {(resets.length > 0 || featureResets.length > 0 || c.spellcasting.pactSlots.max > 0) && (
+        {(resets.length > 0 || featureResets.length > 0 || spellResets.length > 0 || c.spellcasting.pactSlots.max > 0) && (
           <div>
-            <p className="label mb-1">Recharges</p>
-            <p>{[...resets, ...featureResets, ...(c.spellcasting.pactSlots.max ? ["Pact Magic slots"] : [])].join(", ")}</p>
+            <p className="label mb-1">Resets</p>
+            <ul className="list-disc space-y-0.5 pl-5">
+              {resets.length > 0 && <li>Class resources: {resets.join(", ")}</li>}
+              {featureResets.length > 0 && <li>Features & feats: {featureResets.join(", ")}</li>}
+              {spellResets.length > 0 && <li>Spell uses: {spellResets.join(", ")}</li>}
+              {c.spellcasting.pactSlots.max > 0 && <li>Pact Magic slots</li>}
+              {kind === "long" && c.spellcasting.slots.some((s) => s.max) && <li>All spell slots</li>}
+              <li>Cast counters</li>
+            </ul>
           </div>
         )}
       </div>

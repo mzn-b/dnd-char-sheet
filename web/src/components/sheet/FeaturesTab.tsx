@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { applySubfeatureMechanics, buildFeature, grantFeature, resolveSubfeatures } from "../../lib/apply";
 import { uid } from "../../lib/defaults";
+import { featureRolls } from "../../lib/featureRolls";
+import { applyDetectedUses, formulaLabel, usesMax } from "../../lib/uses";
+import { totalLevel } from "../../lib/rules";
+import { RollList } from "../rolls";
 import type { Character, ContentDetail, Feature, Selections, SubFeature } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
 import { ChoiceList, ContentApplyDialog } from "../ChoicePicker";
@@ -17,6 +21,7 @@ const GROUPS: { kind: Feature["kind"][]; title: string }[] = [
 
 export function FeaturesTab({ c, update }: { c: Character; update: Update }) {
   const [addingFeat, setAddingFeat] = useState(false);
+  const [scanResult, setScanResult] = useState("");
   const owned = new Set(c.features.filter((f) => f.ref).map((f) => contentId(f.ref!)));
 
   const addFeat = async (det: ContentDetail, selections: Selections) => {
@@ -27,6 +32,20 @@ export function FeaturesTab({ c, update }: { c: Character; update: Update }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap justify-end gap-2">
+        {scanResult && <span className="mr-auto self-center text-sm text-ink-400">{scanResult}</span>}
+        <button
+          className="btn"
+          title="Read every feature's text and add use trackers where it says 'once per long rest', 'a number of times equal to…' etc."
+          onClick={() => {
+            let found: string[] = [];
+            update((d) => {
+              found = d.features.filter((f) => applyDetectedUses(d, f)).map((f) => f.name);
+            });
+            setScanResult(found.length ? `Now tracking uses for: ${found.join(", ")}` : "No new limited-use features found.");
+          }}
+        >
+          Detect limited uses
+        </button>
         <button className="btn" onClick={() => setAddingFeat(true)}>Add feat</button>
         <button
           className="btn"
@@ -64,8 +83,8 @@ function FeatureCard({ f, c, update }: { f: Feature; c: Character; update: Updat
         <span className="flex-1 font-semibold">{f.name}</span>
         {pending.length > 0 && <span className="chip border-accent-600 text-accent-400">choice needed</span>}
         {f.uses && (
-          <span onClick={(e) => e.preventDefault()}>
-            <Pips max={f.uses.max} used={f.uses.used} onChange={(u) => edit({ uses: { ...f.uses!, used: u } })} title={`Resets on ${f.uses.reset} rest`} />
+          <span onClick={(e) => e.preventDefault()} title={formulaLabel(f.uses.formula)}>
+            <Pips max={usesMax(c, f.uses.formula, f.uses.max)} used={f.uses.used} onChange={(u) => edit({ uses: { ...f.uses!, used: u } })} title={`Resets on ${f.uses.reset} rest`} />
           </span>
         )}
         {f.origin && <span className="chip">{f.origin}</span>}
@@ -85,7 +104,18 @@ function FeatureCard({ f, c, update }: { f: Feature; c: Character; update: Updat
               </label>
               {f.uses && (
                 <>
-                  <NumberField className="field-boxed w-16" value={f.uses.max} min={1} onChange={(n) => edit({ uses: { ...f.uses!, max: n } })} />
+                  <select
+                    className="field-boxed w-auto"
+                    value={f.uses.formula == null || typeof f.uses.formula === "number" ? "fixed" : f.uses.formula}
+                    onChange={(e) => edit({ uses: { ...f.uses!, formula: e.target.value === "fixed" ? undefined : (e.target.value as "prof") } })}
+                  >
+                    <option value="fixed">fixed number</option>
+                    <option value="prof">= proficiency bonus</option>
+                    {(["str", "dex", "con", "int", "wis", "cha"] as const).map((a) => <option key={a} value={a}>= {a.toUpperCase()} modifier</option>)}
+                  </select>
+                  {(f.uses.formula == null || typeof f.uses.formula === "number") && (
+                    <NumberField className="field-boxed w-16" value={f.uses.max} min={1} onChange={(n) => edit({ uses: { ...f.uses!, max: n, formula: n } })} />
+                  )}
                   <select className="field-boxed w-auto" value={f.uses.reset} onChange={(e) => edit({ uses: { ...f.uses!, reset: e.target.value as "short" | "long" } })}>
                     <option value="short">per short rest</option>
                     <option value="long">per long rest</option>
@@ -97,6 +127,8 @@ function FeatureCard({ f, c, update }: { f: Feature; c: Character; update: Updat
         ) : (
           <Markdown text={f.description || "_No description._"} />
         )}
+
+        <FeatureRolls c={c} f={f} />
 
         {(f.subfeatures?.length ?? 0) > 0 && (
           <div className="space-y-1.5 border-l-2 border-accent-600/50 pl-3">
@@ -176,5 +208,17 @@ function RechooseDialog({ f, c, update, onClose }: { f: Feature; c: Character; u
     <Modal wide title={`${f.name}: choices`} onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn-primary" disabled={busy} onClick={save}>Save</button></>}>
       <ChoiceList choices={f.choices ?? []} selections={selections} onChange={setSelections} character={c} />
     </Modal>
+  );
+}
+
+/** Dice a feature tells you to roll, resolved for this character. */
+export function FeatureRolls({ c, f, compact }: { c: Character; f: Pick<Feature, "name" | "description">; compact?: boolean }) {
+  const rolls = featureRolls(c, f);
+  if (!rolls.length) return null;
+  return (
+    <div className={compact ? "" : "rounded-lg border border-ink-800 bg-ink-850/40 p-2"}>
+      {!compact && <div className="label mb-1">What to roll</div>}
+      <RollList rolls={rolls} at={{ characterLevel: totalLevel(c) }} compact={compact} />
+    </div>
   );
 }

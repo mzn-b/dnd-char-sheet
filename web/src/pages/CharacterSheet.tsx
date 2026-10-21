@@ -7,6 +7,7 @@ import { CombatPanel } from "../components/sheet/CombatPanel";
 import { AttacksPanel } from "../components/sheet/AttacksPanel";
 import { SpellsTab } from "../components/sheet/SpellsTab";
 import { ActionsTab } from "../components/sheet/ActionsTab";
+import { CombatBar } from "../components/sheet/CombatTracker";
 import { InventoryTab } from "../components/sheet/InventoryTab";
 import { FeaturesTab, SubFeatureRow } from "../components/sheet/FeaturesTab";
 import { BioTab } from "../components/sheet/BioTab";
@@ -26,6 +27,7 @@ export default function CharacterSheet() {
   const [tab, setTab] = useState<Tab>("Overview");
   const [levelingUp, setLevelingUp] = useState(false);
   const [building, setBuilding] = useState(false);
+  const [endedEffects, setEndedEffects] = useState<string[]>([]);
   const justApplied = useRef(false);
   const pending = c?.pendingLevelUps ?? [];
 
@@ -61,7 +63,13 @@ export default function CharacterSheet() {
 
   return (
     <div className="space-y-4">
-      <SheetHeader c={c} update={update} saveState={saveState} onLevelUp={() => (pending.length ? setBuilding(true) : setLevelingUp(true))} />
+      <SheetHeader
+        c={c}
+        update={update}
+        saveState={saveState}
+        onLevelUp={() => (pending.length ? setBuilding(true) : setLevelingUp(true))}
+        restButtons={<RestButtons c={c} update={update} />}
+      />
 
       {pending.length > 0 && !building && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-accent-600/50 bg-accent-500/10 px-4 py-3 text-sm">
@@ -90,13 +98,14 @@ export default function CharacterSheet() {
           <button className="btn-ghost px-2 text-xs" disabled={!canUndo} onClick={undo} title="Undo (Ctrl+Z)">↶</button>
           <button className="btn-ghost px-2 text-xs" disabled={!canRedo} onClick={redo} title="Redo (Ctrl+Shift+Z)">↷</button>
           <Link to={`/characters/${c.id}/print`} className="btn-ghost text-xs" title="Printable sheet / save as PDF">Print</Link>
-          <RestButtons c={c} update={update} />
           <button className="btn-ghost text-xs" onClick={() => exportJson(c)}>Export</button>
         </div>
       </div>
 
+      <CombatBar c={c} update={update} onEnded={setEndedEffects} />
+
       {tab === "Overview" && <Overview c={c} update={update} />}
-      {tab === "Actions" && <ActionsTab c={c} update={update} />}
+      {tab === "Actions" && <ActionsTab c={c} update={update} endedEffects={endedEffects} />}
       {tab === "Spells" && <SpellsTab c={c} update={update} />}
       {tab === "Inventory" && <InventoryTab c={c} update={update} />}
       {tab === "Features" && <FeaturesTab c={c} update={update} />}
@@ -174,8 +183,8 @@ function RestButtons({ c, update }: { c: Character; update: Update }) {
   const [rest, setRest] = useState<"short" | "long" | null>(null);
   return (
     <>
-      <button className="btn-ghost text-xs" onClick={() => setRest("short")} title="Spend hit dice; reset short-rest resources and pact slots">☾ Short rest</button>
-      <button className="btn-ghost text-xs" onClick={() => setRest("long")}>☀ Long rest</button>
+      <button className="btn" onClick={() => setRest("short")} title="Spend hit dice; reset short-rest features, resources, spell uses and pact slots">☾ Short rest</button>
+      <button className="btn" onClick={() => setRest("long")} title="Reset HP, all spell slots, features, resources and spell uses">☀ Long rest</button>
       {rest && <RestDialog c={c} update={update} kind={rest} onClose={() => setRest(null)} />}
     </>
   );

@@ -3,6 +3,8 @@ import { CONDITIONS, CONDITION_TEXT, EXHAUSTION_TEXT, armorClassBreakdown, fmt, 
 import { d20 } from "../../lib/dice";
 import { RollButton, useRoll } from "../dice";
 import { ResourcesPanel } from "./ResourcesPanel";
+import { endEffect, reminders } from "../../lib/combat";
+import { useSpellDetails } from "../spells";
 import type { Character } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
 import { NumberField, Pips, Section } from "../ui";
@@ -10,6 +12,8 @@ import { NumberField, Pips, Section } from "../ui";
 export function CombatPanel({ c, update }: { c: Character; update: Update }) {
   const [amount, setAmount] = useState("");
   const [concentrationDc, setConcentrationDc] = useState<number | null>(null);
+  const [damageReminders, setDamageReminders] = useState<string[]>([]);
+  const spellDetails = useSpellDetails(c.spellcasting.spells);
   const { roll } = useRoll();
   const ac = armorClassBreakdown(c);
   const auto = c.acMode === "auto";
@@ -45,6 +49,7 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
       }
     });
     if (kind === "damage" && c.concentration) setConcentrationDc(Math.max(10, Math.floor(n / 2)));
+    if (kind === "damage" && c.combat?.active) setDamageReminders(reminders(c, spellDetails).filter((r) => r.when === "damaged").map((r) => r.text));
     setAmount("");
   };
 
@@ -128,7 +133,28 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
               Roll Con save DC {concentrationDc}
             </RollButton>
           )}
-          <button className={`btn-ghost px-2 py-0.5 text-xs ${concentrationDc ? "" : "ml-auto"}`} onClick={() => { setConcentrationDc(null); update((d) => void (d.concentration = null)); }}>End</button>
+          <button
+            className={`btn-ghost px-2 py-0.5 text-xs ${concentrationDc ? "" : "ml-auto"}`}
+            onClick={() => {
+              setConcentrationDc(null);
+              update((d) => {
+                for (const e of d.combat?.effects.filter((x) => x.concentration) ?? []) endEffect(d, e.id);
+                d.concentration = null;
+              });
+            }}
+          >
+            End
+          </button>
+        </div>
+      )}
+
+      {damageReminders.length > 0 && (
+        <div className="rounded-xl border border-accent-600/50 bg-accent-500/10 px-3 py-2 text-sm">
+          <div className="mb-1 flex items-center justify-between">
+            <span className="label text-accent-400">You took damage: remember</span>
+            <button className="btn-ghost px-1.5 py-0 text-xs" onClick={() => setDamageReminders([])}>✕</button>
+          </div>
+          <ul className="space-y-0.5">{[...new Set(damageReminders)].map((t) => <li key={t}>• {t}</li>)}</ul>
         </div>
       )}
 

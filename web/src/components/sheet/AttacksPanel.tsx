@@ -4,6 +4,7 @@ import type { Update } from "../../lib/useCharacter";
 import { NumberField, Section, TextField } from "../ui";
 import { d20, withBonus } from "../../lib/dice";
 import { blankAttackFields } from "../../lib/attacks";
+import { activeRollBonus } from "../../lib/combat";
 import { RollButton, useRoll } from "../dice";
 
 export const attackBonus = (c: Character, a: Attack) =>
@@ -15,11 +16,17 @@ export const damageBonus = (c: Character, a: Attack) => (a.ability === "none" ? 
 export function AttackRolls({ c, a, size = "text-sm" }: { c: Character; a: Attack; size?: string }) {
   const { log } = useRoll();
   const last = log[0];
-  const crit = !!last && last.label === `${a.name || "Attack"}: to hit` && !!last.crit && Date.now() - last.at < 120_000;
+  const crit = !!last && last.label.startsWith(`${a.name || "Attack"}: to hit`) && !!last.crit && Date.now() - last.at < 120_000;
+  const extra = activeRollBonus(c, "attack");
   return (
     <span className="inline-flex items-center gap-1">
-      <RollButton expression={d20(attackBonus(c, a))} label={`${a.name || "Attack"}: to hit`} kind="attack" className={`font-semibold text-accent-400 ${size}`}>
-        {fmt(attackBonus(c, a))}
+      <RollButton
+        expression={d20(attackBonus(c, a)) + (extra ? `+${extra.dice}` : "")}
+        label={`${a.name || "Attack"}: to hit${extra ? ` (+${extra.names.join(", ")})` : ""}`}
+        kind="attack"
+        className={`font-semibold text-accent-400 ${size}`}
+      >
+        {fmt(attackBonus(c, a))}{extra && <span className="text-xs text-arcane-400"> +{extra.dice}</span>}
       </RollButton>
       {a.damage && (
         <RollButton
