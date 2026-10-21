@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import {
-  addProficiencyLine, applySubfeatureMechanics, attachProgression, buildFeature, grantFeature, grantProgression, resolveSubfeatures,
+  addGrantedSpells, addProficiencyLine, applySubfeatureMechanics, prepareGrantedSpells, attachProgression, buildFeature, grantFeature, grantProgression, resolveSubfeatures,
 } from "../../lib/apply";
 import { uid } from "../../lib/defaults";
 import { ABILITY_NAMES, abilityMod, fmt, meetsRequirements, mod, requirementText, skillName, totalLevel } from "../../lib/rules";
@@ -39,6 +39,8 @@ export function LevelUpWizard({
   const [subclass, setSubclass] = useState<ContentSummary | null>(null);
   const [featureSel, setFeatureSel] = useState<Record<string, Selections>>({});
   const [progressionSel, setProgressionSel] = useState<Record<string, string[]>>({});
+  /** Optional swap of one known option (invocation, maneuver…) per progression. */
+  const [swapSel, setSwapSel] = useState<Record<string, { out: string; in: string[] }>>({});
   const [asiMode, setAsiMode] = useState<"asi" | "feat">("asi");
   const [asi, setAsi] = useState<Partial<Record<Ability, number>>>({});
   const [feat, setFeat] = useState<ContentSummary | null>(null);
@@ -176,7 +178,18 @@ export function LevelUpWizard({
       const builtProgressions = await Promise.all(
         plan.progressions.map(async (p) => ({ p, ...(await grantProgression(p, progressionSel[p.name] ?? [])) })),
       );
+      const builtSwaps = await Promise.all(
+        plan.progressions
+          .filter((p) => swapSel[p.name]?.out && swapSel[p.name].in[0])
+          .map(async (p) => ({ p, out: swapSel[p.name].out, ...(await grantProgression(p, swapSel[p.name].in)) })),
+      );
       const subRules = subRulesQuery.data ?? (subclass ? await api.subclassRules(subclass.source, subclass.key).catch(() => undefined) : undefined);
+      // Racial spells unlock by character level, subclass (domain/oath/circle) spells by class level.
+      const race = c.features.find((f) => f.kind === "race");
+      const grantedSpells = [
+        ...(await prepareGrantedSpells(race?.grantedSpells, totalLevel(c) + 1, "race")),
+        ...(activeSubclass ? await prepareGrantedSpells(subRules?.grantedSpells, plan.newLevel, `subclass:${activeSubclass.key}`, rules.index) : []),
+      ];
 
       const summary: string[] = [];
       let snapshot: Character | null = null;
@@ -233,6 +246,14 @@ export function LevelUpWizard({
           attachProgression(d, p, choice, subs, origin);
           summary.push(`${p.name}: ${subs.map((s) => s.name).join(", ")}`);
         }
+        for (const { p, out, choice, subs } of builtSwaps) {
+          const parent = d.features.find((f) => f.name === p.name);
+          const old = parent?.subfeatures?.find((s) => s.id === out);
+          if (!parent || !old) continue;
+          parent.subfeatures = parent.subfeatures!.filter((s) => s.id !== out);
+          attachProgression(d, p, choice, subs, origin);
+          summary.push(`${p.name}: replaced ${old.name} with ${subs.map((s) => s.name).join(", ")}`);
+        }
 
         // Spells
         const addSpell = (s: ContentSummary) =>
@@ -250,6 +271,11 @@ export function LevelUpWizard({
         }
         if (cantrips.length) summary.push(`Learned cantrips: ${cantrips.map((s) => s.name).join(", ")}`);
         if (spells.length) summary.push(`Learned spells: ${spells.map((s) => s.name).join(", ")}`);
+
+        const before = d.spellcasting.spells.length;
+        addGrantedSpells(d, grantedSpells);
+        const added = d.spellcasting.spells.slice(before).map((s) => s.ref.name);
+        if (added.length) summary.push(`Spells granted: ${added.join(", ")}`);
 
         Object.assign(d.spellcasting, recomputeSlots(d.classes, entry, plan.spellcasting, d.spellcasting));
 
@@ -402,6 +428,29 @@ export function LevelUpWizard({
                   selected={progressionSel[p.name] ?? []}
                   onChange={(keys) => setProgressionSel({ ...progressionSel, [p.name]: keys })}
                 />
+                {(c.features.find((f) => f.name === p.name)?.subfeatures?.length ?? 0) > 0 && (
+                  <div className="mt-3 space-y-2 border-t border-ink-800 pt-3">
+                    <label className="flex flex-wrap items-center gap-2 text-sm">
+                      <span className="text-ink-400">Optionally replace one you know:</span>
+                      <select
+                        className="field-boxed w-auto py-1"
+                        value={swapSel[p.name]?.out ?? ""}
+                        onChange={(e) => setSwapSel({ ...swapSel, [p.name]: { out: e.target.value, in: [] } })}
+                      >
+                        <option value="">Keep them all</option>
+                        {c.features.find((f) => f.name === p.name)!.subfeatures!.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </label>
+                    {swapSel[p.name]?.out && (
+                      <ChoicePicker
+                        choice={{ id: `${p.name}-swap`, kind: "feature", count: 1, label: "Replacement", options: p.options }}
+                        taken={[...progressionTaken(p.name), ...(progressionSel[p.name] ?? [])]}
+                        selected={swapSel[p.name].in}
+                        onChange={(keys) => setSwapSel({ ...swapSel, [p.name]: { ...swapSel[p.name], in: keys } })}
+                      />
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>

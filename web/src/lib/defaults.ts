@@ -43,6 +43,14 @@ export function newCharacter(name = "New Adventurer"): Character {
     },
     notes: "",
     levelHistory: [],
+    acMode: "auto",
+    acBonus: 0,
+    resourcesUsed: {},
+    concentration: null,
+    senses: "",
+    journal: [],
+    companions: [],
+    progression: "xp",
   };
 }
 
@@ -60,5 +68,7 @@ export function normalizeCharacter(raw: Partial<Character>): Character {
     personality: { ...base.personality, ...raw.personality },
     details: { ...base.details, ...raw.details },
     spellcasting: { ...base.spellcasting, ...raw.spellcasting },
+    // Older saves predate automatic AC: keep their typed value.
+    acMode: raw.acMode ?? "manual",
   } as Character;
 }

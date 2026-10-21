@@ -6,26 +6,46 @@ import { AbilitiesPanel } from "../components/sheet/AbilitiesPanel";
 import { CombatPanel } from "../components/sheet/CombatPanel";
 import { AttacksPanel } from "../components/sheet/AttacksPanel";
 import { SpellsTab } from "../components/sheet/SpellsTab";
+import { ActionsTab } from "../components/sheet/ActionsTab";
 import { InventoryTab } from "../components/sheet/InventoryTab";
 import { FeaturesTab, SubFeatureRow } from "../components/sheet/FeaturesTab";
 import { BioTab } from "../components/sheet/BioTab";
 import { HistoryTab } from "../components/sheet/HistoryTab";
+import { RestDialog } from "../components/sheet/RestDialog";
 import { LevelUpWizard } from "../components/levelup/LevelUpWizard";
 import { Markdown, Section, Spinner, TextArea } from "../components/ui";
 import type { Character } from "../lib/types";
 import type { Update } from "../lib/useCharacter";
 
-const TABS = ["Overview", "Spells", "Inventory", "Features", "Bio & Notes", "History"] as const;
+const TABS = ["Overview", "Actions", "Spells", "Inventory", "Features", "Bio & Notes", "History"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function CharacterSheet() {
   const { id } = useParams<{ id: string }>();
-  const { character: c, update, saveState, isLoading, error } = useCharacter(id!);
+  const { character: c, update, saveState, isLoading, error, undo, redo, canUndo, canRedo } = useCharacter(id!);
   const [tab, setTab] = useState<Tab>("Overview");
   const [levelingUp, setLevelingUp] = useState(false);
   const [building, setBuilding] = useState(false);
   const justApplied = useRef(false);
   const pending = c?.pendingLevelUps ?? [];
+
+  // Ctrl/⌘+Z and Ctrl/⌘+Shift+Z (or Ctrl+Y) undo sheet changes; text fields keep their own undo.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      if (el.closest("input, textarea, select, [contenteditable]")) return;
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        (e.shiftKey ? redo : undo)();
+      } else if (e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo]);
 
   // A character fresh from the creator opens straight into its queued level-ups.
   const autoOpened = useRef(false);
@@ -67,12 +87,16 @@ export default function CharacterSheet() {
           </button>
         ))}
         <div className="ml-auto flex gap-1 pb-1">
-          <RestButtons update={update} />
+          <button className="btn-ghost px-2 text-xs" disabled={!canUndo} onClick={undo} title="Undo (Ctrl+Z)">↶</button>
+          <button className="btn-ghost px-2 text-xs" disabled={!canRedo} onClick={redo} title="Redo (Ctrl+Shift+Z)">↷</button>
+          <Link to={`/characters/${c.id}/print`} className="btn-ghost text-xs" title="Printable sheet / save as PDF">Print</Link>
+          <RestButtons c={c} update={update} />
           <button className="btn-ghost text-xs" onClick={() => exportJson(c)}>Export</button>
         </div>
       </div>
 
       {tab === "Overview" && <Overview c={c} update={update} />}
+      {tab === "Actions" && <ActionsTab c={c} update={update} />}
       {tab === "Spells" && <SpellsTab c={c} update={update} />}
       {tab === "Inventory" && <InventoryTab c={c} update={update} />}
       {tab === "Features" && <FeaturesTab c={c} update={update} />}
@@ -146,33 +170,13 @@ function Overview({ c, update }: { c: Character; update: Update }) {
   );
 }
 
-function RestButtons({ update }: { update: Update }) {
-  const shortRest = () =>
-    update((d) => {
-      for (const f of d.features) if (f.uses?.reset === "short") f.uses.used = 0;
-      d.spellcasting.pactSlots.used = 0;
-    });
-  const longRest = () =>
-    update((d) => {
-      d.hp.current = d.hp.max;
-      d.hp.temp = 0;
-      d.deathSaves = { successes: 0, failures: 0 };
-      d.exhaustion = Math.max(0, d.exhaustion - 1);
-      for (const s of d.spellcasting.slots) s.used = 0;
-      d.spellcasting.pactSlots.used = 0;
-      for (const f of d.features) if (f.uses) f.uses.used = 0;
-      // Regain spent hit dice up to half your total (minimum 1), largest dice first.
-      let regain = Math.max(1, Math.floor(d.classes.reduce((s, k) => s + k.level, 0) / 2));
-      for (const die of Object.keys(d.hitDiceUsed).sort((a, b) => Number(b) - Number(a))) {
-        const back = Math.min(regain, d.hitDiceUsed[die]);
-        d.hitDiceUsed[die] -= back;
-        regain -= back;
-      }
-    });
+function RestButtons({ c, update }: { c: Character; update: Update }) {
+  const [rest, setRest] = useState<"short" | "long" | null>(null);
   return (
     <>
-      <button className="btn-ghost text-xs" onClick={shortRest} title="Reset short-rest features and pact slots">☾ Short rest</button>
-      <button className="btn-ghost text-xs" onClick={() => confirm("Take a long rest? HP, slots and features reset.") && longRest()}>☀ Long rest</button>
+      <button className="btn-ghost text-xs" onClick={() => setRest("short")} title="Spend hit dice; reset short-rest resources and pact slots">☾ Short rest</button>
+      <button className="btn-ghost text-xs" onClick={() => setRest("long")}>☀ Long rest</button>
+      {rest && <RestDialog c={c} update={update} kind={rest} onClose={() => setRest(null)} />}
     </>
   );
 }

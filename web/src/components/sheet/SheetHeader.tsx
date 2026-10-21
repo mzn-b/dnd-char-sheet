@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { buildFeature, grantFeature, replaceOrigin } from "../../lib/apply";
+import { addGrantedSpells, buildFeature, grantFeature, prepareGrantedSpells, replaceOrigin, sensesFromRace } from "../../lib/apply";
 import { ALIGNMENTS, classSummary, totalLevel, xpForNextLevel, XP_THRESHOLDS } from "../../lib/rules";
 import type { Character, ContentDetail, Selections } from "../../lib/types";
 import type { SaveState, Update } from "../../lib/useCharacter";
@@ -12,17 +12,21 @@ export function SheetHeader({
   const [picking, setPicking] = useState<"race" | "background" | null>(null);
   const [editingClasses, setEditingClasses] = useState(false);
   const level = totalLevel(c);
-  const canLevel = level > 0 && level < 20 && c.xp >= XP_THRESHOLDS[level];
+  const milestone = c.progression === "milestone";
+  const [xpGain, setXpGain] = useState("");
+  const canLevel = !milestone && level > 0 && level < 20 && c.xp >= XP_THRESHOLDS[level];
 
   const applyOrigin = async (det: ContentDetail, selections: Selections) => {
     const kind = picking!;
     const feature = await buildFeature(det, selections, kind === "race" ? "Race" : "Background", kind);
+    const spells = await prepareGrantedSpells(det.grantedSpells, Math.max(1, level), kind);
     update((d) => {
       replaceOrigin(d, kind);
       const ref = { source: det.source, key: det.key, name: det.name };
-      if (kind === "race") Object.assign(d, { race: det.name, raceRef: ref });
+      if (kind === "race") Object.assign(d, { race: det.name, raceRef: ref, senses: sensesFromRace(det) || d.senses });
       else Object.assign(d, { background: det.name, backgroundRef: ref });
       grantFeature(d, feature, det);
+      addGrantedSpells(d, spells);
     });
   };
 
@@ -56,9 +60,27 @@ export function SheetHeader({
         <Labeled label="Player">
           <TextField value={c.playerName} placeholder="—" onChange={(v) => update((d) => void (d.playerName = v))} />
         </Labeled>
-        <Labeled label={`Experience${level < 20 && level > 0 ? ` (next: ${xpForNextLevel(c).toLocaleString()})` : ""}`}>
-          <NumberField value={c.xp} min={0} onChange={(n) => update((d) => void (d.xp = n))} />
-        </Labeled>
+        <div className="col-span-2 block">
+          <span className="label flex items-center gap-2">
+            {milestone ? "Milestone leveling" : `Experience${level < 20 && level > 0 ? ` (next: ${xpForNextLevel(c).toLocaleString()})` : ""}`}
+            <button className="normal-case tracking-normal text-ink-600 hover:text-accent-400" onClick={() => update((d) => void (d.progression = milestone ? "xp" : "milestone"))}>
+              switch to {milestone ? "XP" : "milestone"}
+            </button>
+          </span>
+          {!milestone && (
+            <div className="flex items-center gap-2">
+              <NumberField className="field w-28" value={c.xp} min={0} onChange={(n) => update((d) => void (d.xp = n))} />
+              <form className="flex items-center gap-1" onSubmit={(e) => { e.preventDefault(); const n = parseInt(xpGain, 10); if (n) update((d) => void (d.xp = Math.max(0, d.xp + n))); setXpGain(""); }}>
+                <input className="field-boxed w-20 py-0.5 text-xs" placeholder="+ XP" inputMode="numeric" value={xpGain} onChange={(e) => setXpGain(e.target.value.replace(/[^\d-]/g, ""))} />
+              </form>
+              {level > 0 && level < 20 && (
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-ink-800" title={`${c.xp} / ${xpForNextLevel(c)} XP`}>
+                  <div className="h-full bg-accent-500" style={{ width: `${Math.min(100, ((c.xp - XP_THRESHOLDS[level - 1]) / (XP_THRESHOLDS[level] - XP_THRESHOLDS[level - 1])) * 100)}%` }} />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center gap-3 lg:flex-col lg:items-end">

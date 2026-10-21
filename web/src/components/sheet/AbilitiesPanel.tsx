@@ -1,4 +1,6 @@
 import { ABILITY_NAMES, SKILLS, abilityMod, fmt, passivePerception, profBonus, saveBonus, skillBonus } from "../../lib/rules";
+import { d20 } from "../../lib/dice";
+import { RollButton } from "../dice";
 import { ABILITIES, type Character, type ProfLevel } from "../../lib/types";
 import { NumberField, Section, TextArea } from "../ui";
 import type { Update } from "../../lib/useCharacter";
@@ -19,7 +21,9 @@ export function AbilitiesPanel({ c, update }: { c: Character; update: Update }) 
         {ABILITIES.map((a) => (
           <div key={a} className="panel flex flex-col items-center p-2 text-center">
             <span className="label">{ABILITY_NAMES[a].slice(0, 3)}</span>
-            <span className="font-display text-3xl leading-tight text-ink-200">{fmt(abilityMod(c, a))}</span>
+            <RollButton expression={d20(abilityMod(c, a))} label={`${ABILITY_NAMES[a]} check`} className="font-display text-3xl leading-tight text-ink-200">
+              {fmt(abilityMod(c, a))}
+            </RollButton>
             <NumberField
               className="field w-12 rounded-full border-ink-700 bg-ink-850 text-center text-sm"
               value={c.abilities[a]}
@@ -61,7 +65,9 @@ export function AbilitiesPanel({ c, update }: { c: Character; update: Update }) 
                   className={`h-3.5 w-3.5 rounded-full border ${prof ? PROF_STYLE["1"] : PROF_STYLE["0"]}`}
                   onClick={() => update((d) => void (d.saveProficiencies = prof ? d.saveProficiencies.filter((x) => x !== a) : [...d.saveProficiencies, a]))}
                 />
-                <span className="w-8 text-right font-semibold tabular-nums">{fmt(saveBonus(c, a))}</span>
+                <RollButton expression={d20(saveBonus(c, a))} label={`${ABILITY_NAMES[a]} save`} kind="save" className="w-9 text-right font-semibold tabular-nums">
+                  {fmt(saveBonus(c, a))}
+                </RollButton>
                 <span className="text-ink-400">{ABILITY_NAMES[a]}</span>
               </li>
             );
@@ -80,7 +86,9 @@ export function AbilitiesPanel({ c, update }: { c: Character; update: Update }) 
                   className={`h-3.5 w-3.5 shrink-0 rounded-full border ${PROF_STYLE[String(p)]}`}
                   onClick={() => update((d) => void (d.skills[s.key] = PROF_CYCLE[(PROF_CYCLE.indexOf(p) + 1) % PROF_CYCLE.length]))}
                 />
-                <span className="w-8 text-right font-semibold tabular-nums">{fmt(skillBonus(c, s.key))}</span>
+                <RollButton expression={d20(skillBonus(c, s.key))} label={s.name} className="w-9 text-right font-semibold tabular-nums">
+                  {fmt(skillBonus(c, s.key))}
+                </RollButton>
                 <span className="flex-1">{s.name}</span>
                 <span className="text-[10px] uppercase text-ink-600">{s.ability}</span>
               </li>
@@ -89,10 +97,17 @@ export function AbilitiesPanel({ c, update }: { c: Character; update: Update }) 
         </ul>
       </Section>
 
-      <div className="panel flex items-center justify-between p-3">
-        <span className="label">Passive Wisdom (Perception)</span>
-        <span className="font-display text-xl">{passivePerception(c)}</span>
-      </div>
+      <Section title="Passive Scores & Senses">
+        <div className="grid grid-cols-3 gap-2 text-center">
+          {[["Perception", passivePerception(c)], ["Insight", 10 + skillBonus(c, "insight")], ["Investigation", 10 + skillBonus(c, "investigation")]].map(([label, n]) => (
+            <div key={label} className="rounded-lg bg-ink-850 py-1.5">
+              <div className="font-display text-xl">{n}</div>
+              <div className="text-[10px] uppercase tracking-wider text-ink-400">{label}</div>
+            </div>
+          ))}
+        </div>
+        <TextArea rows={2} className="field mt-2 resize-y text-sm" placeholder="Darkvision 60 ft, tremorsense…" value={c.senses ?? ""} onChange={(v) => update((d) => void (d.senses = v))} />
+      </Section>
 
       <Section title="Other Proficiencies & Languages">
         <TextArea

@@ -41,6 +41,43 @@ export interface ContentDetail extends ContentSummary {
   effects?: Effect[];
   /** Decisions the player makes when gaining this (Fighting Style, Expertise, Half-Elf +1/+1…). */
   choices?: Choice[];
+  /** Structured item data so the sheet can compute AC, attacks and encumbrance. */
+  item?: ItemData;
+  /** Background personality tables (Personality Trait / Ideal / Bond / Flaw). */
+  suggestions?: { traits: string[]; ideals: string[]; bonds: string[]; flaws: string[] };
+  /** Background starting equipment. */
+  startingEquipment?: EquipmentChoice[];
+  /** Spells granted automatically (racial magic, domain/oath/circle spells…). */
+  grantedSpells?: GrantedSpell[];
+}
+
+export interface ItemData {
+  weight?: number;
+  armor?: { base: number; type: "light" | "medium" | "heavy" | "shield"; stealthDisadvantage?: boolean; strength?: number };
+  weapon?: {
+    damage: string;
+    damageType: string;
+    versatile?: string;
+    properties: string[];
+    ranged: boolean;
+    finesse: boolean;
+    range?: string;
+    category?: string;
+  };
+  attunement?: boolean;
+  rarity?: string;
+  charges?: number;
+}
+
+/**
+ * A spell gained automatically. `level` is the character level (races) or class level
+ * (subclasses) at which it's gained.
+ */
+export interface GrantedSpell {
+  level: number;
+  spell: { source: ContentSource; key: string; name: string };
+  mode: "known" | "prepared" | "innate";
+  uses?: string;
 }
 
 export type Effect =

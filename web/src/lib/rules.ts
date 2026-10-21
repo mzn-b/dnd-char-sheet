@@ -164,3 +164,107 @@ export function meetsRequirements(
 
 export const requirementText = (req: { any: boolean; scores: Partial<Record<Ability, number>> } | null | undefined) =>
   req ? Object.entries(req.scores).map(([a, n]) => `${a.toUpperCase()} ${n}`).join(req.any ? " or " : " and ") : "none";
+
+// ---------------------------------------------------------------------------
+// Armor class
+
+export interface AcBreakdown {
+  total: number;
+  parts: string[];
+  stealthDisadvantage: boolean;
+  /** Worn armor whose Strength requirement isn't met (speed −10 ft). */
+  tooHeavy: boolean;
+}
+
+/** AC from equipped armor and shield, Unarmored Defense, the Defense style and misc bonuses. */
+export function armorClassBreakdown(c: Character): AcBreakdown {
+  const dex = abilityMod(c, "dex");
+  const equipped = c.equipment.filter((i) => i.equipped && i.data?.armor);
+  const armor = equipped.find((i) => i.data!.armor!.type !== "shield");
+  const shield = equipped.find((i) => i.data!.armor!.type === "shield");
+  const classNames = c.classes.map((k) => k.name.toLowerCase());
+  const parts: string[] = [];
+  let total: number;
+  if (armor) {
+    const a = armor.data!.armor!;
+    const dexPart = a.type === "light" ? dex : a.type === "medium" ? Math.min(dex, 2) : 0;
+    total = a.base + dexPart;
+    parts.push(`${armor.name} ${a.base}`, ...(a.type !== "heavy" ? [`Dex ${fmt(dexPart)}`] : []));
+  } else {
+    const options: [number, string[]][] = [[10 + dex, ["Base 10", `Dex ${fmt(dex)}`]]];
+    if (classNames.includes("barbarian")) options.push([10 + dex + abilityMod(c, "con"), ["Unarmored Defense 10", `Dex ${fmt(dex)}`, `Con ${fmt(abilityMod(c, "con"))}`]]);
+    if (classNames.includes("monk") && !shield) options.push([10 + dex + abilityMod(c, "wis"), ["Unarmored Defense 10", `Dex ${fmt(dex)}`, `Wis ${fmt(abilityMod(c, "wis"))}`]]);
+    if (c.classes.some((k) => /draconic/i.test(k.subclass?.name ?? ""))) options.push([13 + dex, ["Draconic Resilience 13", `Dex ${fmt(dex)}`]]);
+    const best = options.sort((a, b) => b[0] - a[0])[0];
+    total = best[0];
+    parts.push(...best[1]);
+  }
+  if (shield) {
+    total += shield.data!.armor!.base;
+    parts.push(`${shield.name} +${shield.data!.armor!.base}`);
+  }
+  const defenseStyle = c.features.some((f) => f.subfeatures?.some((s) => /^defen[cs]e$/i.test(s.name)));
+  if (armor && defenseStyle) {
+    total += 1;
+    parts.push("Defense style +1");
+  }
+  if (c.acBonus) {
+    total += c.acBonus;
+    parts.push(`Bonus ${fmt(c.acBonus)}`);
+  }
+  return {
+    total,
+    parts,
+    stealthDisadvantage: !!armor?.data?.armor?.stealthDisadvantage,
+    tooHeavy: !!armor?.data?.armor?.strength && c.abilities.str < armor.data!.armor!.strength!,
+  };
+}
+
+export const armorClass = (c: Character) => (c.acMode === "auto" ? armorClassBreakdown(c).total : c.armorClass);
+
+/** Attunement slots in use (max 3). */
+export const attunedCount = (c: Character) => c.equipment.filter((i) => i.attuned).length;
+
+export const CONDITION_TEXT: Record<string, string> = {
+  Blinded: "Can't see; automatically fails checks that require sight. Attacks against you have advantage; your attacks have disadvantage.",
+  Charmed: "Can't attack the charmer or target them with harmful abilities. The charmer has advantage on social checks with you.",
+  Deafened: "Can't hear; automatically fails checks that require hearing.",
+  Frightened: "Disadvantage on ability checks and attacks while the source is in sight. Can't willingly move closer to it.",
+  Grappled: "Speed is 0. Ends if the grappler is incapacitated or you're moved out of reach.",
+  Incapacitated: "Can't take actions or reactions.",
+  Invisible: "Can't be seen without magic. Attacks against you have disadvantage; your attacks have advantage.",
+  Paralyzed: "Incapacitated; can't move or speak. Fail Str and Dex saves. Attacks against you have advantage; hits within 5 ft are critical.",
+  Petrified: "Turned to stone: incapacitated, unaware, resistant to all damage, immune to poison and disease. Fail Str and Dex saves.",
+  Poisoned: "Disadvantage on attack rolls and ability checks.",
+  Prone: "Can only crawl. Disadvantage on attacks. Attacks within 5 ft have advantage against you; ranged attacks have disadvantage.",
+  Restrained: "Speed 0. Attacks against you have advantage; your attacks have disadvantage. Disadvantage on Dex saves.",
+  Stunned: "Incapacitated; can't move; can speak only falteringly. Fail Str and Dex saves. Attacks against you have advantage.",
+  Unconscious: "Incapacitated, prone, drops what it's holding. Fail Str and Dex saves. Attacks have advantage; hits within 5 ft are critical.",
+};
+
+export const EXHAUSTION_TEXT = [
+  "",
+  "Disadvantage on ability checks",
+  "Speed halved",
+  "Disadvantage on attack rolls and saving throws",
+  "Hit point maximum halved",
+  "Speed reduced to 0",
+  "Death",
+];
+
+/** Standard actions anyone can take in combat (PHB ch. 9). */
+export const STANDARD_ACTIONS: [string, string][] = [
+  ["Attack", "Make one melee or ranged attack (more with Extra Attack)."],
+  ["Cast a Spell", "Cast a spell with a casting time of 1 action."],
+  ["Dash", "Gain extra movement equal to your speed this turn."],
+  ["Disengage", "Your movement doesn't provoke opportunity attacks this turn."],
+  ["Dodge", "Attacks against you have disadvantage; you have advantage on Dex saves until your next turn."],
+  ["Help", "Give an ally advantage on their next ability check or attack against a creature within 5 ft of you."],
+  ["Hide", "Make a Dexterity (Stealth) check to hide."],
+  ["Ready", "Prepare an action to trigger with your reaction before your next turn."],
+  ["Search", "Make a Wisdom (Perception) or Intelligence (Investigation) check."],
+  ["Use an Object", "Interact with a second object or use an object that needs an action."],
+  ["Grapple / Shove", "Replace one attack: Athletics vs. the target's Athletics or Acrobatics."],
+  ["Opportunity Attack (reaction)", "Make one melee attack when a hostile creature leaves your reach."],
+  ["Two-Weapon Fighting (bonus)", "Attack with a light weapon in your other hand; no ability modifier to damage unless negative."],
+];

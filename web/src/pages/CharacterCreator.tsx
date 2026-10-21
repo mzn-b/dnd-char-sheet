@@ -2,8 +2,9 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
-import { buildFeature, grantFeature } from "../lib/apply";
-import { newCharacter, uid } from "../lib/defaults";
+import { addGrantedSpells, buildFeature, grantFeature, prepareGrantedSpells, sensesFromRace } from "../lib/apply";
+import { newCharacter } from "../lib/defaults";
+import { attackFromItem, resolveItem } from "../lib/items";
 import {
   ABILITY_NAMES, ALIGNMENTS, POINT_BUY_BUDGET, POINT_BUY_COST, STANDARD_ARRAY, fmt, meetsRequirements, mod, requirementText,
 } from "../lib/rules";
@@ -75,6 +76,10 @@ export default function CharacterCreator() {
     })),
   });
   const firstRules = classRules[0]?.data;
+  const equipmentGroups = [
+    ...(firstRules?.startingEquipment ?? []).map((g) => ({ ...g, from: firstRules!.name })),
+    ...(bgDetail?.startingEquipment ?? []).map((g) => ({ ...g, from: bgDetail!.name })),
+  ];
 
   // Base scores from the chosen method.
   const baseScores: Record<Ability, number> = useMemo(() => {
@@ -125,7 +130,9 @@ export default function CharacterCreator() {
         const f = await buildFeature(raceDetail, raceSel, "Race", "race");
         c.race = raceDetail.name;
         c.raceRef = { source: raceDetail.source, key: raceDetail.key, name: raceDetail.name };
+        c.senses = sensesFromRace(raceDetail);
         grantFeature(c, f, raceDetail);
+        addGrantedSpells(c, await prepareGrantedSpells(raceDetail.grantedSpells, 1, "race"));
       }
       if (bgDetail) {
         const f = await buildFeature(bgDetail, bgSel, "Background", "background");
@@ -133,11 +140,22 @@ export default function CharacterCreator() {
         c.backgroundRef = { source: bgDetail.source, key: bgDetail.key, name: bgDetail.name };
         grantFeature(c, f, bgDetail);
       }
-      if (!skipEquipment && firstRules) {
-        firstRules.startingEquipment.forEach((group, gi) => {
-          const opt = group.options[equipment[gi] ?? 0];
-          for (const item of opt?.items ?? []) c.equipment.push({ id: uid(), name: item.name, qty: item.qty, weight: 0, equipped: false, notes: "" });
-        });
+      if (!skipEquipment) {
+        const wanted = equipmentGroups.flatMap((group, gi) => group.options[equipment[gi] ?? 0]?.items ?? []);
+        const items = await Promise.all(wanted.map((it) => (/^\d+(\.\d+)? gp$/.test(it.name) ? null : resolveItem(it.name, it.qty))));
+        for (const it of wanted) {
+          const gp = it.name.match(/^(\d+(?:\.\d+)?) gp$/);
+          if (gp) c.currency.gp += Number(gp[1]);
+        }
+        // Wear the first armor and shield found so AC is right from the start.
+        for (const item of items) {
+          if (!item) continue;
+          const kind = item.data?.armor?.type === "shield" ? "shield" : item.data?.armor ? "armor" : null;
+          if (kind && !c.equipment.some((e) => e.equipped && (e.data?.armor?.type === "shield" ? "shield" : "armor") === kind)) item.equipped = true;
+          c.equipment.push(item);
+        }
+        // Weapons become ready-to-roll attacks.
+        for (const item of c.equipment.filter((i) => i.data?.weapon)) c.attacks.push(await attackFromItem(c, item, true));
       }
       // Each planned class level becomes a queued level-up, first class first.
       c.pendingLevelUps = rows.flatMap((r) => (r.cls ? Array.from({ length: r.levels }, () => ({ source: r.cls!.source, key: r.cls!.key, name: r.cls!.name })) : []));
@@ -292,33 +310,30 @@ export default function CharacterCreator() {
 
         {step === "equipment" && (
           <div className="space-y-4">
-            {!firstRules && <p className="text-sm text-ink-400">Choose a class first.</p>}
-            {firstRules && (
-              <>
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" className="accent-accent-500" checked={skipEquipment} onChange={(e) => setSkipEquipment(e.target.checked)} />
-                  Skip starting equipment (I'll buy gear with starting gold or add it myself)
-                </label>
-                {!skipEquipment && firstRules.startingEquipment.length === 0 && <p className="text-sm text-ink-400">This class has no starting equipment list.</p>}
-                {!skipEquipment && firstRules.startingEquipment.map((g, gi) => (
-                  <div key={gi} className="rounded-lg border border-ink-800 p-3">
-                    <p className="mb-2 text-sm text-ink-400">{g.label}</p>
-                    <div className="flex flex-wrap gap-2">
-                      {g.options.map((o, oi) => (
-                        <button
-                          key={oi}
-                          onClick={() => setEquipment({ ...equipment, [gi]: oi })}
-                          className={`rounded-lg border px-3 py-1.5 text-left text-sm ${(equipment[gi] ?? 0) === oi ? "border-accent-500 bg-accent-500/10" : "border-ink-700 hover:border-ink-600"}`}
-                        >
-                          <span className="mr-1 text-ink-400">{o.label}</span>
-                          {o.items.map((it) => `${it.qty > 1 ? `${it.qty}× ` : ""}${it.name}`).join(", ")}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-                {background && <p className="text-xs text-ink-600">Background equipment is listed in its description; add it from the Inventory tab.</p>}
-              </>
+            {!firstRules && !bgDetail && <p className="text-sm text-ink-400">Choose a class and background first.</p>}
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" className="accent-accent-500" checked={skipEquipment} onChange={(e) => setSkipEquipment(e.target.checked)} />
+              Skip starting equipment (I'll buy gear with starting gold or add it myself)
+            </label>
+            {!skipEquipment && equipmentGroups.map((g, gi) => (
+              <div key={gi} className="rounded-lg border border-ink-800 p-3">
+                <p className="mb-2 text-sm text-ink-400"><span className="chip mr-2">{g.from}</span>{g.label}</p>
+                <div className="flex flex-wrap gap-2">
+                  {g.options.map((o, oi) => (
+                    <button
+                      key={oi}
+                      onClick={() => setEquipment({ ...equipment, [gi]: oi })}
+                      className={`rounded-lg border px-3 py-1.5 text-left text-sm ${(equipment[gi] ?? 0) === oi ? "border-accent-500 bg-accent-500/10" : "border-ink-700 hover:border-ink-600"}`}
+                    >
+                      {g.options.length > 1 && <span className="mr-1 text-ink-400">{o.label}</span>}
+                      {o.items.map((it) => `${it.qty > 1 ? `${it.qty}× ` : ""}${it.name}`).join(", ")}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {!skipEquipment && equipmentGroups.length > 0 && (
+              <p className="text-xs text-ink-600">Items are matched to the rules data when the character is created, so armor counts toward AC and weapons can become attacks. "Any martial weapon" style picks are added as placeholders to rename.</p>
             )}
           </div>
         )}
@@ -336,12 +351,26 @@ export default function CharacterCreator() {
               <span className="label">Player name</span>
               <TextField className="field-boxed" value={details.playerName} onChange={(v) => setDetails({ ...details, playerName: v })} />
             </label>
-            {(["traits", "ideals", "bonds", "flaws"] as const).map((k) => (
-              <label key={k} className="space-y-1">
-                <span className="label">{k === "traits" ? "Personality traits" : k}</span>
-                <TextArea rows={2} value={details[k]} onChange={(v) => setDetails({ ...details, [k]: v })} />
-              </label>
-            ))}
+            {(["traits", "ideals", "bonds", "flaws"] as const).map((k) => {
+              const table = bgDetail?.suggestions?.[k] ?? [];
+              return (
+                <div key={k} className="space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="label">{k === "traits" ? "Personality traits" : k}</span>
+                    {table.length > 0 && (
+                      <span className="flex items-center gap-1">
+                        <button className="btn px-2 py-0 text-xs" title={`Roll on the ${bgDetail!.name} table`} onClick={() => setDetails({ ...details, [k]: pickRandom(table, k === "traits" ? 2 : 1).join("\n") })}>🎲 Roll</button>
+                        <select className="field-boxed w-28 py-0.5 text-xs" value="" onChange={(e) => e.target.value && setDetails({ ...details, [k]: [details[k], e.target.value].filter(Boolean).join("\n") })}>
+                          <option value="">Pick…</option>
+                          {table.map((t, i) => <option key={i} value={t}>{i + 1}. {t.slice(0, 60)}</option>)}
+                        </select>
+                      </span>
+                    )}
+                  </div>
+                  <TextArea rows={3} value={details[k]} onChange={(v) => setDetails({ ...details, [k]: v })} />
+                </div>
+              );
+            })}
             <label className="space-y-1 md:col-span-2">
               <span className="label">Backstory</span>
               <TextArea rows={4} value={details.backstory} onChange={(v) => setDetails({ ...details, backstory: v })} />
@@ -489,4 +518,11 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <dd>{children}</dd>
     </div>
   );
+}
+
+function pickRandom<T>(list: T[], n: number): T[] {
+  const pool = [...list];
+  const out: T[] = [];
+  while (out.length < n && pool.length) out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  return out;
 }

@@ -7,6 +7,9 @@ import type { Character, ClassEntry, ClassRules, ContentSummary, SpellEntry } fr
 import type { Update } from "../../lib/useCharacter";
 import { ContentDetailView, ContentPicker, contentId } from "../ContentBrowser";
 import { Modal, NumberField, Pips, Section } from "../ui";
+import { CastButton, SpellBadges, useSpellDetails } from "../spells";
+import { RollButton } from "../dice";
+import { d20 } from "../../lib/dice";
 
 /** Class whose spell list a class draws from; subclass casters (Eldritch Knight…) use the wizard list. */
 const spellList = (k: ClassEntry, r: ClassRules | undefined) => (r && !r.spellcastingAbility ? "wizard" : k.source === "srd" ? k.key : k.name);
@@ -39,12 +42,25 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
   const [adding, setAdding] = useState<{ cls?: ClassEntry } | null>(null);
   const [viewing, setViewing] = useState<SpellEntry | null>(null);
   const owned = useMemo(() => new Set(c.spellcasting.spells.map((s) => contentId(s.ref))), [c.spellcasting.spells]);
+  const details = useSpellDetails(c.spellcasting.spells);
+  const [filter, setFilter] = useState<"all" | "ready">("all");
+  const [q, setQ] = useState("");
 
+  const isReady = (s: SpellEntry) => {
+    const cls = c.classes.find((k) => k.key === s.classKey);
+    return s.level === 0 || s.prepared || s.alwaysPrepared || !!s.uses || !cls || spellModel(cls) === "known";
+  };
   const byLevel = useMemo(() => {
     const groups: Record<number, SpellEntry[]> = {};
-    for (const s of [...c.spellcasting.spells].sort((a, b) => a.ref.name.localeCompare(b.ref.name))) (groups[s.level] ??= []).push(s);
+    const term = q.trim().toLowerCase();
+    for (const s of [...c.spellcasting.spells].sort((a, b) => a.ref.name.localeCompare(b.ref.name))) {
+      if (term && !s.ref.name.toLowerCase().includes(term)) continue;
+      if (filter === "ready" && !isReady(s)) continue;
+      (groups[s.level] ??= []).push(s);
+    }
     return groups;
-  }, [c.spellcasting.spells]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [c.spellcasting.spells, c.classes, q, filter]);
 
   const addSpells = (picked: ContentSummary[], cls?: ClassEntry) => {
     update((d) => {
@@ -95,7 +111,10 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
               </div>
               <div className="grid grid-cols-2 gap-2 text-center">
                 <div className="rounded-lg bg-ink-850 p-2"><div className="font-display text-2xl">{spellSaveDC(c, a)}</div><div className="label">Save DC</div></div>
-                <div className="rounded-lg bg-ink-850 p-2"><div className="font-display text-2xl">{fmt(spellAttack(c, a))}</div><div className="label">Attack</div></div>
+                <div className="rounded-lg bg-ink-850 p-2">
+                  <RollButton expression={d20(spellAttack(c, a))} label={`${k.name} spell attack`} kind="attack" className="font-display text-2xl">{fmt(spellAttack(c, a))}</RollButton>
+                  <div className="label">Attack</div>
+                </div>
               </div>
               <ul className="space-y-1 text-sm">
                 {lvl && <Limit label="Cantrips known" have={cantrips} max={lvl.cantripsKnown} />}
@@ -137,6 +156,11 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
       </Section>
 
       <Section title="Spells" action={<button className="btn-ghost px-2 py-0.5 text-xs" onClick={() => setAdding({})}>+ Spell from another source</button>}>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <input className="field-boxed max-w-xs py-1 text-sm" placeholder="Filter spells…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <button className={`chip ${filter === "all" ? "border-accent-600 text-accent-400" : ""}`} onClick={() => setFilter("all")}>All</button>
+          <button className={`chip ${filter === "ready" ? "border-accent-600 text-accent-400" : ""}`} onClick={() => setFilter("ready")}>Prepared / castable</button>
+        </div>
         {c.spellcasting.spells.length === 0 && <p className="text-sm text-ink-600">No spells yet.</p>}
         <div className="space-y-4">
           {Object.entries(byLevel).map(([level, spells]) => (
@@ -157,7 +181,12 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
                       ) : (
                         <span className="h-3.5 w-3.5 shrink-0 rounded-full bg-ink-700" title="Always available" />
                       )}
-                      <button className="flex-1 truncate text-left hover:text-accent-400" onClick={() => setViewing(s)}>{s.ref.name}</button>
+                      <button className="min-w-0 flex-1 truncate text-left hover:text-accent-400" onClick={() => setViewing(s)}>
+                        {s.ref.name}
+                        {s.grantedBy && <span className="ml-1 text-[10px] text-ink-600">({s.uses ?? (s.alwaysPrepared ? "always prepared" : "granted")})</span>}
+                      </button>
+                      <SpellBadges detail={details[s.id]} />
+                      {isReady(s) && <CastButton c={c} update={update} spell={s} detail={details[s.id]} />}
                       {s.ref.source === "homebrew" && <span className="chip border-fuchsia-800 text-fuchsia-300">HB</span>}
                       <span className="text-xs text-ink-600">{cls?.name ?? "Other"}</span>
                       <button className="btn-ghost px-1.5 py-0 text-xs opacity-0 hover:text-blood-500 group-hover:opacity-100" title="Remove" onClick={() => update((d) => void (d.spellcasting.spells = d.spellcasting.spells.filter((x) => x.id !== s.id)))}>✕</button>

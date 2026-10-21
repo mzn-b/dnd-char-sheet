@@ -12,6 +12,20 @@ A dark-mode web app for keeping multiple D&D 5e characters. It covers every fiel
 - **Features with built-in choices** (Fighting Style, Expertise, Metamagic, Invocations, Maneuvers, Favored Enemy, a feat's ability or save pick, Half-Elf's +1/+1…) open a picker. Each pick is stored as a **sub-feature** with its full text. Skills, expertise, saves and ability increases are applied automatically, and picks can be changed later.
 - **Flexible editing**: the rules give hints (e.g. *Spells known 5/6*), not hard locks. Add, swap or remove spells, feats or features any time, or fix class levels by hand.
 - **Homebrew**: create spells, feats, items, features, subclasses, full classes, races and backgrounds. They appear alongside official content in every picker and in the level-up wizard.
+- **Play features**:
+  - **Dice roller**: click any modifier to roll it (checks, saves, skills, initiative, attacks, damage, spell attacks, death saves, hit dice). Shift-click rolls with advantage, Ctrl-click with disadvantage. A natural 20 makes the next damage roll critical. There's a roll log and a custom-dice tray.
+  - **Actions tab**: a combat dashboard. Vitals, attacks, spells grouped into action / bonus action / reaction, slot summary, class resources, saving throws, standard actions reference, companions.
+  - **Spellcasting**: Cast spends the right slot (with upcasting, pact slots or ritual casting) and starts concentration. Taking damage while concentrating prompts the Con save DC. Innate spells track their uses. Spells show casting-time, range, concentration and ritual badges, with search and a "prepared only" filter.
+  - **Class resources tracked automatically**: Rage, Bardic Inspiration, Channel Divinity, Wild Shape, Second Wind / Action Surge / Indomitable, Ki, Lay on Hands, Sorcery Points, Superiority Dice, Arcane Recovery, Mystic Arcanum and more. Maximums follow your level and ability scores.
+  - **Rests**: short rests spend hit dice with real rolls. Long rests restore HP, slots, resources and half your hit dice, and reduce exhaustion.
+  - **Automatic AC**: from worn armor and shield, Unarmored Defense (Barbarian/Monk), Draconic Resilience and the Defense style, plus a misc bonus. It warns about Stealth disadvantage and armor too heavy for your Strength. You can switch to manual.
+  - **Inventory**: items keep their weapon and armor stats. Wearing armor updates AC; +Atk turns a weapon into an attack. Attunement (x/3), charges, coin weight, wealth in gp, quick "+25 gp" adjustments.
+  - **Conditions** with rules text, exhaustion effects, passive Perception / Insight / Investigation, senses (darkvision filled in from your race).
+  - **Granted spells**: racial magic (Tiefling, Drow…) and domain / oath / circle spells are added automatically at the right level.
+  - **Session journal**, notes, companions (familiars, mounts), XP with quick-add and a progress bar, or milestone leveling.
+  - **Undo / redo** for every sheet change (Ctrl+Z / Ctrl+Shift+Z).
+  - **Printable sheet**: three pages (stats, spells, details) via the browser's Save as PDF.
+- **Creation helpers**: roll or pick personality traits, ideals, bonds and flaws from your background's tables. Starting equipment from class and background is matched to real items, so armor is worn, AC is right and weapons are ready as attacks. During level-up you can swap a known invocation or maneuver.
 - **Multiple characters**, with duplicate, delete and JSON import/export.
 
 See [docs/CONCEPT.md](docs/CONCEPT.md) for the design: data model, level-up logic and roadmap.

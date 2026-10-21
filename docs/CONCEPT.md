@@ -129,10 +129,25 @@ The Homebrew Workshop has forms for each content type:
 - **Subclass**: parent class(es) and features by level. It appears in the wizard's subclass step.
 - **Class**: hit die, saving throws, subclass level, ASI levels, spellcasting ability, and a spell slot table borrowed from an SRD class ("same as wizard"), plus features by level. The wizard uses it like any SRD class.
 
+## Playing at the table
+
+| Need | Where |
+| --- | --- |
+| Roll anything | Click a modifier anywhere. 🎲 opens the tray: log, custom dice, adv/dis for the next roll. |
+| My turn | **Actions** tab: attacks (to hit → damage, crits doubled automatically), castable spells by action type, resources, saves |
+| Cast a spell | **Cast** picks a slot ≥ the spell's level, a pact slot, or a ritual. Concentration spells set the concentration banner. |
+| Take damage | Overview → HP box. Temp HP absorbs first; if concentrating, the Con save DC (max(10, half damage)) appears with a roll button. |
+| Rest | ☾ Short rest (spend hit dice, short-rest resources, pact slots) / ☀ Long rest |
+| Resources | Derived from class and subclass level and ability mods (`lib/resources.ts`); only the spent count is saved |
+| AC | Auto from worn armor and shield (`armorClassBreakdown`); hover the AC for the breakdown |
+| Undo a mistake | ↶ / Ctrl+Z (rapid edits within a second count as one step) |
+| Paper copy | Print → Save as PDF |
+
 ## Roadmap / ideas
 
-- Replace-on-level-up for invocations and maneuvers (currently: remove and re-add on the Features tab).
-- Apply 5etools `additionalSpells` (racial and subclass spells such as Drow magic or domain spells) automatically.
+- Expanded spell lists (warlock patrons) shown in the spell picker.
+- Damage dice for spells (e.g. Fireball 8d6 + upcast scaling) as roll buttons.
+- Character sharing with the DM (read-only link), online party view.
 - 2024 rules, selectable per character.
 - Dice roller and roll log; clickable bonuses that roll.
 - User accounts and sharing a read-only sheet with the DM.

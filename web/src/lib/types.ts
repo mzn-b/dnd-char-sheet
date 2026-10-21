@@ -25,6 +25,10 @@ export interface ContentDetail extends ContentSummary {
   spell?: { school?: string; ritual?: boolean; concentration?: boolean };
   effects?: Effect[];
   choices?: Choice[];
+  item?: ItemData;
+  suggestions?: { traits: string[]; ideals: string[]; bonds: string[]; flaws: string[] };
+  startingEquipment?: EquipmentChoice[];
+  grantedSpells?: GrantedSpell[];
   // Homebrew-only extras (class/subclass definitions)
   hitDie?: number;
   spellcastingAbility?: Ability | null;
@@ -64,6 +68,32 @@ export interface ChoiceOption {
 /** Selected option keys per choice id. */
 export type Selections = Record<string, string[]>;
 
+export interface ItemData {
+  weight?: number;
+  armor?: { base: number; type: "light" | "medium" | "heavy" | "shield"; stealthDisadvantage?: boolean; strength?: number };
+  weapon?: {
+    damage: string;
+    damageType: string;
+    versatile?: string;
+    properties: string[];
+    ranged: boolean;
+    finesse: boolean;
+    range?: string;
+    category?: string;
+  };
+  attunement?: boolean;
+  rarity?: string;
+  charges?: number;
+}
+
+/** A spell gained automatically at a character level (races) or class level (subclasses). */
+export interface GrantedSpell {
+  level: number;
+  spell: ContentRef;
+  mode: "known" | "prepared" | "innate";
+  uses?: string;
+}
+
 export type CasterType = "full" | "half" | "third" | "pact" | "artificer" | "none";
 export type SpellModel = "known" | "prepared" | "spellbook";
 
@@ -100,6 +130,12 @@ export interface Item {
   equipped: boolean;
   notes: string;
   ref?: ContentRef & { type: ContentType };
+  /** Requires attunement / currently attuned. */
+  attunement?: boolean;
+  attuned?: boolean;
+  charges?: { max: number; used: number };
+  /** Rules data (armor, weapon stats) captured when the item was added. */
+  data?: ItemData;
 }
 
 /** A choice made inside a feature (a Fighting Style, an Invocation, an expertise skill…). */
@@ -128,6 +164,8 @@ export interface Feature {
   subfeatures?: SubFeature[];
   /** Fixed effects granted (kept so a race or background can be swapped cleanly). */
   effects?: Effect[];
+  /** Spells this feature grants as the character levels (racial magic). */
+  grantedSpells?: GrantedSpell[];
 }
 
 export interface SpellEntry {
@@ -139,6 +177,28 @@ export interface SpellEntry {
   prepared: boolean;
   /** Domain/oath spells etc. that don't count against the prepared limit. */
   alwaysPrepared: boolean;
+  notes: string;
+  /** Set for spells added automatically by a race or subclass, e.g. "race" or "subclass:life". */
+  grantedBy?: string;
+  /** Limited innate casting, e.g. "1/long rest". */
+  uses?: string;
+  usesSpent?: number;
+}
+
+export interface JournalEntry {
+  id: string;
+  date: string;
+  title: string;
+  text: string;
+}
+
+export interface Companion {
+  id: string;
+  name: string;
+  kind: string;
+  ac: number;
+  hp: { max: number; current: number };
+  speed: string;
   notes: string;
 }
 
@@ -221,6 +281,19 @@ export interface Character {
   levelHistory: LevelRecord[];
   /** Level-ups queued by the character creator, applied one by one with the wizard. */
   pendingLevelUps?: ContentRef[];
+
+  /** "auto" computes AC from equipped armor; "manual" uses armorClass as typed. */
+  acMode?: "auto" | "manual";
+  /** Extra AC from magic items, spells, Defense fighting style etc. */
+  acBonus?: number;
+  /** Spent uses of class resources (Rage, Ki…), keyed by resource id. */
+  resourcesUsed?: Record<string, number>;
+  /** The spell currently being concentrated on. */
+  concentration?: { name: string; spellId?: string } | null;
+  senses?: string;
+  journal?: JournalEntry[];
+  companions?: Companion[];
+  progression?: "xp" | "milestone";
 }
 
 export interface CharacterSummary {
@@ -288,6 +361,7 @@ export interface LevelRules {
 }
 
 export interface SubclassRules {
+  grantedSpells?: GrantedSpell[];
   spellcastingAbility: Ability | null;
   casterType: CasterType | null;
   spellModel: SpellModel | null;

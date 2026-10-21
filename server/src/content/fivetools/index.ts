@@ -2,7 +2,7 @@ import { HttpError } from "../http.js";
 import {
   ABILITIES, SKILL_KEYS, expertiseChoice, singleClassSlots, skillName, toSkillKey,
   type Ability, type Choice, type ChoiceOption, type ClassRules, type ContentDetail, type ContentSummary,
-  type ContentType, type Effect, type EquipmentChoice, type FeatureRef, type LevelRules, type Progression,
+  type ContentType, type Effect, type EquipmentChoice, type FeatureRef, type GrantedSpell, type ItemData, type LevelRules, type Progression,
 } from "../types.js";
 import { getDataset, type Dataset } from "./data.js";
 import { plain, renderEntries, renderTags } from "./render.js";
@@ -110,6 +110,7 @@ export async function get5etools(type: ContentType, k: string): Promise<ContentD
         ...summary(ds, type, sc.name, k, sc.source, { classes: [lc(sc.className)] }),
         description: first ? renderEntries(first.obj.entries, 0) : "",
         meta: {},
+        grantedSpells: grantedSpells(ds, sc.additionalSpells),
       };
     }
     case "feature":
@@ -250,6 +251,44 @@ function featDetail(ds: Dataset, f: any): ContentDetail {
   };
 }
 
+/** Resolve a 5etools spell reference ("hellish rebuke#2", "fireball|xge") to a content ref. */
+function spellRef(ds: Dataset, raw: string) {
+  const [name, source] = raw.split("#")[0].split("|");
+  const s = ds.spell.find((x) => lc(x.name) === lc(name) && (!source || lc(x.source) === lc(source))) ?? ds.spell.find((x) => lc(x.name) === lc(name));
+  return s ? { source: SOURCE, key: key(s.name, s.source), name: s.name } : undefined;
+}
+
+/**
+ * Translate 5etools additionalSpells (first option) into granted spells.
+ * Keys are levels; values are spell lists or {daily: {"1": [...]}, rest: {...}}. "expanded" lists
+ * only widen what can be learned, so they're not granted.
+ */
+function grantedSpells(ds: Dataset, additional: any[] | undefined): GrantedSpell[] {
+  const a = additional?.[0];
+  if (!a) return [];
+  const out: GrantedSpell[] = [];
+  const push = (mode: GrantedSpell["mode"], level: string, spells: any, uses?: string) => {
+    for (const raw of Array.isArray(spells) ? spells : []) {
+      if (typeof raw !== "string") continue;
+      const spell = spellRef(ds, raw);
+      if (spell) out.push({ level: Number(String(level).replace(/\D/g, "")) || 1, spell, mode, uses });
+    }
+  };
+  for (const mode of ["innate", "known", "prepared"] as const) {
+    for (const [level, v] of Object.entries(a[mode] ?? {})) {
+      if (Array.isArray(v)) push(mode, level, v);
+      else if (v && typeof v === "object") {
+        for (const [k, inner] of Object.entries(v as any)) {
+          if (k === "_") push(mode, level, inner);
+          else if (k === "daily" || k === "rest") for (const [n, list] of Object.entries(inner as any)) push(mode, level, list, `${n.replace("e", "")}/${k === "daily" ? "long rest" : "short rest"}`);
+          else if (k === "will") push(mode, level, inner, "at will");
+        }
+      }
+    }
+  }
+  return out;
+}
+
 function raceDetail(ds: Dataset, r: { name: string; key: string; source: string; race: any; sub?: any }): ContentDetail {
   const effects: Effect[] = [];
   const choices: Choice[] = [];
@@ -276,6 +315,7 @@ function raceDetail(ds: Dataset, r: { name: string; key: string; source: string;
     ) as Record<string, string>,
     effects,
     choices,
+    grantedSpells: grantedSpells(ds, sub.additionalSpells ?? race.additionalSpells),
   };
 }
 
@@ -286,7 +326,32 @@ function backgroundDetail(ds: Dataset, b: any): ContentDetail {
   const choices: Choice[] = [];
   skillBlock(ds, b.skillProficiencies, "skills", effects, choices);
   effects.push(...profText("Languages", b.languageProficiencies), ...profText("Tools", b.toolProficiencies));
-  return { ...summary(ds, "background", b.name, key(b.name, b.source), b.source), description: renderEntries(b.entries), meta: {}, effects, choices };
+  return {
+    ...summary(ds, "background", b.name, key(b.name, b.source), b.source),
+    description: renderEntries(b.entries),
+    meta: {},
+    effects,
+    choices,
+    suggestions: backgroundTables(b.entries),
+    startingEquipment: equipmentRows(b.startingEquipment ?? [], []),
+  };
+}
+
+/** Pull the d8/d6 personality tables out of a background's entries. */
+function backgroundTables(entries: any): { traits: string[]; ideals: string[]; bonds: string[]; flaws: string[] } {
+  const out = { traits: [] as string[], ideals: [] as string[], bonds: [] as string[], flaws: [] as string[] };
+  const walk = (e: any) => {
+    if (Array.isArray(e)) return e.forEach(walk);
+    if (!e || typeof e !== "object") return;
+    if (e.type === "table" && Array.isArray(e.colLabels)) {
+      const label = String(e.colLabels[1] ?? "").toLowerCase();
+      const target = label.includes("personality") ? out.traits : label.includes("ideal") ? out.ideals : label.includes("bond") ? out.bonds : label.includes("flaw") ? out.flaws : null;
+      if (target) for (const row of e.rows ?? []) if (Array.isArray(row) && row[1] != null) target.push(plain(typeof row[1] === "string" ? row[1] : renderEntries(row[1])));
+    }
+    walk(e.entries);
+  };
+  walk(entries);
+  return out;
 }
 
 const ITEM_TYPES: Record<string, string> = {
@@ -321,7 +386,33 @@ function itemDetail(ds: Dataset, it: any): ContentDetail {
     ...summary(ds, "item", it.name, key(it.name, it.source), it.source),
     description: renderEntries(it.entries ?? ""),
     meta: Object.fromEntries(Object.entries(meta).filter(([, v]) => v)) as Record<string, string>,
+    item: itemData(it, type),
   };
+}
+
+function itemData(it: any, type: string): ItemData {
+  const data: ItemData = {
+    weight: it.weight,
+    attunement: !!it.reqAttune,
+    rarity: it.rarity && it.rarity !== "none" ? it.rarity : undefined,
+    charges: typeof it.charges === "number" ? it.charges : undefined,
+  };
+  const armorType = ({ LA: "light", MA: "medium", HA: "heavy", S: "shield" } as const)[type as "LA"];
+  if (armorType && it.ac != null) data.armor = { base: it.ac, type: armorType, stealthDisadvantage: !!it.stealth, strength: it.strength ? Number(it.strength) : undefined };
+  if (it.dmg1) {
+    const props: string[] = (it.property ?? []).map((p: any) => String(p.uid ?? p).split("|")[0]);
+    data.weapon = {
+      damage: it.dmg1,
+      damageType: (DMG[it.dmgType] ?? "").toLowerCase(),
+      versatile: it.dmg2,
+      properties: props.map((p) => PROPS[p] ?? p),
+      ranged: type === "R",
+      finesse: props.includes("F"),
+      range: it.range ? `${it.range} ft` : undefined,
+      category: it.weaponCategory,
+    };
+  }
+  return data;
 }
 
 // ---------------------------------------------------------------------------
@@ -491,21 +582,25 @@ const EQUIPMENT_TYPES: Record<string, string> = {
 };
 
 function startingEquipment(cls: any): EquipmentChoice[] {
-  const data: any[] = cls.startingEquipment?.defaultData ?? [];
-  const labels: string[] = cls.startingEquipment?.default ?? [];
+  return equipmentRows(cls.startingEquipment?.defaultData ?? [], cls.startingEquipment?.default ?? []);
+}
+
+function equipmentRows(data: any[], labels: string[]): EquipmentChoice[] {
   const toItem = (x: any) => {
     if (typeof x === "string") return { name: itemName(x), qty: 1 };
     if (x.item) return { name: x.displayName ? plain(x.displayName) : itemName(x.item), qty: x.quantity ?? 1 };
     if (x.equipmentType) return { name: EQUIPMENT_TYPES[x.equipmentType] ?? x.equipmentType, qty: x.quantity ?? 1 };
     if (x.special) return { name: x.special, qty: x.quantity ?? 1 };
     if (x.value) return { name: `${x.value / 100} gp`, qty: 1 };
+    if (x.containsValue) return { name: `${x.containsValue / 100} gp`, qty: 1 };
     return { name: "?", qty: 1 };
   };
   return data.map((row, i) => ({
-    label: labels[i] ? plain(labels[i]) : "Equipment",
+    label: labels[i] ? plain(labels[i]) : row._ ? "Included" : "Choose one",
     options: Object.entries(row).map(([opt, items]) => ({
       label: opt === "_" ? "Included" : `(${opt})`,
-      items: (items as any[]).map(toItem),
+      // A pouch "containing 15 gp" yields the pouch and the coins.
+      items: (items as any[]).flatMap((x) => (x?.item && x.containsValue ? [toItem(x), { name: `${x.containsValue / 100} gp`, qty: 1 }] : [toItem(x)])),
     })),
   }));
 }
@@ -588,6 +683,7 @@ export async function subclassLevels5etools(k: string) {
     spellcastingAbility: sc.spellcastingAbility ?? null,
     casterType: casterType ?? null,
     spellModel: sc.spellcastingAbility ? (sc.spellsKnownProgression ? "known" : "prepared") : null,
+    grantedSpells: grantedSpells(ds, sc.additionalSpells),
     levels: Array.from({ length: 20 }, (_, i) => {
       const level = i + 1;
       const here = feats.filter((f: any) => f.level === level);

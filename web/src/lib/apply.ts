@@ -2,7 +2,7 @@ import { api } from "./api";
 import { uid } from "./defaults";
 import { skillName } from "./rules";
 import type {
-  Ability, Character, Choice, ChoiceOption, ContentDetail, ContentType, Feature, Progression, Selections, SubFeature,
+  Ability, Character, Choice, ChoiceOption, ContentDetail, ContentType, Feature, GrantedSpell, Progression, Selections, SpellEntry, SubFeature,
 } from "./types";
 
 /**
@@ -102,7 +102,44 @@ export async function buildFeature(
     choices: detail.choices?.length ? detail.choices : undefined,
     subfeatures: subfeatures.length ? subfeatures : undefined,
     effects: detail.effects?.length ? detail.effects : undefined,
+    grantedSpells: detail.grantedSpells?.length ? detail.grantedSpells : undefined,
   };
+}
+
+/**
+ * Spell entries for granted spells reached by `atLevel` (fetches each spell's level).
+ * Apply with addGrantedSpells inside an update; duplicates are skipped there.
+ */
+export async function prepareGrantedSpells(granted: GrantedSpell[] | undefined, atLevel: number, grantedBy: string, classKey?: string): Promise<SpellEntry[]> {
+  const due = (granted ?? []).filter((g) => g.level <= atLevel);
+  return Promise.all(
+    due.map(async (g) => {
+      const det = await api.detail("spell", g.spell.source, g.spell.key).catch(() => null);
+      return {
+        id: uid(),
+        ref: g.spell,
+        level: det?.level ?? 0,
+        classKey,
+        prepared: true,
+        alwaysPrepared: g.mode === "prepared",
+        notes: "",
+        grantedBy,
+        uses: g.mode === "innate" ? g.uses : undefined,
+      };
+    }),
+  );
+}
+
+export function addGrantedSpells(d: Character, entries: SpellEntry[]) {
+  for (const e of entries) {
+    const existing = d.spellcasting.spells.find((s) => s.ref.key === e.ref.key && s.ref.source === e.ref.source);
+    if (existing) {
+      // Already known through a class: mark it as always prepared rather than duplicating it.
+      if (e.alwaysPrepared) existing.alwaysPrepared = existing.prepared = true;
+      continue;
+    }
+    d.spellcasting.spells.push(e);
+  }
 }
 
 /** Add a built feature to the character with all of its effects and choice mechanics. */
@@ -118,6 +155,7 @@ export function replaceOrigin(d: Character, kind: "race" | "background") {
     applySubfeatureMechanics(d, old.choices ?? [], old.subfeatures ?? [], -1);
     for (const e of old.effects ?? []) if (e.kind === "ability") d.abilities[e.ability] -= e.amount;
   }
+  d.spellcasting.spells = d.spellcasting.spells.filter((s) => s.grantedBy !== kind);
   d.features = d.features.filter((f) => f.kind !== kind);
 }
 
@@ -140,3 +178,10 @@ export function attachProgression(d: Character, prog: Progression, choice: Choic
 
 export const describeSelections = (choices: Choice[], selections: Selections) =>
   choices.flatMap((ch) => (selections[ch.id] ?? []).map((k) => ch.options.find((o) => o.key === k)?.name ?? skillName(k)));
+
+/** "Darkvision 60 ft" from a race's data or trait text. */
+export function sensesFromRace(det: ContentDetail): string {
+  if (det.meta.Darkvision) return `Darkvision ${det.meta.Darkvision}`;
+  const m = det.description.match(/(superior )?darkvision[^.]*?(\d+) feet/i);
+  return m ? `Darkvision ${m[2]} ft` : "";
+}

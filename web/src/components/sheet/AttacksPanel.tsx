@@ -1,15 +1,42 @@
 import { abilityMod, fmt, profBonus } from "../../lib/rules";
 import { ABILITIES, type Attack, type Character } from "../../lib/types";
-import { uid } from "../../lib/defaults";
 import type { Update } from "../../lib/useCharacter";
 import { NumberField, Section, TextField } from "../ui";
+import { d20, withBonus } from "../../lib/dice";
+import { blankAttackFields } from "../../lib/attacks";
+import { RollButton, useRoll } from "../dice";
 
 export const attackBonus = (c: Character, a: Attack) =>
   (a.ability === "none" ? 0 : abilityMod(c, a.ability)) + (a.proficient ? profBonus(c) : 0) + a.bonus;
 
-export const blankAttack = (): Attack => ({
-  id: uid(), name: "", ability: "str", proficient: true, bonus: 0, damage: "", damageType: "", notes: "",
-});
+export const damageBonus = (c: Character, a: Attack) => (a.ability === "none" ? 0 : abilityMod(c, a.ability));
+
+/** To-hit and damage roll buttons. Damage doubles its dice if the last roll was a crit with this attack. */
+export function AttackRolls({ c, a, size = "text-sm" }: { c: Character; a: Attack; size?: string }) {
+  const { log } = useRoll();
+  const last = log[0];
+  const crit = !!last && last.label === `${a.name || "Attack"}: to hit` && !!last.crit && Date.now() - last.at < 120_000;
+  return (
+    <span className="inline-flex items-center gap-1">
+      <RollButton expression={d20(attackBonus(c, a))} label={`${a.name || "Attack"}: to hit`} kind="attack" className={`font-semibold text-accent-400 ${size}`}>
+        {fmt(attackBonus(c, a))}
+      </RollButton>
+      {a.damage && (
+        <RollButton
+          expression={withBonus(a.damage, damageBonus(c, a))}
+          label={`${a.name || "Attack"}: ${crit ? "critical " : ""}damage${a.damageType ? ` (${a.damageType})` : ""}`}
+          kind="damage"
+          critical={crit}
+          className={`${size} ${crit ? "text-emerald-400" : "text-blood-500"}`}
+        >
+          {crit ? "💥 " : ""}{withBonus(a.damage, damageBonus(c, a))}
+        </RollButton>
+      )}
+    </span>
+  );
+}
+
+export { blankAttackFields as blankAttack } from "../../lib/attacks";
 
 export function AttacksPanel({ c, update }: { c: Character; update: Update }) {
   const edit = (id: string, patch: Partial<Attack>) =>
@@ -18,7 +45,7 @@ export function AttacksPanel({ c, update }: { c: Character; update: Update }) {
   return (
     <Section
       title="Attacks & Spellcasting"
-      action={<button className="btn-ghost px-2 py-0.5 text-xs" onClick={() => update((d) => void d.attacks.push(blankAttack()))}>+ Add</button>}
+      action={<button className="btn-ghost px-2 py-0.5 text-xs" onClick={() => update((d) => void d.attacks.push(blankAttackFields()))}>+ Add</button>}
     >
       {c.attacks.length === 0 ? (
         <p className="text-sm text-ink-600">No attacks yet. Add one, or create one from a weapon in your inventory.</p>
@@ -40,10 +67,15 @@ export function AttacksPanel({ c, update }: { c: Character; update: Update }) {
                   {ABILITIES.map((x) => <option key={x} value={x}>{x}</option>)}
                   <option value="none">—</option>
                 </select>
-                <span className="text-center font-semibold text-accent-400">{fmt(attackBonus(c, a))}</span>
-                <span className="truncate text-sm">
-                  {a.damage}
-                  {a.damage && a.ability !== "none" && <span className="text-ink-400"> {fmt(abilityMod(c, a.ability))}</span>}
+                <span className="text-center" onClick={(e) => e.preventDefault()}>
+                  <RollButton expression={d20(attackBonus(c, a))} label={`${a.name || "Attack"}: to hit`} kind="attack" className="font-semibold text-accent-400">{fmt(attackBonus(c, a))}</RollButton>
+                </span>
+                <span className="truncate text-sm" onClick={(e) => e.preventDefault()}>
+                  {a.damage ? (
+                    <RollButton expression={withBonus(a.damage, damageBonus(c, a))} label={`${a.name || "Attack"}: damage`} kind="damage">
+                      {withBonus(a.damage, damageBonus(c, a))}
+                    </RollButton>
+                  ) : null}
                   {a.damageType && <span className="text-ink-400"> {a.damageType}</span>}
                 </span>
                 <span className="text-center text-ink-600 transition group-open:rotate-90">›</span>

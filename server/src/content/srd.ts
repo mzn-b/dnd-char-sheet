@@ -2,7 +2,7 @@ import { cachedFetch } from "./http.js";
 import {
   SKILL_KEYS, skillName, toSkillKey, singleClassSlots,
   type Ability, type Choice, type ChoiceOption, type ClassRules, type ContentDetail, type ContentSummary,
-  type ContentType, type Effect, type EquipmentChoice, type LevelRules,
+  type ContentType, type Effect, type EquipmentChoice, type GrantedSpell, type ItemData, type LevelRules,
 } from "./types.js";
 
 const BASE = (process.env.SRD_API_URL ?? "https://www.dnd5eapi.co") + "/api/2014";
@@ -88,6 +88,7 @@ export async function getSrd(type: ContentType, key: string): Promise<ContentDet
           AC: r.armor_class ? `${r.armor_class.base}${r.armor_class.dex_bonus ? " + Dex" : ""}` : undefined,
           Properties: r.properties?.map((p: any) => p.name).join(", ") || undefined,
         }),
+        item: itemData(r),
       };
     case "background": {
       const effects: Effect[] = (r.starting_proficiencies ?? [])
@@ -96,15 +97,18 @@ export async function getSrd(type: ContentType, key: string): Promise<ContentDet
       const other = (r.starting_proficiencies ?? []).filter((p: any) => !p.index.startsWith("skill-")).map((p: any) => p.name);
       if (other.length) effects.push({ kind: "proficiency", value: `Tools: ${other.join(", ")}` });
       if (r.language_options) effects.push({ kind: "proficiency", value: `Languages: ${r.language_options.choose} of your choice` });
+      const strings = (o: any) => optionsOf(o).map((x: any) => x.string ?? x.desc).filter(Boolean);
       return {
         ...base,
         description: r.feature ? `**${r.feature.name}.** ${join(r.feature.desc)}` : "",
         meta: compact({ "Skill Proficiencies": effects.filter((e) => e.kind === "skill").map((e: any) => skillName(e.skill)).join(", ") }),
         effects,
+        suggestions: { traits: strings(r.personality_traits), ideals: strings(r.ideals), bonds: strings(r.bonds), flaws: strings(r.flaws) },
+        startingEquipment: startingEquipment(r),
       };
     }
     case "subclass":
-      return { ...base, classes: [r.class?.index], description: join(r.desc), meta: { Flavor: r.subclass_flavor ?? "" } };
+      return { ...base, classes: [r.class?.index], description: join(r.desc), meta: { Flavor: r.subclass_flavor ?? "" }, grantedSpells: subclassSpells(r) };
     case "feature":
       return { ...base, description: join(r.desc), meta: {}, choices: featureChoices(r) };
     default:
@@ -270,19 +274,60 @@ function startingEquipment(cls: any): EquipmentChoice[] {
     : [];
   return [
     ...fixed,
-    ...(cls.starting_equipment_options ?? []).map((c: any) => ({
-      label: c.desc ?? "Equipment",
-      options: optionsOf(c).map((o: any, i: number) => ({ label: `(${String.fromCharCode(97 + i)})`, items: ref(o) })),
-    })),
+    ...(cls.starting_equipment_options ?? []).map((c: any) => {
+      const category = c.from?.equipment_category?.name;
+      return {
+        label: c.desc ?? (category ? `Choose ${c.choose ?? 1} from ${category}` : "Equipment"),
+        options: optionsOf(c).length
+          ? optionsOf(c).map((o: any, i: number) => ({ label: `(${String.fromCharCode(97 + i)})`, items: ref(o) }))
+          : [{ label: "(a)", items: [{ name: `Any ${category ?? "item"}`, qty: c.choose ?? 1 }] }],
+      };
+    }),
   ];
 }
 
+/** Domain / oath / circle spells: always prepared from the listed class level. */
+function subclassSpells(r: any): GrantedSpell[] {
+  return (r.spells ?? []).map((s: any) => ({
+    level: Number(String(s.prerequisites?.find((p: any) => p.type === "level")?.index ?? "-1").split("-").pop()) || 1,
+    spell: { source: "srd", key: s.spell.index, name: s.spell.name },
+    mode: "prepared",
+  }));
+}
+
+function itemData(r: any): ItemData {
+  const data: ItemData = { weight: r.weight };
+  if (r.armor_category) {
+    data.armor = {
+      base: r.armor_class?.base ?? 10,
+      type: r.armor_category === "Shield" ? "shield" : (r.armor_category.toLowerCase() as "light" | "medium" | "heavy"),
+      stealthDisadvantage: r.stealth_disadvantage,
+      strength: r.str_minimum || undefined,
+    };
+  }
+  if (r.damage) {
+    const props: string[] = r.properties?.map((p: any) => p.name) ?? [];
+    data.weapon = {
+      damage: r.damage.damage_dice,
+      damageType: r.damage.damage_type?.name?.toLowerCase() ?? "",
+      versatile: r.two_handed_damage?.damage_dice,
+      properties: props,
+      ranged: r.weapon_range === "Ranged",
+      finesse: props.includes("Finesse"),
+      range: r.range?.long ? `${r.range.normal}/${r.range.long} ft` : r.throw_range ? `${r.throw_range.normal}/${r.throw_range.long} ft` : undefined,
+      category: r.category_range,
+    };
+  }
+  return data;
+}
+
 export async function getSubclassLevels(index: string) {
-  const levels = await srd<any[]>(`subclasses/${index}/levels`).catch(() => []);
+  const [levels, sub] = await Promise.all([srd<any[]>(`subclasses/${index}/levels`).catch(() => []), srd<any>(`subclasses/${index}`).catch(() => null)]);
   return {
     spellcastingAbility: null,
     casterType: null,
     spellModel: null,
+    grantedSpells: sub ? subclassSpells(sub) : [],
     levels: levels.map((l) => ({
       level: l.level,
       features: (l.features ?? []).map((f: any) => ({ key: f.index, name: f.name, source: "srd" })),

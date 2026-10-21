@@ -1,11 +1,30 @@
 import { useState } from "react";
-import { CONDITIONS, fmt, initiative } from "../../lib/rules";
+import { CONDITIONS, CONDITION_TEXT, EXHAUSTION_TEXT, armorClassBreakdown, fmt, initiative, saveBonus } from "../../lib/rules";
+import { d20 } from "../../lib/dice";
+import { RollButton, useRoll } from "../dice";
+import { ResourcesPanel } from "./ResourcesPanel";
 import type { Character } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
 import { NumberField, Pips, Section } from "../ui";
 
 export function CombatPanel({ c, update }: { c: Character; update: Update }) {
   const [amount, setAmount] = useState("");
+  const [concentrationDc, setConcentrationDc] = useState<number | null>(null);
+  const { roll } = useRoll();
+  const ac = armorClassBreakdown(c);
+  const auto = c.acMode === "auto";
+
+  const rollDeathSave = () => {
+    const r = roll("1d20", { label: "Death saving throw", kind: "save" });
+    update((d) => {
+      if (r.total === 20) {
+        d.hp.current = 1;
+        d.deathSaves = { successes: 0, failures: 0 };
+      } else if (r.total === 1) d.deathSaves.failures = Math.min(3, d.deathSaves.failures + 2);
+      else if (r.total >= 10) d.deathSaves.successes = Math.min(3, d.deathSaves.successes + 1);
+      else d.deathSaves.failures = Math.min(3, d.deathSaves.failures + 1);
+    });
+  };
   const hpPct = c.hp.max ? Math.max(0, Math.min(100, (c.hp.current / c.hp.max) * 100)) : 0;
   const hitDice = Object.entries(
     c.classes.reduce<Record<string, number>>((acc, k) => ({ ...acc, [k.hitDie]: (acc[k.hitDie] ?? 0) + k.level }), {}),
@@ -25,18 +44,33 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
         d.hp.current = Math.max(0, d.hp.current - (n - absorbed));
       }
     });
+    if (kind === "damage" && c.concentration) setConcentrationDc(Math.max(10, Math.floor(n / 2)));
     setAmount("");
   };
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-3 gap-2">
-        <Stat label="Armor Class">
-          <NumberField className="field text-center font-display text-3xl" value={c.armorClass} onChange={(n) => update((d) => void (d.armorClass = n))} />
+        <Stat label="Armor Class" hint={auto ? ac.parts.join(" · ") : "Typed by hand"}>
+          {auto ? (
+            <span className="font-display text-3xl">{ac.total}</span>
+          ) : (
+            <NumberField className="field text-center font-display text-3xl" value={c.armorClass} onChange={(n) => update((d) => void (d.armorClass = n))} />
+          )}
+          <div className="flex items-center justify-center gap-1 text-[10px] text-ink-600">
+            <button className="hover:text-accent-400" onClick={() => update((d) => void (d.acMode = auto ? "manual" : "auto", d.armorClass = ac.total))} title="Switch between automatic and typed AC">
+              {auto ? "auto" : "manual"}
+            </button>
+            {auto && (
+              <label className="flex items-center gap-0.5" title="Bonus from magic items, spells…">
+                +<NumberField className="field w-6 py-0 text-center text-xs" value={c.acBonus ?? 0} onChange={(n) => update((d) => void (d.acBonus = n))} />
+              </label>
+            )}
+          </div>
         </Stat>
         <Stat label="Initiative" hint={`Dex ${fmt(initiative(c) - c.initiativeBonus)} + misc`}>
           <div className="flex items-baseline justify-center gap-1">
-            <span className="font-display text-3xl">{fmt(initiative(c))}</span>
+            <RollButton expression={d20(initiative(c))} label="Initiative" className="font-display text-3xl">{fmt(initiative(c))}</RollButton>
           </div>
           <label className="flex items-center justify-center gap-1 text-[10px] text-ink-600">
             misc
@@ -45,7 +79,7 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
         </Stat>
         <Stat label="Speed">
           <div className="flex items-baseline justify-center">
-            <NumberField className="field w-16 text-center font-display text-3xl" value={c.speed} onChange={(n) => update((d) => void (d.speed = n))} />
+            <NumberField className={`field w-16 text-center font-display text-3xl ${ac.tooHeavy ? "text-blood-500" : ""}`} value={c.speed} onChange={(n) => update((d) => void (d.speed = n))} title={ac.tooHeavy ? "Your armor's Strength requirement isn't met: speed −10 ft" : undefined} />
             <span className="text-xs text-ink-400">ft</span>
           </div>
         </Stat>
@@ -86,6 +120,25 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
         </div>
       </Section>
 
+      {c.concentration && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-arcane-500/50 bg-arcane-500/10 px-3 py-2 text-sm">
+          <span className="text-arcane-400">◎ Concentrating on <b>{c.concentration.name}</b></span>
+          {concentrationDc && (
+            <RollButton expression={d20(saveBonus(c, "con"))} label={`Concentration (DC ${concentrationDc})`} kind="save" className="btn ml-auto px-2 py-0.5 text-xs">
+              Roll Con save DC {concentrationDc}
+            </RollButton>
+          )}
+          <button className={`btn-ghost px-2 py-0.5 text-xs ${concentrationDc ? "" : "ml-auto"}`} onClick={() => { setConcentrationDc(null); update((d) => void (d.concentration = null)); }}>End</button>
+        </div>
+      )}
+
+      {(ac.stealthDisadvantage || ac.tooHeavy) && (
+        <p className="text-xs text-accent-400">
+          {ac.stealthDisadvantage && "Armor: disadvantage on Stealth. "}
+          {ac.tooHeavy && "Armor too heavy for your Strength: speed −10 ft."}
+        </p>
+      )}
+
       <div className="grid grid-cols-2 gap-2">
         <Section title="Hit Dice">
           {hitDice.length === 0 && <p className="text-xs text-ink-600">Gained with class levels</p>}
@@ -97,7 +150,7 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
             </div>
           ))}
         </Section>
-        <Section title="Death Saves">
+        <Section title="Death Saves" action={c.hp.current <= 0 ? <button className="btn px-2 py-0.5 text-xs" onClick={rollDeathSave}>Roll</button> : undefined}>
           <div className="space-y-1 text-sm">
             <div className="flex items-center justify-between">
               <span className="text-ink-400">Successes</span>
@@ -123,6 +176,7 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
             return (
               <button
                 key={cond}
+                title={CONDITION_TEXT[cond]}
                 className={`chip transition ${on ? "border-blood-500 bg-blood-500/15 text-blood-500" : "hover:border-ink-600"}`}
                 onClick={() => update((d) => void (d.conditions = on ? d.conditions.filter((x) => x !== cond) : [...d.conditions, cond]))}
               >
@@ -131,7 +185,15 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
             );
           })}
         </div>
+        {(c.conditions.length > 0 || c.exhaustion > 0) && (
+          <ul className="mt-2 space-y-1 text-xs text-ink-400">
+            {c.conditions.map((cond) => <li key={cond}><b className="text-blood-500">{cond}:</b> {CONDITION_TEXT[cond]}</li>)}
+            {c.exhaustion > 0 && <li><b className="text-blood-500">Exhaustion {c.exhaustion}:</b> {EXHAUSTION_TEXT.slice(1, c.exhaustion + 1).join("; ")}</li>}
+          </ul>
+        )}
       </Section>
+
+      <ResourcesPanel c={c} update={update} />
     </div>
   );
 }
