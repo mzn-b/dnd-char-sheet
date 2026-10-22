@@ -18,9 +18,19 @@ const byLevel = (table: Record<string, string>, level: number) =>
 export function diceAt(dice: SpellDice | undefined, spellLevel: number, castLevel: number, characterLevel: number): string | undefined {
   if (!dice?.base && !dice?.bySlot && !dice?.byCharacterLevel) return undefined;
   if (spellLevel === 0) return dice.byCharacterLevel ? byLevel(dice.byCharacterLevel, characterLevel) ?? dice.base : dice.base;
-  if (dice.bySlot?.[String(castLevel)]) return dice.bySlot[String(castLevel)];
+  // Slot tables: exact SRD rows, or tiers like Elemental Weapon's {5: "2d4", 7: "3d4"}.
+  const tier = dice.bySlot && byLevel(dice.bySlot, castLevel);
+  if (tier) return tier;
   if (!dice.base) return undefined;
-  return dice.perSlot ? addDice(dice.base, dice.perSlot, Math.max(0, castLevel - spellLevel)) : dice.base;
+  const raw = dice.perSlot ? addDice(dice.base, dice.perSlot, Math.max(0, castLevel - spellLevel)) : dice.base;
+  return capDice(raw, dice.max);
+}
+
+/** Upcast caps ("to a maximum of 6d10"): 9d10 with max 6d10 → 6d10. */
+function capDice(roll: string, max?: string): string {
+  const r = roll.match(/^(\d+)d(\d+)$/);
+  const m = max?.match(/^(\d+)d(\d+)$/);
+  return r && m && r[2] === m[2] && Number(r[1]) > Number(m[1]) ? max! : roll;
 }
 
 /** "8d6 fire" / "1d8 + 3 healing". */

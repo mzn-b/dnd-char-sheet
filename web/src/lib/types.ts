@@ -129,6 +129,8 @@ export interface SpellDice {
   bySlot?: Record<string, string>;
   byCharacterLevel?: Record<string, string>;
   addModifier?: boolean;
+  /** Upcasting stops here (Hail of Thorns: 6d10). */
+  max?: string;
   save?: string;
   attack?: "melee" | "ranged";
 }

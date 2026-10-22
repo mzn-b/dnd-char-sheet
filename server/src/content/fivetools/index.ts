@@ -53,7 +53,8 @@ export async function list5etools(type: ContentType, opts: { cls?: string }): Pr
 
 function spellClasses(ds: Dataset, s: any): string[] {
   const entry = ds.spellClasses[s.source]?.[s.name];
-  const fromIndex = [...(entry?.class ?? []), ...(entry?.classVariant ?? [])].map((c: any) => lc(c.name));
+  // Class lists tagged for the 2024 classes (source XPHB) aren't 2014 lists.
+  const fromIndex = [...(entry?.class ?? []), ...(entry?.classVariant ?? [])].filter((c: any) => c.source !== "XPHB").map((c: any) => lc(c.name));
   const inline = (s.classes?.fromClassList ?? []).map((c: any) => lc(c.name));
   return [...new Set([...fromIndex, ...inline])];
 }
@@ -154,9 +155,15 @@ function fivetoolsSpellDice(s: any): SpellDice | undefined {
     save: s.savingThrow?.[0] ? s.savingThrow[0][0].toUpperCase() + s.savingThrow[0].slice(1) : undefined,
     attack: s.spellAttack?.[0] ? (s.spellAttack[0] === "M" ? "melee" : "ranged") : undefined,
     base: (heal ? raw.match(/\{@dice (\d+d\d+)/) : raw.match(/\{@damage (\d+d\d+(?:\s*\+\s*\d+)?)/))?.[1]?.replace(/\s+/g, ""),
-    perSlot: higher.match(/\{@scale(?:damage|dice) [^|}]+\|[^|}]+\|(\d+d\d+)/)?.[1],
+    // Only "increases by 1d6 for each slot level above…" is a per-slot step; Elemental Weapon's
+    // "increases to 2d4 when you use a 5th-level slot" is a tier and comes from the text below.
+    perSlot: /for each (?:slot )?level above/i.test(higher) ? higher.match(/\{@scale(?:damage|dice) [^|}]+\|[^|}]+\|(\d+d\d+)/)?.[1] : undefined,
     byCharacterLevel: scaling?.scaling,
-    addModifier: heal && /spellcasting ability modifier/.test(raw) ? true : undefined,
+    // Healing that adds the modifier to the dice ("1d8 + your spellcasting ability modifier"), not
+    // Healing Spirit's "a number of times equal to 1 + your spellcasting ability modifier".
+    addModifier: heal && /\{@dice \d+d\d+\}\s*\+\s*your spellcasting ability modifier/.test(raw) ? true : undefined,
+    // "to a maximum of {@damage 6d10}" (Hail of Thorns' upcast cap).
+    max: higher.match(/maximum of \{@(?:damage|dice) (\d+d\d+)\}/)?.[1],
   };
   if (scaling?.scaling) structured.base = scaling.scaling["1"];
   return mergeDice(structured, diceFromText(renderEntries(s.entries), renderEntries(s.entriesHigherLevel ?? "")));

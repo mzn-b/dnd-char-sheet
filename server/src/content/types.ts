@@ -78,6 +78,8 @@ export interface SpellDice {
   byCharacterLevel?: Record<string, string>;
   /** Healing that adds the spellcasting modifier. */
   addModifier?: boolean;
+  /** Upcasting stops here (Hail of Thorns: 6d10). */
+  max?: string;
   save?: string;
   attack?: "melee" | "ranged";
 }
