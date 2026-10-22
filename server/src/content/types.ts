@@ -135,6 +135,15 @@ export interface ItemData {
   charges?: number;
   /** Numeric effects applied automatically while the item is equipped (and attuned, if required). */
   bonuses?: ItemBonuses;
+  /** What an equipment pack (Explorer's Pack, Caltrops (bag of 20)) holds. */
+  contents?: PackItem[];
+}
+
+export interface PackItem {
+  name: string;
+  qty: number;
+  /** The item in the rules data, when it has an entry. */
+  ref?: { source: ContentSource; key: string };
 }
 
 export interface ItemBonuses {

@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import { uid } from "../../lib/defaults";
 import { attackFromItem, itemFromDetail, resolveItem } from "../../lib/items";
 import { genericOptions } from "../../lib/genericItems";
 import { attunedCount, attunementMax, carrying } from "../../lib/rules";
 import { itemActive, targetLabel } from "../../lib/modifiers";
-import type { Character, ContentSummary, Item } from "../../lib/types";
+import type { Character, ContentSummary, Item, PackItem } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
 import { ContentDetailView, ContentPicker } from "../ContentBrowser";
 import { Modal, NumberField, Pips, Section, TextField } from "../ui";
@@ -16,6 +16,8 @@ const COIN_VALUE_CP = { cp: 1, sp: 10, ep: 50, gp: 100, pp: 1000 };
 export function InventoryTab({ c, update }: { c: Character; update: Update }) {
   const [picking, setPicking] = useState(false);
   const [viewing, setViewing] = useState<Item | null>(null);
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggleOpen = (id: string) => setOpen((o) => { const n = new Set(o); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const load = carrying(c);
   const totalWeight = load.weight;
   const capacity = load.capacity;
@@ -43,6 +45,29 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
       else d.equipment = d.equipment.filter((x) => x.id !== ph.id);
       if (attack && !d.attacks.some((a) => a.name === real.name)) d.attacks.push({ ...attack, itemId: same?.id ?? real.id });
     });
+  };
+
+  /** Swap one pack for the items inside it, adding to ones already carried. */
+  const unpack = async (pack: Item, contents: PackItem[]) => {
+    const items = await Promise.all(
+      contents.map(async (e) => {
+        const det = e.ref ? await api.detail("item", e.ref.source, e.ref.key).catch(() => null) : null;
+        return det ? { ...itemFromDetail(det, e.qty), name: e.name } : { id: uid(), name: e.name, qty: e.qty, weight: 0, equipped: false, notes: "" };
+      }),
+    );
+    update((d) => {
+      const p = d.equipment.find((x) => x.id === pack.id);
+      if (!p) return;
+      let at = d.equipment.indexOf(p);
+      for (const it of items) {
+        const same = d.equipment.find((x) => x.name.toLowerCase() === it.name.toLowerCase() && !x.data?.contents);
+        if (same) same.qty += it.qty;
+        else d.equipment.splice(++at, 0, it);
+      }
+      if (p.qty > 1) p.qty -= 1;
+      else d.equipment = d.equipment.filter((x) => x.id !== p.id);
+    });
+    setOpen((o) => { const n = new Set(o); n.delete(pack.id); return n; });
   };
 
   const makeAttack = async (item: Item) => {
@@ -87,7 +112,19 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
           <div key={i.id} className="grid grid-cols-[2rem_1fr_3.5rem_3.5rem_1fr_auto] items-center gap-1 rounded px-1 py-0.5 hover:bg-ink-850">
             <input type="checkbox" className="accent-accent-500" checked={i.equipped} onChange={(e) => toggleEquip(i, e.target.checked)} />
             <div className="min-w-0">
-              <TextField value={i.name} placeholder="Item name" onChange={(v) => edit(i.id, { name: v })} />
+              <div className="flex items-center">
+                {isPack(i) && (
+                  <button
+                    className="btn-ghost shrink-0 px-1 py-0 text-xs text-ink-400"
+                    title={open.has(i.id) ? "Hide contents" : "Show what's inside"}
+                    aria-expanded={open.has(i.id)}
+                    onClick={() => toggleOpen(i.id)}
+                  >
+                    {open.has(i.id) ? "▾" : "▸"}
+                  </button>
+                )}
+                <TextField value={i.name} placeholder="Item name" onChange={(v) => edit(i.id, { name: v })} />
+              </div>
               {genericOptions(i.name) && !i.ref && (
                 <select
                   className="field-boxed mx-1.5 my-0.5 w-auto py-0.5 text-xs"
@@ -131,6 +168,7 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
               <button className="btn-ghost px-1.5 py-0.5 text-[11px]" title="Create an attack from this item" onClick={() => makeAttack(i)}>+Atk</button>
               <button className="btn-ghost px-1.5 py-0.5 text-xs hover:text-blood-500" title="Remove" onClick={() => update((d) => void (d.equipment = d.equipment.filter((x) => x.id !== i.id)))}>✕</button>
             </div>
+            {isPack(i) && open.has(i.id) && <PackContents item={i} edit={edit} onUnpack={unpack} />}
           </div>
         ))}
         <div className="mt-3 flex flex-wrap justify-end gap-x-4 text-xs text-ink-400">
@@ -183,6 +221,64 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
             </div>
           </div>
         </Modal>
+      )}
+    </div>
+  );
+}
+
+/** Equipment packs and other containers sold full: their contents can be listed and unpacked. */
+const isPack = (i: Item) => !!i.data?.contents?.length || /\bpack\b/i.test(i.name);
+
+/** A pack's contents, looked up (and remembered on the item) for items added before contents were recorded. */
+function PackContents({ item, edit, onUnpack }: { item: Item; edit: (id: string, patch: Partial<Item>) => void; onUnpack: (pack: Item, contents: PackItem[]) => Promise<void> }) {
+  const contents = item.data?.contents;
+  const [state, setState] = useState<"idle" | "loading" | "missing" | "unpacking">("idle");
+  useEffect(() => {
+    if (contents?.length || state !== "idle") return;
+    setState("loading");
+    (async () => {
+      const det = item.ref
+        ? await api.detail("item", item.ref.source, item.ref.key).catch(() => null)
+        : await resolveItem(item.name, item.qty).then((r) => (r.ref ? api.detail("item", r.ref.source, r.ref.key) : null)).catch(() => null);
+      if (det?.item?.contents?.length) {
+        edit(item.id, {
+          data: { ...item.data, ...det.item },
+          ref: item.ref ?? { source: det.source, key: det.key, name: det.name, type: "item" },
+          ...(!item.weight && det.item.weight ? { weight: det.item.weight } : {}),
+          // Older sheets stored "Burglar'S Pack".
+          ...(item.name.toLowerCase() === det.name.toLowerCase() ? { name: det.name } : {}),
+        });
+        setState("idle");
+      } else setState("missing");
+    })();
+  }, [contents, state, item, edit]);
+  return (
+    <div className="col-span-full mb-1 ml-10 rounded-lg border border-ink-800 bg-ink-900/60 px-3 py-2 text-sm">
+      {contents?.length ? (
+        <>
+          <ul className="grid gap-x-6 gap-y-0.5 sm:grid-cols-2">
+            {contents.map((e, k) => (
+              <li key={k} className="flex gap-2">
+                <span className="w-8 shrink-0 text-right tabular-nums text-ink-400">{e.qty}×</span>
+                <span>{e.name}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              className="btn px-2 py-0.5 text-xs"
+              disabled={state === "unpacking"}
+              title="Replace the pack with the separate items, so you can track rations, torches and the like"
+              onClick={async () => { setState("unpacking"); await onUnpack(item, contents).finally(() => setState("idle")); }}
+            >
+              {state === "unpacking" ? "Unpacking…" : item.qty > 1 ? "Unpack one" : "Unpack into separate items"}
+            </button>
+          </div>
+        </>
+      ) : state === "missing" ? (
+        <p className="text-xs text-ink-600">No contents listed for this item in the rules data.</p>
+      ) : (
+        <p className="text-xs text-ink-400">Looking up contents…</p>
       )}
     </div>
   );

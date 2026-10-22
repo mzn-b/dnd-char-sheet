@@ -737,8 +737,23 @@ function itemDetail(ds: Dataset, it: any): ContentDetail {
     ...summary(ds, "item", it.name, key(it.name, it.source), it.source),
     description: renderEntries(it.entries ?? ""),
     meta: Object.fromEntries(Object.entries(meta).filter(([, v]) => v)) as Record<string, string>,
-    item: itemData(it, type),
+    item: { ...itemData(it, type), contents: packContents(ds, it) },
   };
+}
+
+/** A pack's contents ("backpack|phb", {item, quantity}, {special: "10 feet of string"}) as named items. */
+function packContents(ds: Dataset, it: any): ItemData["contents"] {
+  if (!Array.isArray(it.packContents)) return undefined;
+  return it.packContents.map((e: any) => {
+    const qty = typeof e === "object" && e.quantity ? Number(e.quantity) : 1;
+    if (typeof e === "object" && e.special) return { name: e.special, qty };
+    const [name, src = "PHB"] = String(typeof e === "string" ? e : e.item).split("|");
+    const match = (x: any) => x.name.toLowerCase() === name.toLowerCase() && x.source.toLowerCase() === src.toLowerCase();
+    const found = ds.baseitem.find(match) ?? ds.item.find(match);
+    return found
+      ? { name: found.name, qty, ref: { source: "5etools", key: key(found.name, found.source) } }
+      : { name: titleCase(name), qty };
+  });
 }
 
 const num = (v: unknown) => (v == null ? undefined : Number(String(v).replace(/[^\d-]/g, "")) || undefined);

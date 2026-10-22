@@ -372,6 +372,7 @@ function subclassSpells(r: any): GrantedSpell[] {
 
 function itemData(r: any): ItemData {
   const data: ItemData = { weight: r.weight };
+  if (r.contents?.length) data.contents = r.contents.map((e: any) => ({ name: e.item.name, qty: e.quantity ?? 1, ref: { source: "srd", key: e.item.index } }));
   if (r.armor_category) {
     data.armor = {
       base: r.armor_class?.base ?? 10,

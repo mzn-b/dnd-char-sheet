@@ -138,6 +138,15 @@ export interface ItemData {
   rarity?: string;
   charges?: number;
   bonuses?: ItemBonuses;
+  /** What an equipment pack (Explorer's Pack, Caltrops (bag of 20)) holds. */
+  contents?: PackItem[];
+}
+
+export interface PackItem {
+  name: string;
+  qty: number;
+  /** The item in the rules data, when it has an entry. */
+  ref?: { source: ContentSource; key: string };
 }
 
 /** Numeric bonuses a magic item grants (applied automatically while equipped/attuned). */
