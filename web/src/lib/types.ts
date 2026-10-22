@@ -324,6 +324,8 @@ export interface Companion {
   ref?: ContentRef;
   /** Stat block captured when added, so it works offline and can be edited. */
   monster?: MonsterData;
+  /** Combat round it appeared in, when added during combat (it needs its initiative then). */
+  joinedRound?: number;
 }
 
 export type CreatureRole = "wildshape" | "familiar" | "steed" | "companion" | "summon" | "other";

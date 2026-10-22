@@ -2,7 +2,7 @@ import { uid } from "./defaults";
 import { describeRoll, extractRolls, resolveRoll } from "./rollText";
 import { classResources } from "./resources";
 import { CONDITION_TEXT, abilityMod, totalLevel } from "./rules";
-import type { Character, ContentDetail, SpellEntry } from "./types";
+import type { Character, Companion, ContentDetail, SpellEntry } from "./types";
 import { featureParts } from "./featureSections";
 import { scaledFeatureDice } from "./featureRolls";
 
@@ -378,8 +378,43 @@ export function endTurn(d: Character) {
  * All reminders right now: active effects, features you have, reaction spells you know,
  * conditions and concentration.
  */
+/** Add a creature to the sheet; during combat it's marked as joining this round, so its initiative is asked for. */
+export function addCompanion(d: Character, p: Companion) {
+  d.companions = [...(d.companions ?? []), d.combat?.active ? { ...p, joinedRound: d.combat.round } : p];
+}
+
+/**
+ * How a creature takes its turns (2014 rules): a familiar rolls its own initiative (Find Familiar); a Drakewarden
+ * drake or Tasha's primal companion shares yours and acts right after you; a PHB Beast Master companion acts on
+ * your turn when commanded; a controlled mount acts on your initiative.
+ */
+function initiativeNote(c: Character, p: Companion): string {
+  const has = (re: RegExp) => featureParts(c).some((x) => re.test(x.name));
+  switch (p.role) {
+    case "familiar":
+      return `${p.name}: roll its initiative (a familiar acts on its own turn)`;
+    case "steed":
+      return `${p.name}: acts on your initiative while you ride and control it; if it acts independently, roll its initiative`;
+    case "companion":
+      if (has(/^(drake companion|drakewarden|primal companion)$/i)) return `${p.name}: shares your initiative and takes its turn right after yours`;
+      if (has(/^ranger'?s companion$/i)) return `${p.name}: acts on your turn when you command it (no initiative of its own)`;
+      return `${p.name}: roll its initiative, unless its feature says it shares yours`;
+    default:
+      return `${p.name}: roll its initiative (Summon spells instead share yours and act right after you; Conjure spells roll once for the group)`;
+  }
+}
+
 export function reminders(c: Character, spellDetails: Record<string, ContentDetail | undefined> = {}): Reminder[] {
   const out: Reminder[] = [];
+  // Creatures need an initiative in the first round, or in the round they're summoned.
+  const s = c.combat;
+  if (s?.active) {
+    for (const p of c.companions ?? []) {
+      if (p.role === "wildshape" || p.hp.current <= 0) continue;
+      const joined = p.joinedRound ?? 1;
+      if (joined === s.round) out.push({ when: "turnStart", text: initiativeNote(c, p), source: p.name });
+    }
+  }
   for (const e of c.combat?.effects ?? []) for (const r of e.reminders) out.push({ ...r, source: e.name });
   const handled = new Set<string>();
   // Features, chosen options and the feature sections inside them (Dreadful Strikes inside "Fey Wanderer").

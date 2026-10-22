@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { ROLE_LABEL, wildShapeLimits } from "../lib/extras";
 import { wildShapeInto, type Decision } from "../lib/featureUse";
+import { addCompanion } from "../lib/combat";
 import type { Character, Companion } from "../lib/types";
 import type { Update } from "../lib/useCharacter";
 import { MonsterPicker } from "./MonsterPicker";
@@ -31,7 +32,7 @@ export function DecisionProvider({ c, update, children }: { c: Character; update
           onAddAndChoose={(p) => {
             let w: string | undefined;
             update((d) => {
-              d.companions = [...(d.companions ?? []), p];
+              addCompanion(d, p);
               w = wildShapeInto(d, p.id);
             });
             setWarning(w);
@@ -50,7 +51,8 @@ export function DecisionProvider({ c, update, children }: { c: Character; update
           onAdd={(p) =>
             update((d) => {
               const replaced = open.replace ? (d.companions ?? []).filter((x) => x.role === open.role) : [];
-              d.companions = [...(d.companions ?? []).filter((x) => !replaced.includes(x)), { ...p, role: open.role, notes: replaced[0]?.notes ?? p.notes }];
+              d.companions = (d.companions ?? []).filter((x) => !replaced.includes(x));
+              addCompanion(d, { ...p, role: open.role, notes: replaced[0]?.notes ?? p.notes });
             })
           }
         />

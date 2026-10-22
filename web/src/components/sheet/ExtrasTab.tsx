@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { wildShapeInto } from "../../lib/featureUse";
+import { addCompanion } from "../../lib/combat";
 import { multiattackCount, spendEconomy } from "../../lib/economy";
 import { uid } from "../../lib/defaults";
 import { ROLE_LABEL, damageCreature, damageWildShape, revertWildShape, wildShapeLimits } from "../../lib/extras";
@@ -28,7 +29,7 @@ export function ExtrasTab({ c, update }: { c: Character; update: Update }) {
         <span className="ml-auto" />
         <button
           className="btn"
-          onClick={() => update((d) => void (d.companions = [...(d.companions ?? []), { id: uid(), name: "New creature", kind: "", ac: 10, hp: { max: 1, current: 1 }, speed: "30 ft", notes: "", role: "other" }]))}
+          onClick={() => update((d) => addCompanion(d, { id: uid(), name: "New creature", kind: "", ac: 10, hp: { max: 1, current: 1 }, speed: "30 ft", notes: "", role: "other" }))}
         >
           + Custom creature
         </button>
@@ -49,7 +50,7 @@ export function ExtrasTab({ c, update }: { c: Character; update: Update }) {
           </div>
         </Section>
       ))}
-      {adding && <MonsterPicker c={c} onClose={() => setAdding(false)} onAdd={(p) => update((d) => void (d.companions = [...(d.companions ?? []), p]))} />}
+      {adding && <MonsterPicker c={c} onClose={() => setAdding(false)} onAdd={(p) => update((d) => addCompanion(d, p))} />}
     </div>
   );
 }
