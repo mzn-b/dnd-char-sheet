@@ -142,8 +142,15 @@ export const EFFECTS: EffectDef[] = [
   { match: /^absorb elements$/i, untilNextTurn: true, reminders: [{ when: "damaged", text: "Absorb Elements: resistance to the triggering damage type until the start of your next turn" }, { when: "hit", text: "Absorb Elements: your first melee hit on your next turn deals +1d6 of the absorbed type (+1d6 per slot above 1st)" }] },
   { match: /^(dodge)$/i, label: "Dodge", always: true, untilNextTurn: true, reminders: [{ when: "always", text: "Dodging: attacks against you have disadvantage, advantage on Dex saves" }] },
   { match: /^wild shape$/i, label: "Wild Shape", rounds: null, resource: "druid:wildshape", activatedBy: /^wild shape$/i, reminders: [{ when: "always", text: "Wild Shape: use the beast's stats; revert at 0 HP (excess damage carries over)" }] },
-  { match: /^bladesong$/i, label: "Bladesong", rounds: 10, activatedBy: /^bladesong$/i, reminders: [{ when: "always", text: "Bladesong: +INT to AC, +10 ft speed, advantage on Acrobatics, +INT to concentration saves" }] },
-  { match: /^patient defense$/i, label: "Patient Defense", untilNextTurn: true, resource: "monk:ki", activatedBy: /^flurry of blows|patient defense/i, reminders: [{ when: "always", text: "Patient Defense: Dodging until your next turn" }] },
+  { match: /^bladesong$/i, label: "Bladesong", rounds: 10, activatedBy: /^bladesong$/i, reminders: [{ when: "always", text: "Bladesong: +INT to AC (applied), +10 ft speed (applied), advantage on Acrobatics, +INT to concentration saves; ends in medium/heavy armor, with a shield or a two-handed attack" }] },
+  {
+    match: /^hexblade'?s curse$/i, label: "Hexblade's Curse", rounds: 10, activatedBy: /^hexblade'?s curse$/i,
+    reminders: [
+      { when: "hit", text: "Hexblade's Curse: +proficiency bonus damage against the cursed target; crit on 19–20 against it" },
+      { when: "always", text: "Hexblade's Curse: if the cursed target dies, regain HP equal to your warlock level + CHA modifier (min 1)" },
+    ],
+  },
+  { match: /^patient defense$/i, label: "Patient Defense", untilNextTurn: true, resource: "monk:ki", activatedBy: /^patient defense$/i, reminders: [{ when: "always", text: "Patient Defense: Dodging until your next turn" }] },
   { match: /^action surge$/i, label: "Action Surge", untilNextTurn: true, resource: "fighter:actionsurge", activatedBy: /^action surge$/i, reminders: [{ when: "always", text: "Action Surge: take one additional action this turn" }] },
   { match: /^sacred weapon$/i, label: "Sacred Weapon", rounds: 10, activatedBy: /sacred weapon/i, resource: "paladin:channel", reminders: [{ when: "attack", text: "Sacred Weapon: add your Charisma modifier to attack rolls with the weapon" }] },
 ];
@@ -162,7 +169,7 @@ const PASSIVES: { match: RegExp; when: ReminderWhen; text: (c: Character) => str
   { match: /^agonizing blast$/i, when: "hit", text: (c) => `Agonizing Blast: add +${Math.max(0, abilityMod(c, "cha"))} (Cha) to each Eldritch Blast beam's damage` },
   { match: /^repelling blast$/i, when: "hit", text: () => "Repelling Blast: push the target 10 ft with each Eldritch Blast beam" },
   { match: /^sneak attack$/i, when: "hit", text: (c) => `Sneak Attack: +${Math.ceil((c.classes.find((k) => k.name === "Rogue")?.level ?? 1) / 2)}d6 once per turn (advantage, or an ally next to the target; finesse/ranged weapon)` },
-  { match: /^divine smite$/i, when: "hit", text: () => "Divine Smite: on a melee hit, spend a slot for 2d8 radiant (+1d8 per slot above 1st, +1d8 vs undead/fiends)" },
+  { match: /^divine smite$/i, when: "hit", text: () => "Divine Smite: on a melee hit, spend a slot for 2d8 radiant (+1d8 per slot above 1st, max 5d8; +1d8 vs undead/fiends)" },
   { match: /^great weapon master$/i, when: "attack", text: () => "Great Weapon Master: −5 to hit / +10 damage with a heavy weapon; bonus-action attack after a crit or a kill" },
   { match: /^sharpshooter$/i, when: "attack", text: () => "Sharpshooter: −5 to hit / +10 damage; no disadvantage at long range; ignore half and three-quarters cover" },
   { match: /^extra attack/i, when: "turnStart", text: (c) => `Extra Attack: the Attack action makes ${(c.classes.find((k) => k.name === "Fighter")?.level ?? 0) >= 20 ? 4 : (c.classes.find((k) => k.name === "Fighter")?.level ?? 0) >= 11 ? 3 : 2} attacks` },
@@ -214,8 +221,9 @@ function triggerSentence(text: string, re: RegExp): string | undefined {
 /** Spells that add damage when you hit: the smites, Hunter's Mark, Hex, Hail of Thorns… */
 const ON_HIT_SPELL = /\b(?:the next time you hit|the first time you hit|whenever you hit|you hit (?:the|a) (?:creature|target)[^.]{0,40}with (?:a|an) (?:weapon|melee weapon|ranged weapon) attack|when you hit (?:it|a creature|the target)|the next time you make a ranged weapon attack|(?:is )?hit by a ranged weapon attack|extra \d+d\d+ \w+ damage on a hit)\b/i;
 
+/** Has a feature, chosen option, feature section or named paragraph ("**Sacred Weapon.**" inside Channel Divinity). */
 function hasFeature(c: Character, re: RegExp) {
-  return c.features.some((f) => re.test(f.name) || f.subfeatures?.some((s) => re.test(s.name)));
+  return featureParts(c).some((p) => re.test(p.name)) || c.features.some((f) => [...(f.description ?? "").matchAll(/\*\*([^*\n]{2,60}?)\.\*\*/g)].some((m) => re.test(m[1].trim())));
 }
 
 /** Rounds for a spell duration: "Concentration, up to 1 minute" → 10. Null for instantaneous. */
@@ -284,10 +292,22 @@ export function activateEffect(d: Character, def: EffectDef, name: string) {
   addEffect(d, {
     id: uid(), name, source: "feature", startedRound: d.combat.round,
     rounds: def.untilNextTurn ? null : def.rounds ?? null, untilNextTurn: def.untilNextTurn,
-    reminders: def.reminders.map((r) => (name === "Rage" && r.when === "hit" ? { ...r, text: `Rage: +${rageDamage(d)} damage on Strength melee weapon attacks` } : r)),
+    reminders: def.reminders.map((r) => {
+      if (name === "Rage" && r.when === "hit") return { ...r, text: `Rage: +${rageDamage(d)} damage on Strength melee weapon attacks` };
+      // Persistent Rage (barbarian 15): it only ends if you fall unconscious or choose to end it.
+      if (name === "Rage" && r.when === "turnEnd" && classLevel(d, "barbarian") >= 15) return { ...r, text: "Persistent Rage: your rage ends early only if you fall unconscious or choose to end it" };
+      return r;
+    }),
     rollBonus: def.rollBonus,
   });
+  // Action Surge: one more action this turn.
+  if (name === "Action Surge") {
+    d.combat.economy.action = false;
+    d.combat.economy.attacks = 0;
+  }
 }
+
+const classLevel = (c: Character, name: string) => c.classes.find((k) => k.name.toLowerCase() === name)?.level ?? 0;
 
 export function addEffect(d: Character, effect: ActiveEffect) {
   if (!d.combat) return;
@@ -381,7 +401,9 @@ export function reminders(c: Character, spellDetails: Record<string, ContentDeta
     for (const t of TRIGGERS) {
       const sentence = triggerSentence(part.text, t.re);
       if (sentence) {
-        out.push({ when: t.when, text: `${part.name}: ${sentence}`, source: part.name });
+        // Dice that grow with level (Divine Strike 1d8 → 2d8) show their current value.
+        const scaled = scaledFeatureDice(c, part.name);
+        out.push({ when: t.when, text: `${part.name}: ${scaled ? sentence.replace(/\b\d+d\d+\b/, scaled) : sentence}`, source: part.name });
         handled.add(name);
         break;
       }

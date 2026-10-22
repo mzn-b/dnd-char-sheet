@@ -114,7 +114,8 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {casters.map((k) => {
           const a = k.spellcastingAbility!;
-          const lvl = rules[k.key]?.levels.find((l) => l.level === k.level)?.spellcasting;
+          // Subclass casters (Arcane Trickster, Eldritch Knight) take their table from the subclass.
+          const lvl = rules[k.key]?.levels.find((l) => l.level === k.level)?.spellcasting ?? subRules[k.key]?.levels.find((l) => l.level === k.level)?.spellcasting;
           // Subclass and feature spells (Gloom Stalker Magic, Druidic Warrior…) don't count against known limits.
           const mine = c.spellcasting.spells.filter((s) => s.classKey === k.key && !s.grantedBy);
           const cantrips = mine.filter((s) => s.level === 0).length;

@@ -197,6 +197,22 @@ function durationText(d: any): string {
   return d.type;
 }
 
+/** Checkable prerequisites of an option (first alternative): class level, pact boon, known spells, other options. */
+function prerequisiteReq(prereqs?: any[]): ChoiceOption["requires"] {
+  const p = prereqs?.[0];
+  if (!p) return undefined;
+  const req: NonNullable<ChoiceOption["requires"]> = {};
+  if (typeof p.level === "number") req.level = p.level;
+  else if (p.level?.level) {
+    req.level = p.level.level;
+    if (p.level.class?.name) req.className = p.level.class.name;
+  }
+  if (p.pact) req.pact = p.pact;
+  if (Array.isArray(p.spell)) req.spells = p.spell.map((x: string) => plain(`{@spell ${x.split("#")[0]}}`));
+  if (Array.isArray(p.optionalfeature)) req.features = p.optionalfeature.map((x: string) => plain(`{@optfeature ${x}}`));
+  return Object.keys(req).length ? req : undefined;
+}
+
 function prerequisiteText(prereqs?: any[]): string | undefined {
   if (!prereqs?.length) return undefined;
   return prereqs
@@ -578,7 +594,7 @@ function findSubclassFeature(ds: Dataset, r: ReturnType<typeof parseSubclassFeat
 function optionalFeatureOption(ds: Dataset, ref: string): ChoiceOption {
   const [name, source = "PHB"] = ref.split("|");
   const of = ds.optionalfeature.find((o) => lc(o.name) === lc(name) && o.source === source) ?? ds.optionalfeature.find((o) => lc(o.name) === lc(name));
-  return { key: key("of", of?.name ?? name, of?.source ?? source), name: of?.name ?? name, source: SOURCE, type: "feature", prerequisite: prerequisiteText(of?.prerequisite) };
+  return { key: key("of", of?.name ?? name, of?.source ?? source), name: of?.name ?? name, source: SOURCE, type: "feature", prerequisite: prerequisiteText(of?.prerequisite), requires: prerequisiteReq(of?.prerequisite) };
 }
 
 /** Option types (featureType) of the optional features an options block lists: ["MV:B"] for maneuvers. */
@@ -620,8 +636,10 @@ function featureChoices(ds: Dataset, name: string, entries: any, id: string): Ch
       if (types.length) {
         const options = ds.optionalfeature
           .filter((o) => o.featureType?.some((t: string) => types.includes(t)))
-          .map((o) => ({ key: key("of", o.name, o.source), name: o.name, source: SOURCE, type: "feature" as const, prerequisite: prerequisiteText(o.prerequisite) }));
-        choices.push({ id: `${id}-${choices.length}`, label: `Choose ${e.count} ${label} option${e.count > 1 ? "s" : ""}`, kind: "feature", count: e.count, options });
+          .map((o) => ({ key: key("of", o.name, o.source), name: o.name, source: SOURCE, type: "feature" as const, prerequisite: prerequisiteText(o.prerequisite), requires: prerequisiteReq(o.prerequisite) }));
+        // Options you always get as one of the picks (Four Elements' Elemental Attunement).
+        const required = (e.entries ?? []).filter((o: any) => o?.data?.isRequiredOption).map((o: any) => optionalFeatureOption(ds, o.optionalfeature).key);
+        choices.push({ id: `${id}-${choices.length}`, label: `Choose ${e.count} ${label} option${e.count > 1 ? "s" : ""}`, kind: "feature", count: e.count, options, ...(required.length ? { required } : {}) });
         return;
       }
       const options: ChoiceOption[] = (e.entries ?? []).flatMap((o: any): ChoiceOption[] => {
@@ -783,17 +801,21 @@ function progressionsAt(ds: Dataset, progs: any[] | undefined, level: number, fe
     // matched by option type since names differ ("Rune Carver" vs "Runes").
     const covered = featuresHere.some((f) => f.name === p.name && JSON.stringify(f.obj?.entries ?? "").includes('"options"'))
       || featuresHere.some((f) => embeddedOptionTypes(ds, f.obj?.entries).some((t) => p.featureType.includes(t)));
-    if (gained <= 0 || covered) return [];
+    // Invocations, runes and infusions can be swapped at every level of the class; maneuvers, arcane shots
+    // and disciplines only when new ones are learned; Metamagic, Fighting Style and Pact Boon never (2014).
+    const swap = /invocation|rune|infusion/i.test(p.name) ? total > 0 : /maneuver|arcane shot|discipline/i.test(p.name) ? gained > 0 : false;
+    if (covered || (gained <= 0 && !swap)) return [];
     const options = ds.optionalfeature
       .filter((o) => o.featureType?.some((t: string) => p.featureType.includes(t)))
-      .map((o) => ({ key: key("of", o.name, o.source), name: o.name, source: SOURCE, type: "feature" as const, prerequisite: prerequisiteText(o.prerequisite) }));
-    return [{ name: p.name, total, gained, options }];
+      .map((o) => ({ key: key("of", o.name, o.source), name: o.name, source: SOURCE, type: "feature" as const, prerequisite: prerequisiteText(o.prerequisite), requires: prerequisiteReq(o.prerequisite) }));
+    return [{ name: p.name, total, gained: Math.max(0, gained), options, swap }];
   });
 }
 
 function profStrings(block: any): string[] {
   if (!block) return [];
-  const fmt = (xs: any[]) => xs.map((x) => (typeof x === "string" ? plain(x) : x.proficiency ? plain(x.proficiency) : "")).filter(Boolean).join(", ");
+  // Optional entries (artificer firearms, at the DM's discretion) aren't granted.
+  const fmt = (xs: any[]) => xs.map((x) => (typeof x === "string" ? plain(x) : x.proficiency && !x.optional ? plain(x.proficiency) : "")).filter(Boolean).join(", ");
   return [
     block.armor?.length && `Armor: ${fmt(block.armor)}`,
     block.weapons?.length && `Weapons: ${fmt(block.weapons)}`,

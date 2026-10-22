@@ -121,6 +121,27 @@ function featureModifiers(c: Character, chaMod: number, wisMod: number): Modifie
   if (classLevel(c, "fighter") >= 7 && has(names, "remarkable athlete")) add("remarkable-athlete", "Remarkable Athlete", "halfProfPhysical", 1);
   if (classLevel(c, "paladin") >= 6 && has(names, "aura of protection"))
     add("aura-of-protection", "Aura of Protection", "save", Math.max(1, chaMod), "while conscious");
+  const intMod = Math.floor((c.abilities.int - 10) / 2);
+  // Bladesong while active: +INT to AC (min +1) and +10 ft walking speed.
+  if (c.combat?.effects.some((e) => e.name === "Bladesong")) {
+    add("bladesong-ac", "Bladesong", "ac", Math.max(1, intMod));
+    add("bladesong-speed", "Bladesong", "speed", 10);
+  }
+  // War Magic Tactical Wit, Chronurgy Temporal Awareness: +INT to initiative.
+  if (classLevel(c, "wizard") >= 2 && has(names, "tactical wit", "temporal awareness")) add("int-initiative", names.has("tactical wit") ? "Tactical Wit" : "Temporal Awareness", "initiative", intMod);
+  // Swashbuckler Rakish Audacity: +CHA to initiative. Watchers Aura of the Sentinel: +proficiency bonus.
+  if (classLevel(c, "rogue") >= 3 && has(names, "rakish audacity")) add("rakish-audacity", "Rakish Audacity", "initiative", chaMod);
+  if (classLevel(c, "paladin") >= 7 && has(names, "aura of the sentinel")) add("aura-of-the-sentinel", "Aura of the Sentinel", "initiative", Math.ceil(level / 4) + 1);
+  // Speed: Scout Superior Mobility, Glory Aura of Alacrity, Armorer Infiltrator Powered Steps.
+  if (classLevel(c, "rogue") >= 9 && has(names, "superior mobility")) add("superior-mobility", "Superior Mobility", "speed", 10);
+  if (classLevel(c, "paladin") >= 7 && has(names, "aura of alacrity")) add("aura-of-alacrity", "Aura of Alacrity", "speed", 10);
+  // Primal Champion (barbarian 20): STR and CON +4, maximum 24.
+  if (classLevel(c, "barbarian") >= 20 && has(names, "primal champion")) {
+    add("primal-champion-str", "Primal Champion", "ability:str", Math.max(0, Math.min(4, 24 - c.abilities.str)));
+    add("primal-champion-con", "Primal Champion", "ability:con", Math.max(0, Math.min(4, 24 - c.abilities.con)));
+  }
+  // Soul of Artifice (artificer 20): +1 to all saves per attuned magic item.
+  if (classLevel(c, "artificer") >= 20 && has(names, "soul of artifice")) add("soul-of-artifice", "Soul of Artifice", "save", c.equipment.filter((i) => i.attuned).length);
   // Gloom Stalker (Xanathar's): Wisdom modifier to initiative.
   if (classLevel(c, "ranger") >= 3 && has(names, "dread ambusher")) add("dread-ambusher", "Dread Ambusher", "initiative", wisMod);
   // Fey Wanderer (Tasha's): add your Wisdom modifier to Charisma checks (minimum +1).

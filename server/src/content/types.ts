@@ -181,6 +181,8 @@ export interface Choice {
   options: ChoiceOption[];
   /** For "ability" choices: how much each pick adds. */
   amount?: number;
+  /** Option keys that are always part of the picks (Elemental Attunement). */
+  required?: string[];
   /** The same option may be picked up to this many times (e.g. +2 to one ability as two +1 picks). */
   maxPerOption?: number;
 }
@@ -194,6 +196,8 @@ export interface ChoiceOption {
   /** Inline text, when the option isn't a separately fetchable entry. */
   description?: string;
   prerequisite?: string;
+  /** Checkable prerequisites (the text is in `prerequisite`). */
+  requires?: { level?: number; className?: string; pact?: string; spells?: string[]; features?: string[] };
 }
 
 /** Class progression, normalized across SRD / 5etools / homebrew for the level-up wizard. */
@@ -255,6 +259,8 @@ export interface Progression {
   total: number;
   gained: number;
   options: ChoiceOption[];
+  /** One known option may be replaced at this level. */
+  swap?: boolean;
 }
 
 export const SKILL_KEYS = [

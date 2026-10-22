@@ -39,6 +39,10 @@ export function applyRest(d: Character, rest: "short" | "long") {
 export function RestDialog({ c, update, kind, onClose }: { c: Character; update: Update; kind: "short" | "long"; onClose: () => void }) {
   const { roll } = useRoll();
   const [healed, setHealed] = useState(0);
+  const [songUsed, setSongUsed] = useState(false);
+  // Song of Rest (bard 2): d6, d8 at 9, d10 at 13, d12 at 17.
+  const bard = c.classes.find((k) => k.name.toLowerCase() === "bard")?.level ?? 0;
+  const songDie = bard >= 2 && featureParts(c).some((p) => /^song of rest$/i.test(p.name)) ? (bard >= 17 ? "d12" : bard >= 13 ? "d10" : bard >= 9 ? "d8" : "d6") : undefined;
   const con = abilityMod(c, "con");
   const dice = Object.entries(c.classes.reduce<Record<string, number>>((acc, k) => ({ ...acc, [k.hitDie]: (acc[k.hitDie] ?? 0) + k.level }), {}));
 
@@ -93,6 +97,24 @@ export function RestDialog({ c, update, kind, onClose }: { c: Character; update:
                 );
               })}
             </div>
+            {songDie && (
+              <div className="flex items-center justify-between rounded-lg border border-arcane-500/30 px-3 py-2">
+                <span>Song of Rest: you (and allies who spend hit dice) regain an extra <b>1{songDie}</b></span>
+                <button
+                  className="btn px-3 py-1"
+                  disabled={songUsed || !healed}
+                  title={healed ? "Roll the extra healing" : "Spend at least one hit die first"}
+                  onClick={() => {
+                    const r = roll(`1${songDie}`, { label: "Song of Rest", kind: "heal" });
+                    setSongUsed(true);
+                    setHealed((h) => h + r.total);
+                    update((d) => void (d.hp.current = Math.min(hpMax(d), d.hp.current + r.total)));
+                  }}
+                >
+                  Roll 1{songDie}
+                </button>
+              </div>
+            )}
           </>
         ) : (
           <p className="text-ink-400">

@@ -17,6 +17,8 @@ export interface BrowserFilters {
   level?: number;
   minLevel?: number;
   maxLevel?: number;
+  /** Leveled spells only from these schools (Eldritch Knight, Arcane Trickster). */
+  schools?: string[];
 }
 
 /**
@@ -100,11 +102,12 @@ export function ContentBrowser({
       (c) => (!term || c.name.toLowerCase().includes(term)) &&
         (levelFilter == null || c.level === levelFilter) &&
         (filters.minLevel == null || (c.level ?? 0) >= filters.minLevel) &&
+        (!filters.schools || (c.level ?? 0) === 0 || filters.schools.includes(String(c.facets?.school ?? ""))) &&
         (!sourceFilter || (c.sourceLabel ?? c.source) === sourceFilter) &&
         matchesFacets(c, type, facetState),
     );
     return sortBy(list, type, sort.key, sort.desc);
-  }, [merged, q, levelFilter, filters.minLevel, sourceFilter, facetState, type, sort]);
+  }, [merged, q, levelFilter, filters.minLevel, filters.schools, sourceFilter, facetState, type, sort]);
 
   const levels = useMemo(
     () =>

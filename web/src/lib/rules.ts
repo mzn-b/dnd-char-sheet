@@ -155,7 +155,8 @@ export function speedBreakdown(c: Character): { total: number; parts: string[] }
       parts.push(`${m.source} ${fmt(m.value)}`);
     }
     // Dwarves: "Your speed is not reduced by wearing heavy armor."
-    if (armorClassBreakdown(c).tooHeavy && !/dwar(f|ves)|duergar/i.test(c.race)) {
+    // Armorer's Arcane Armor has no Strength requirement for its wearer.
+    if (armorClassBreakdown(c).tooHeavy && !/dwar(f|ves)|duergar/i.test(c.race) && !featureParts(c).some((p) => /^arcane armor$/i.test(p.name))) {
       total -= 10;
       parts.push("Armor too heavy −10");
     }
@@ -388,6 +389,12 @@ export const armorClass = (c: Character) => (c.acMode === "auto" || wildShapeFor
 
 /** Attunement slots in use (max 3). */
 export const attunedCount = (c: Character) => c.equipment.filter((i) => i.attuned).length;
+
+/** Attunement slots: 3, or 4/5/6 for artificers at 10/14/18 (Magic Item Adept, Savant, Master). */
+export function attunementMax(c: Character): number {
+  const art = c.classes.find((k) => k.name.toLowerCase() === "artificer")?.level ?? 0;
+  return art >= 18 ? 6 : art >= 14 ? 5 : art >= 10 ? 4 : 3;
+}
 
 export const CONDITION_TEXT: Record<string, string> = {
   Blinded: "Can't see; automatically fails checks that require sight. Attacks against you have advantage; your attacks have disadvantage.",

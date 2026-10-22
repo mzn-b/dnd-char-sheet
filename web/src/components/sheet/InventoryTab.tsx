@@ -3,7 +3,7 @@ import { api } from "../../lib/api";
 import { uid } from "../../lib/defaults";
 import { attackFromItem, itemFromDetail, resolveItem } from "../../lib/items";
 import { genericOptions } from "../../lib/genericItems";
-import { attunedCount, carrying } from "../../lib/rules";
+import { attunedCount, attunementMax, carrying } from "../../lib/rules";
 import { itemActive, targetLabel } from "../../lib/modifiers";
 import type { Character, ContentSummary, Item } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
@@ -68,7 +68,7 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
         title="Equipment"
         action={
           <div className="flex items-center gap-1">
-            <span className={`mr-2 text-xs ${attuned > 3 ? "text-blood-500" : "text-ink-400"}`} title="Attuned magic items">✦ {attuned}/3 attuned</span>
+            <span className={`mr-2 text-xs ${attuned > attunementMax(c) ? "text-blood-500" : "text-ink-400"}`} title="Attuned magic items">✦ {attuned}/{attunementMax(c)} attuned</span>
             <button className="btn-ghost px-2 py-0.5 text-xs" onClick={() => setPicking(true)}>Browse items</button>
             <button
               className="btn-ghost px-2 py-0.5 text-xs"

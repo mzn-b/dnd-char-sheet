@@ -14,7 +14,7 @@ import type {
 /** Fetch text for picked "feature" options so sub-features carry their description. */
 export async function resolveSubfeatures(choices: Choice[], selections: Selections): Promise<SubFeature[]> {
   const picks = choices.flatMap((ch) =>
-    (selections[ch.id] ?? []).map((k) => ({ ch, opt: ch.options.find((o) => o.key === k) })).filter((p) => p.opt),
+    [...new Set([...(ch.required ?? []), ...(selections[ch.id] ?? [])])].map((k) => ({ ch, opt: ch.options.find((o) => o.key === k) })).filter((p) => p.opt),
   ) as { ch: Choice; opt: ChoiceOption }[];
   return Promise.all(
     picks.map(async ({ ch, opt }) => {

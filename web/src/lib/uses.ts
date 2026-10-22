@@ -67,6 +67,8 @@ export function coveredByResources(c: Character, name: string) {
 /** Add use tracking to a feature when its text says it's limited. Returns true if it changed. */
 export function applyDetectedUses(c: Character, f: Feature): boolean {
   if (f.uses || coveredByResources(c, f.name)) return false;
+  // Tracked on the spell it grants.
+  if (/^mystic arcanum/i.test(f.name)) return false;
   // Racial spellcasting is tracked on the granted spells themselves.
   if (f.kind === "race" && f.grantedSpells?.length) return false;
   const d = detectUses(f.description);

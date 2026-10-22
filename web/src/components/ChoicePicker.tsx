@@ -7,19 +7,25 @@ import { Markdown, Modal, Spinner } from "./ui";
 
 /** Pick option(s) for one choice. Feature options get a list + detail pane; simple ones are chips. */
 export function ChoicePicker({
-  choice, selected, onChange, character, taken = [],
+  choice, selected: selectedIn, onChange, character, taken = [], blocked,
 }: {
   choice: Choice;
   selected: string[];
   onChange: (keys: string[]) => void;
+  /** Why an option can't be picked (unmet prerequisite), if so. */
+  blocked?: (o: ChoiceOption) => string | undefined;
   character?: Character;
   /** Keys already owned elsewhere (e.g. invocations known), shown but not selectable. */
   taken?: string[];
 }) {
   const [focused, setFocused] = useState<ChoiceOption | null>(null);
+  const required = choice.required ?? [];
+  const chosen = [...new Set([...required, ...selectedIn])];
+  const selected = chosen;
   const full = selected.length >= choice.count;
   const toggle = (key: string) =>
-    onChange(selected.includes(key) ? selected.filter((k) => k !== key) : full && choice.count === 1 ? [key] : full ? selected : [...selected, key]);
+    required.includes(key) ? undefined
+      : onChange(selected.includes(key) ? selected.filter((k) => k !== key) : full && choice.count === 1 ? [key] : full ? selected : [...selected, key]);
 
   const header = (
     <div className="mb-2 flex items-baseline justify-between gap-2">
@@ -95,7 +101,9 @@ export function ChoicePicker({
         <div className="max-h-72 overflow-y-auto rounded-lg border border-ink-800">
           {choice.options.map((o) => {
             const on = selected.includes(o.key);
-            const isTaken = taken.includes(o.key);
+            // Replicate Magic Item can be learned more than once (Tasha's).
+            const isTaken = taken.includes(o.key) && !/^replicate magic item/i.test(o.name);
+            const reason = on ? undefined : blocked?.(o);
             return (
               <div
                 key={o.key}
@@ -106,12 +114,12 @@ export function ChoicePicker({
                   type={choice.count === 1 ? "radio" : "checkbox"}
                   className="accent-accent-500"
                   checked={on || isTaken}
-                  disabled={isTaken || (!on && full && choice.count > 1)}
+                  disabled={isTaken || !!reason || required.includes(o.key) || (!on && full && choice.count > 1)}
                   onClick={(e) => e.stopPropagation()}
                   onChange={() => toggle(o.key)}
                 />
-                <span className={`flex-1 ${isTaken ? "text-ink-400" : ""}`}>{o.name}</span>
-                {o.prerequisite && <span className="max-w-[45%] truncate text-[11px] text-ink-600" title={o.prerequisite}>{o.prerequisite}</span>}
+                <span className={`flex-1 ${isTaken || reason ? "text-ink-400" : ""}`}>{o.name}</span>
+                {o.prerequisite && <span className={`max-w-[45%] truncate text-[11px] ${reason ? "text-blood-500" : "text-ink-600"}`} title={reason ?? o.prerequisite}>{reason ?? o.prerequisite}</span>}
               </div>
             );
           })}
@@ -144,19 +152,19 @@ function OptionDetail({ option }: { option: ChoiceOption }) {
 
 /** All choices of one piece of content, with a shared selections object. */
 export function ChoiceList({
-  choices, selections, onChange, character,
-}: { choices: Choice[]; selections: Selections; onChange: (s: Selections) => void; character?: Character }) {
+  choices, selections, onChange, character, blocked,
+}: { choices: Choice[]; selections: Selections; onChange: (s: Selections) => void; character?: Character; blocked?: (o: ChoiceOption) => string | undefined }) {
   return (
     <div className="space-y-4">
       {choices.map((ch) => (
-        <ChoicePicker key={ch.id} choice={ch} character={character} selected={selections[ch.id] ?? []} onChange={(keys) => onChange({ ...selections, [ch.id]: keys })} />
+        <ChoicePicker key={ch.id} choice={ch} character={character} blocked={blocked} selected={selections[ch.id] ?? []} onChange={(keys) => onChange({ ...selections, [ch.id]: keys })} />
       ))}
     </div>
   );
 }
 
 export const unfinishedChoices = (choices: Choice[] | undefined, selections: Selections) =>
-  (choices ?? []).filter((ch) => (selections[ch.id]?.length ?? 0) < Math.min(ch.count, ch.options.length));
+  (choices ?? []).filter((ch) => new Set([...(ch.required ?? []), ...(selections[ch.id] ?? [])]).size < Math.min(ch.count, ch.options.length));
 
 /**
  * Two-step modal: browse content (race, background, feat…), then make its choices, then apply.

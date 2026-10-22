@@ -1,5 +1,6 @@
 import { takeSnapshot } from "../../lib/levelDown";
 import { splitFeature } from "../../lib/featureSections";
+import { prereqContext, unmetRequirement } from "../../lib/prereqs";
 import { useBookFilter } from "../../lib/books";
 import { useMemo, useState } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -9,9 +10,9 @@ import {
 } from "../../lib/apply";
 import { uid } from "../../lib/defaults";
 import { applyDetectedUses } from "../../lib/uses";
-import { ABILITY_NAMES, baseAbilityMod, fmt, meetsRequirements, mod, requirementText, skillName, totalLevel } from "../../lib/rules";
+import { ABILITY_NAMES, baseAbilityMod, fmt, meetsRequirements, mod, ordinal, requirementText, skillName, totalLevel } from "../../lib/rules";
 import {
-  ABILITIES, type Ability, type Character, type Choice, type ClassEntry, type ClassRules, type ContentDetail,
+  ABILITIES, type Ability, type Character, type Choice, type ChoiceOption, type ClassEntry, type ClassRules, type ContentDetail,
   type ContentRef, type ContentSummary, type Feature, type Selections,
 } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
@@ -73,6 +74,7 @@ export function LevelUpWizard({
   const [applying, setApplying] = useState(false);
   const [variantPick, setVariantPick] = useState("");
   const [spellPickSel, setSpellPickSel] = useState<Record<number, string[]>>({});
+  const [arcanum, setArcanum] = useState<ContentSummary | null>(null);
 
   const rulesQuery = useQuery({
     queryKey: ["classRules", cls?.source, cls?.key],
@@ -190,6 +192,30 @@ export function LevelUpWizard({
     : [];
   const expanded = activeSubclass ? expandedEntries(activeSubclass.name, variant?.expandedSpells ?? subRulesQuery.data?.expandedSpells) : undefined;
 
+  // Eldritch Knight (abjuration/evocation) and Arcane Trickster (enchantment/illusion) learn spells from two
+  // schools, except one pick from any school at class levels 3, 8, 14 and 20.
+  const schoolLimit = /eldritch knight/i.test(activeSubclass?.name ?? "") ? ["Abjuration", "Evocation"] : /arcane trickster/i.test(activeSubclass?.name ?? "") ? ["Enchantment", "Illusion"] : undefined;
+  const freeSchoolPick = !!plan && [3, 8, 14, 20].includes(plan.newLevel);
+  const spellSchools = schoolLimit && !freeSchoolPick ? schoolLimit : undefined;
+  const offSchool = schoolLimit ? spells.filter((sp) => !schoolLimit.includes(String(sp.facets?.school ?? ""))).length : 0;
+
+  // Mystic Arcanum (warlock 11/13/15/17): one warlock spell of that level, cast once per long rest.
+  const arcanumLevel = Number(newFeatures.map((f) => f.name.match(/^mystic arcanum \((\d)th level\)/i)?.[1]).find(Boolean) ?? 0);
+
+  // Prerequisites (invocation levels, pact boons, Eldritch Blast, infusion levels) against the build after
+  // this level, counting picks made in this level-up.
+  const prereqs = useMemo(() => {
+    const picked = [
+      ...(plan?.progressions ?? []).flatMap((p) => (progressionSel[p.name] ?? []).map((k) => p.options.find((o) => o.key === k)?.name ?? "")),
+      ...newFeatures.flatMap((f, i) => (detailOf(i)?.choices ?? []).flatMap((ch) => (featureSel[f.key]?.[ch.id] ?? []).map((k) => ch.options.find((o) => o.key === k)?.name ?? ""))),
+    ];
+    const ctx = prereqContext(c, { classKey: cls?.key, newLevel: plan?.newLevel, picked });
+    for (const s of [...cantrips, ...spells]) ctx.spells.add(s.name.toLowerCase());
+    return ctx;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [c, cls, plan, progressionSel, featureSel, newFeatures, cantrips, spells, featureDetails]);
+  const blocked = (o: ChoiceOption) => unmetRequirement(o, prereqs, rules?.name);
+
   const progressionTaken = (name: string) => c.features.find((f) => f.name === name)?.subfeatures?.map((s) => s.key) ?? [];
 
   const warnings = [
@@ -198,6 +224,8 @@ export function LevelUpWizard({
     plan?.needsSubclass && !subclass && `No ${rules?.subclassTitle ?? "subclass"} chosen`,
     ...newFeatures.flatMap((f, i) => unfinishedChoices(detailOf(i)?.choices, featureSel[f.key] ?? {}).map((ch) => `${f.name}: ${ch.label}`)),
     ...(plan?.progressions ?? []).filter((p) => (progressionSel[p.name]?.length ?? 0) < p.gained).map((p) => `${p.name}: ${p.gained - (progressionSel[p.name]?.length ?? 0)} left to choose`),
+    schoolLimit && offSchool > (freeSchoolPick ? 1 : 0) && `Only ${freeSchoolPick ? "one spell" : "no spells"} may come from outside ${schoolLimit.join(" and ")} at this level`,
+    arcanumLevel > 0 && !arcanum && `Mystic Arcanum: no ${ordinal(arcanumLevel)}-level spell chosen`,
     variants?.length && !variant && `No ${activeSubclass?.name ?? "subclass"} option chosen (${variants.map((v) => v.name).join(", ")})`,
     ...spellPicks.filter((p, i) => (spellPickSel[i]?.length ?? 0) < p.count).map((p) => `${p.label}: not chosen`),
     plan?.grantsAsi && asiMode === "asi" && asiPoints < 2 && `Only ${asiPoints}/2 ability points assigned`,
@@ -339,6 +367,13 @@ export function LevelUpWizard({
             id: uid(), ref: { source: s.source, key: s.key, name: s.name }, level: s.level ?? 0, classKey: rules.index,
             prepared: (s.level ?? 0) === 0 || plan.spellModel === "known", alwaysPrepared: false, notes: "",
           });
+        if (arcanum && arcanumLevel) {
+          d.spellcasting.spells.push({
+            id: uid(), ref: { source: arcanum.source, key: arcanum.key, name: arcanum.name }, level: arcanumLevel, classKey: rules.index,
+            prepared: true, alwaysPrepared: true, notes: "", grantedBy: "feature:Mystic Arcanum", uses: "1/long rest",
+          });
+          summary.push(`Mystic Arcanum: ${arcanum.name}`);
+        }
         cantrips.forEach(addSpell);
         spells.forEach(addSpell);
         if (swapOut && swapIn[0]) {
@@ -521,6 +556,21 @@ export function LevelUpWizard({
               )}
             </div>
           ) : null}
+          {arcanumLevel > 0 && rules && (
+            <div className="rounded-lg border border-ink-800 bg-ink-850/50 p-3">
+              <div className="mb-2 text-sm font-semibold">Mystic Arcanum: choose a {ordinal(arcanumLevel)}-level warlock spell (cast once per long rest without a slot)</div>
+              <ContentBrowser
+                type="spell"
+                filters={{ class: spellListClass(rules, subRulesQuery.data), minLevel: arcanumLevel, maxLevel: arcanumLevel }}
+                classLabel={spellListLabel(rules, subRulesQuery.data)}
+                extra={expanded && { ...expanded, items: expanded.items.filter((e) => e.level === arcanumLevel) }}
+                limit={1}
+                selected={arcanum ? [arcanum] : []}
+                disabledIds={ownedSpells}
+                onToggle={(sp) => setArcanum(arcanum && contentId(arcanum) === contentId(sp) ? null : sp)}
+              />
+            </div>
+          )}
           {spellPicks.map((p, i) => (
             <div key={i} className="rounded-lg border border-ink-800 bg-ink-850/50 p-3">
               <ChoicePicker
@@ -548,7 +598,7 @@ export function LevelUpWizard({
                   </details>
                   {choices.length > 0 && (
                     <div className="mt-3 border-t border-ink-800 pt-3">
-                      <ChoiceList choices={choices} character={preview} selections={featureSel[f.key] ?? {}} onChange={(s) => setFeatureSel({ ...featureSel, [f.key]: s })} />
+                      <ChoiceList choices={choices} character={preview} blocked={blocked} selections={featureSel[f.key] ?? {}} onChange={(s) => setFeatureSel({ ...featureSel, [f.key]: s })} />
                     </div>
                   )}
                 </div>
@@ -556,13 +606,18 @@ export function LevelUpWizard({
             })}
             {plan.progressions.map((p) => (
               <div key={p.name} className="rounded-lg border border-ink-800 bg-ink-850/50 p-3">
-                <ChoicePicker
-                  choice={{ id: p.name, kind: "feature", count: p.gained, label: `${p.name}: learn ${p.gained} (you'll know ${p.total})`, options: p.options } satisfies Choice}
-                  taken={progressionTaken(p.name)}
-                  selected={progressionSel[p.name] ?? []}
-                  onChange={(keys) => setProgressionSel({ ...progressionSel, [p.name]: keys })}
-                />
-                {(c.features.find((f) => f.name === p.name)?.subfeatures?.length ?? 0) > 0 && (
+                {p.gained > 0 ? (
+                  <ChoicePicker
+                    choice={{ id: p.name, kind: "feature", count: p.gained, label: `${p.name}: learn ${p.gained} (you'll know ${p.total})`, options: p.options } satisfies Choice}
+                    taken={progressionTaken(p.name)}
+                    selected={progressionSel[p.name] ?? []}
+                    onChange={(keys) => setProgressionSel({ ...progressionSel, [p.name]: keys })}
+                    blocked={blocked}
+                  />
+                ) : (
+                  <div className="label">{p.name}</div>
+                )}
+                {p.swap && (c.features.find((f) => f.name === p.name)?.subfeatures?.length ?? 0) > 0 && (
                   <div className="mt-3 space-y-2 border-t border-ink-800 pt-3">
                     <label className="flex flex-wrap items-center gap-2 text-sm">
                       <span className="text-ink-400">Optionally replace one you know:</span>
@@ -579,6 +634,7 @@ export function LevelUpWizard({
                       <ChoicePicker
                         choice={{ id: `${p.name}-swap`, kind: "feature", count: 1, label: "Replacement", options: p.options }}
                         taken={[...progressionTaken(p.name), ...(progressionSel[p.name] ?? [])]}
+                        blocked={blocked}
                         selected={swapSel[p.name].in}
                         onChange={(keys) => setSwapSel({ ...swapSel, [p.name]: { ...swapSel[p.name], in: keys } })}
                       />
@@ -653,10 +709,11 @@ export function LevelUpWizard({
               <h3 className="mb-2 font-display text-lg text-accent-400">
                 {plan.freeSpellPicks ? "Add spells (optional)" : plan.spellModel === "spellbook" ? `Add ${plan.spellPicks} spells to your spellbook` : `Learn ${plan.spellPicks} new spell${plan.spellPicks > 1 ? "s" : ""}`}
                 <span className="ml-2 text-sm text-ink-400">up to {plan.maxSpellLevel === 0 ? "cantrips" : `level ${plan.maxSpellLevel}`}</span>
+                {schoolLimit && <span className="ml-2 text-sm text-ink-400">· {schoolLimit.join(" or ")}{freeSchoolPick ? " (one may be from any school)" : ""}</span>}
               </h3>
               <ContentBrowser
                 type="spell"
-                filters={{ class: spellListClass(rules, subRulesQuery.data), minLevel: 1, maxLevel: plan.maxSpellLevel }}
+                filters={{ class: spellListClass(rules, subRulesQuery.data), minLevel: 1, maxLevel: plan.maxSpellLevel, schools: spellSchools }}
                 classLabel={spellListLabel(rules, subRulesQuery.data)}
                 extra={expanded}
                 limit={plan.freeSpellPicks ? undefined : plan.spellPicks}
@@ -674,7 +731,7 @@ export function LevelUpWizard({
                 {knownForClass.map((s) => <option key={s.id} value={s.id}>{s.ref.name} (level {s.level})</option>)}
               </select>
               {swapOut && (
-                <ContentBrowser type="spell" filters={{ class: spellListClass(rules, subRulesQuery.data), minLevel: 1, maxLevel: plan.maxSpellLevel }} classLabel={spellListLabel(rules, subRulesQuery.data)} extra={expanded} limit={1} selected={swapIn} disabledIds={ownedSpells} onToggle={(s) => setSwapIn(swapIn[0] && contentId(swapIn[0]) === contentId(s) ? [] : [s])} />
+                <ContentBrowser type="spell" filters={{ class: spellListClass(rules, subRulesQuery.data), minLevel: 1, maxLevel: plan.maxSpellLevel, schools: schoolLimit }} classLabel={spellListLabel(rules, subRulesQuery.data)} extra={expanded} limit={1} selected={swapIn} disabledIds={ownedSpells} onToggle={(s) => setSwapIn(swapIn[0] && contentId(swapIn[0]) === contentId(s) ? [] : [s])} />
               )}
             </div>
           )}

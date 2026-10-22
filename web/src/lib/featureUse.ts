@@ -93,6 +93,7 @@ export function applyFeatureUse(d: Character, f: Feature): string | undefined {
   const def = EFFECTS.find((e) => e.label && e.activatedBy?.test(f.name));
   if (def && d.combat?.active) {
     activateEffect(d, def, def.label!); // spends its resource
+    if (!def.resource) spendUse(d, f); // or the feature's own uses (Bladesong, Hexblade's Curse)
     return warning;
   }
   spendUse(d, f);

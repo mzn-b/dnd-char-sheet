@@ -66,6 +66,8 @@ export interface Choice {
   amount?: number;
   /** Expertise choices that also grant the proficiency (Knowledge Domain's Blessings of Knowledge). */
   grantsProficiency?: boolean;
+  /** Option keys that are always part of the picks (Elemental Attunement). */
+  required?: string[];
   /** The same option may be picked up to this many times (+2 to one ability = two +1 picks). */
   maxPerOption?: number;
 }
@@ -77,6 +79,8 @@ export interface ChoiceOption {
   type?: ContentType;
   description?: string;
   prerequisite?: string;
+  /** Checkable prerequisites (the text is in `prerequisite`). */
+  requires?: { level?: number; className?: string; pact?: string; spells?: string[]; features?: string[] };
 }
 
 /** Selected option keys per choice id. */
@@ -503,6 +507,8 @@ export interface Progression {
   total: number;
   gained: number;
   options: ChoiceOption[];
+  /** One known option may be replaced at this level. */
+  swap?: boolean;
 }
 
 export interface LevelRules {

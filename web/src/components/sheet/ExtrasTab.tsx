@@ -82,7 +82,7 @@ export function WildShapeBanner({ c, update }: { c: Character; update: Update })
       <input className="field-boxed w-16 py-0.5 text-center" inputMode="numeric" placeholder="0" value={amount} onChange={(e) => setAmount(e.target.value.replace(/\D/g, ""))} onKeyDown={(e) => e.key === "Enter" && apply("damage")} aria-label="Wild Shape damage or healing" />
       <button className="btn px-2 py-0.5 text-xs hover:text-blood-500" onClick={() => apply("damage")}>Damage</button>
       <button className="btn px-2 py-0.5 text-xs hover:text-emerald-400" onClick={() => apply("heal")}>Heal</button>
-      <button className="btn-ghost ml-auto px-2 py-0.5 text-xs" onClick={() => { update((d) => revertWildShape(d)); setNotice(""); }}>Revert</button>
+      <button className="btn-ghost ml-auto px-2 py-0.5 text-xs" onClick={() => { update((d) => { spendEconomy(d, "bonus", "Revert from Wild Shape"); revertWildShape(d); }); setNotice(""); }}>Revert</button>
     </div>
   );
 }
@@ -136,7 +136,7 @@ function CreatureCard({ c, p, update }: { c: Character; p: Companion; update: Up
       <div className="flex flex-wrap gap-2">
         {p.role === "wildshape" && (
           active
-            ? <button className="btn px-2 py-0.5 text-xs" onClick={() => update((d) => revertWildShape(d))}>Revert to normal form</button>
+            ? <button className="btn px-2 py-0.5 text-xs" onClick={() => update((d) => { spendEconomy(d, "bonus", "Revert from Wild Shape"); revertWildShape(d); })}>Revert to normal form</button>
             : <button className="btn-primary px-2 py-0.5 text-xs" onClick={() => update((d) => void wildShapeInto(d, p.id))}>🐾 Wild Shape into {p.name}</button>
         )}
         {p.monster && <button className="btn-ghost px-2 py-0.5 text-xs" onClick={() => setOpen(!open)}>{open ? "Hide" : "Show"} stat block</button>}

@@ -65,12 +65,8 @@ const CLASS_RESOURCES: Record<string, Record<string, Def>> = {
   sorcerer: {
     sorcery: (k) => (k.level >= 2 ? { name: "Sorcery Points", max: k.level, reset: "long", pool: k.level > 10, aliases: ["Font of Magic", "Flexible Casting"] } : null),
   },
-  warlock: {
-    arcanum6: (k) => (k.level >= 11 ? { name: "Mystic Arcanum (6th level)", max: 1, reset: "long" } : null),
-    arcanum7: (k) => (k.level >= 13 ? { name: "Mystic Arcanum (7th level)", max: 1, reset: "long" } : null),
-    arcanum8: (k) => (k.level >= 15 ? { name: "Mystic Arcanum (8th level)", max: 1, reset: "long" } : null),
-    arcanum9: (k) => (k.level >= 17 ? { name: "Mystic Arcanum (9th level)", max: 1, reset: "long" } : null),
-  },
+  // Mystic Arcanum is tracked on the chosen spell (1/long rest).
+  warlock: {},
   wizard: {
     arcanerecovery: (k) => ({ name: "Arcane Recovery", max: 1, reset: "long", die: `${Math.ceil(k.level / 2)} slot levels` }),
   },
