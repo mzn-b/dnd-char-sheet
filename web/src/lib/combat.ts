@@ -166,7 +166,6 @@ const superiorityDie = (c: Character) => {
 const PASSIVES: { match: RegExp; when: ReminderWhen; text: (c: Character) => string }[] = [
   { match: /^maneuvers$/i, when: "hit", text: (c) => `Maneuvers (spend a superiority die, ${superiorityDie(c)}): ${picks(c, /^maneuvers$/i)}` },
   { match: /^metamagic/i, when: "turnStart", text: (c) => `Metamagic (sorcery points): ${picks(c, /^metamagic/i)}` },
-  { match: /^agonizing blast$/i, when: "hit", text: (c) => `Agonizing Blast: add +${Math.max(0, abilityMod(c, "cha"))} (Cha) to each Eldritch Blast beam's damage` },
   { match: /^repelling blast$/i, when: "hit", text: () => "Repelling Blast: push the target 10 ft with each Eldritch Blast beam" },
   { match: /^sneak attack$/i, when: "hit", text: (c) => `Sneak Attack: +${Math.ceil((c.classes.find((k) => k.name === "Rogue")?.level ?? 1) / 2)}d6 once per turn (advantage, or an ally next to the target; finesse/ranged weapon)` },
   { match: /^divine smite$/i, when: "hit", text: () => "Divine Smite: on a melee hit, spend a slot for 2d8 radiant (+1d8 per slot above 1st, max 5d8; +1d8 vs undead/fiends)" },

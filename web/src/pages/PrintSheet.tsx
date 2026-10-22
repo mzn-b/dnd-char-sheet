@@ -10,6 +10,7 @@ import { ABILITIES, type Character } from "../lib/types";
 import { attackBonus, damageBonus } from "../components/sheet/AttacksPanel";
 import { withBonus } from "../lib/dice";
 import { describeDice, diceAt, scalingNote } from "../lib/spellDice";
+import { eldritchBlastBeams, spellDamageBonuses } from "../lib/spellBonuses";
 import { useSpellDetails } from "../components/spells";
 
 /** A printer-friendly, light version of the whole sheet. Use the browser's "Save as PDF". */
@@ -147,7 +148,10 @@ function SpellPage({ c }: { c: Character }) {
                   {l > 0 ? (s.prepared || s.alwaysPrepared ? "● " : "○ ") : ""}{s.ref.name}{s.uses ? ` (${s.uses})` : ""}
                   {(() => {
                     const dice = details[s.id]?.spell?.dice;
-                    const text = describeDice(dice, diceAt(dice, s.level, s.level, totalLevel(c)));
+                    const bonus = spellDamageBonuses(c, s, details[s.id]).reduce((n, b) => n + b.amount, 0);
+                    const beams = /^eldritch blast$/i.test(s.ref.name) ? eldritchBlastBeams(totalLevel(c)) : 1;
+                    const dmg = describeDice(bonus && dice ? { ...dice, addModifier: true } : dice, diceAt(dice, s.level, s.level, totalLevel(c)), bonus || undefined);
+                    const text = dmg && beams > 1 ? `${beams}× ${dmg}` : dmg;
                     const extra = [text, scalingNote(dice, s.level), dice?.save && `${dice.save.slice(0, 3)} save`, dice?.attack && "spell attack"].filter(Boolean);
                     return extra.length ? <span className="text-[11px] text-zinc-500"> · {extra.join(" · ")}</span> : null;
                   })()}

@@ -3,6 +3,7 @@ import { useQueries } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { abilityMod, canCastInWildShape, fmt, ordinal, spellAttack, spellSaveDC, totalLevel } from "../lib/rules";
 import { describeDice, diceAt, scalingNote } from "../lib/spellDice";
+import { eldritchBlastBeams, spellDamageBonuses } from "../lib/spellBonuses";
 import { describeRoll, extractRolls, resolveRoll } from "../lib/rollText";
 import { withModifier } from "./rolls";
 import { addEffect, effectForSpell } from "../lib/combat";
@@ -249,8 +250,18 @@ export function SpellRollInfo({ c, spell, detail }: { c: Character; spell: Spell
   const withMod = !!first && / [+−] mod$/.test(first.dice) && !!dice.base && first.dice.startsWith(dice.base) ? { ...dice, addModifier: true } : dice;
   const ability = castingAbility(c, spell);
   const roll = diceAt(withMod, spell.level, spell.level, totalLevel(c));
-  const text = describeDice(withMod, roll, ability ? abilityMod(c, ability) : undefined);
-  const scaling = scalingNote(dice, spell.level);
+  // Spellcasting modifier when the spell adds it, plus feature bonuses (Agonizing Blast…).
+  const bonuses = withMod.kind === "damage" ? spellDamageBonuses(c, spell, detail) : [];
+  const castMod = withMod.addModifier && ability ? abilityMod(c, ability) : 0;
+  const flat = castMod + bonuses.reduce((n, b) => n + b.amount, 0);
+  const shown = bonuses.length ? { ...withMod, addModifier: true } : withMod;
+  const beams = /^eldritch blast$/i.test(spell.ref.name) ? eldritchBlastBeams(totalLevel(c)) : 1;
+  const text = describeDice(shown, roll, shown.addModifier && (ability || bonuses.length) ? flat : undefined);
+  const scaling = [
+    beams > 1 && `${beams} beams: one attack and damage roll each`,
+    ...bonuses.map((b) => `${b.source} ${fmt(b.amount)}`),
+    scalingNote(dice, spell.level),
+  ].filter(Boolean).join(" · ");
   // Everything else the text says you might roll (conditional, per-turn, alternate damage…).
   const at = { spellLevel: spell.level, slotLevel: spell.level, characterLevel: totalLevel(c) };
   const extra = all.filter((r) => {
@@ -261,13 +272,13 @@ export function SpellRollInfo({ c, spell, detail }: { c: Character; spell: Spell
     <span className="flex shrink-0 flex-wrap items-center gap-1 text-[11px]">
       {text && (
         <RollButton
-          expression={roll!.replace(/\s+/g, "")}
+          expression={`${roll!.replace(/\s+/g, "")}${flat ? (flat > 0 ? `+${flat}` : `${flat}`) : ""}`}
           label={`${spell.ref.name}${dice.kind === "heal" ? " healing" : " damage"}`}
           kind={dice.kind === "heal" ? "heal" : "damage"}
           title={scaling ? `${text} · ${scaling}` : text}
           className={`rounded border px-1.5 py-0 ${dice.kind === "heal" ? "border-emerald-700 text-emerald-400" : "border-blood-500/50 text-blood-500"}`}
         >
-          {text}
+          {beams > 1 ? `${beams}× ${text}` : text}
         </RollButton>
       )}
       {dice.save && ability && <span className="rounded border border-sky-800 px-1.5 text-sky-300" title={`${dice.save} saving throw against your spell save DC`}>DC {spellSaveDC(c, ability)} {dice.save.slice(0, 3).toUpperCase()}</span>}
