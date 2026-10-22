@@ -30,6 +30,12 @@ function renderTag(tag: string, body: string): string {
     case "dice": case "damage": case "d20": return parts[1] || parts[0];
     case "note": return `*${parts[0]}*`;
     case "5etools": case "filter": case "link": return parts[0];
+    // {@quickref difficult terrain||3} / {@quickref Cover||3||half cover}: the display text is 5th.
+    case "quickref": return parts[4] || parts[0];
+    // {@book Chapter 10|PHB|10}: the 3rd part is a chapter number, not display text.
+    case "book": case "adventure": return parts[0];
+    case "classFeature": return parts[5] || parts[0];
+    case "subclassFeature": return parts[7] || parts[0];
     // Reference tags: {@spell name|source|display text}
     default: return parts[2] || parts[0];
   }

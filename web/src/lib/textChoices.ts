@@ -27,6 +27,13 @@ export function textChoices(description: string): Choice[] {
     const any = text.match(/(?:gain|have) proficiency in (one|two|three) (?:additional )?skills? of your choice/i);
     if (any) out.push({ id: "text-skill", label: `Skill proficiency: choose ${any[1].toLowerCase()}`, kind: "skill", count: COUNT[any[1].toLowerCase()], options: skillOptions() });
   }
+  // Iron Mind (Gloom Stalker), Slippery Mind…: "proficiency in Wisdom saving throws. If you already have
+  // this proficiency, you instead gain proficiency in Intelligence or Charisma saving throws".
+  const save = text.match(/gain proficiency in (\w+) saving throws\. If you already have this proficiency, you instead gain proficiency in (\w+) or (\w+) saving throws/i);
+  if (save) {
+    const options = [save[1], save[2], save[3]].map((n) => ({ key: n.slice(0, 3).toLowerCase(), name: n }));
+    out.push({ id: "text-save", label: `Saving throw proficiency: ${save[1]} (or ${save[2]}/${save[3]} if you already have it)`, kind: "save", count: 1, options });
+  }
   return out;
 }
 

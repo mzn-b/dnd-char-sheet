@@ -139,29 +139,35 @@ export function carrying(c: Character) {
 /** Walking speed after items, features, heavy armor, encumbrance and exhaustion. */
 export function speedBreakdown(c: Character): { total: number; parts: string[] } {
   const form = wildShapeForm(c);
+  let total: number;
+  let parts: string[];
   if (form) {
     const walk = form.monster?.speed.walk ?? (parseInt(form.speed, 10) || 0);
     const other = Object.entries(form.monster?.speed ?? {}).filter(([k, v]) => k !== "walk" && v).map(([k, v]) => `${k} ${v}`);
-    return { total: walk, parts: [`${form.name} (Wild Shape) ${walk}`, ...other] };
+    total = walk;
+    parts = [`${form.name} (Wild Shape) ${walk}`, ...other];
+  } else {
+    total = c.speed;
+    parts = [`Base ${c.speed}`];
+    for (const m of modifiersFor(c, "speed")) {
+      total += m.value;
+      parts.push(`${m.source} ${fmt(m.value)}`);
+    }
+    // Dwarves: "Your speed is not reduced by wearing heavy armor."
+    if (armorClassBreakdown(c).tooHeavy && !/dwar(f|ves)|duergar/i.test(c.race)) {
+      total -= 10;
+      parts.push("Armor too heavy −10");
+    }
+    const load = carrying(c);
+    if (load.mode === "variant" && load.encumbered) {
+      const pen = load.encumbered === 2 ? 20 : 10;
+      total -= pen;
+      parts.push(`${load.encumbered === 2 ? "Heavily encumbered" : "Encumbered"} −${pen}`);
+    } else if (load.mode === "standard" && load.encumbered) {
+      parts.push("Over carrying capacity");
+    }
   }
-  let total = c.speed;
-  const parts = [`Base ${c.speed}`];
-  for (const m of modifiersFor(c, "speed")) {
-    total += m.value;
-    parts.push(`${m.source} ${fmt(m.value)}`);
-  }
-  if (armorClassBreakdown(c).tooHeavy) {
-    total -= 10;
-    parts.push("Armor too heavy −10");
-  }
-  const load = carrying(c);
-  if (load.mode === "variant" && load.encumbered) {
-    const pen = load.encumbered === 2 ? 20 : 10;
-    total -= pen;
-    parts.push(`${load.encumbered === 2 ? "Heavily encumbered" : "Encumbered"} −${pen}`);
-  } else if (load.mode === "standard" && load.encumbered) {
-    parts.push("Over carrying capacity");
-  }
+  // Exhaustion and conditions apply in Wild Shape too.
   if (c.exhaustion >= 5) {
     total = 0;
     parts.push("Exhaustion 5: speed 0");
@@ -173,7 +179,10 @@ export function speedBreakdown(c: Character): { total: number; parts: string[] }
     total = 0;
     parts.push("Grappled/Restrained: speed 0");
   }
-  return { total: Math.max(0, total), parts };
+  total = Math.max(0, total);
+  // Roving (Tasha's ranger): climbing and swimming speeds equal to your walking speed.
+  if (!form && modifiersFor(c, "speed").some((m) => m.id === "feature:roving")) parts.push(`Climb ${total}, swim ${total} (Roving)`);
+  return { total, parts };
 }
 export const speed = (c: Character) => speedBreakdown(c).total;
 
@@ -305,8 +314,10 @@ export function armorClassBreakdown(c: Character): AcBreakdown {
     parts.push(`${armor.name} ${a.base}`, ...(a.type !== "heavy" ? [`Dex ${fmt(dexPart)}`] : []));
   } else {
     const options: [number, string[]][] = [[10 + dex, ["Base 10", `Dex ${fmt(dex)}`]]];
-    if (classNames.includes("barbarian")) options.push([10 + dex + abilityMod(c, "con"), ["Unarmored Defense 10", `Dex ${fmt(dex)}`, `Con ${fmt(abilityMod(c, "con"))}`]]);
-    if (classNames.includes("monk") && !shield) options.push([10 + dex + abilityMod(c, "wis"), ["Unarmored Defense 10", `Dex ${fmt(dex)}`, `Wis ${fmt(abilityMod(c, "wis"))}`]]);
+    // Multiclassing: Unarmored Defense comes only from the first of these classes you took.
+    const unarmored = classNames.find((n) => n === "barbarian" || n === "monk");
+    if (unarmored === "barbarian") options.push([10 + dex + abilityMod(c, "con"), ["Unarmored Defense 10", `Dex ${fmt(dex)}`, `Con ${fmt(abilityMod(c, "con"))}`]]);
+    if (unarmored === "monk" && !shield) options.push([10 + dex + abilityMod(c, "wis"), ["Unarmored Defense 10", `Dex ${fmt(dex)}`, `Wis ${fmt(abilityMod(c, "wis"))}`]]);
     if (c.classes.some((k) => /draconic/i.test(k.subclass?.name ?? ""))) options.push([13 + dex, ["Draconic Resilience 13", `Dex ${fmt(dex)}`]]);
     const best = options.sort((a, b) => b[0] - a[0])[0];
     total = best[0];
@@ -327,7 +338,8 @@ export function armorClassBreakdown(c: Character): AcBreakdown {
   return {
     total,
     parts,
-    stealthDisadvantage: !!armor?.data?.armor?.stealthDisadvantage,
+    // Medium Armor Master: no Stealth disadvantage from medium armor.
+    stealthDisadvantage: !!armor?.data?.armor?.stealthDisadvantage && !(armor.data!.armor!.type === "medium" && hasModifier(c, "medArmorDex")),
     tooHeavy: !!armor?.data?.armor?.strength && abilityScore(c, "str") < armor.data!.armor!.strength!,
   };
 }

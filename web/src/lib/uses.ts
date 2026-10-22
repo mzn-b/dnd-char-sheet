@@ -28,7 +28,8 @@ export function detectUses(text: string): DetectedUses | null {
   if (abilityTimes) return { formula: ABILITY[abilityTimes[1].toLowerCase()], reset };
   const points = t.match(/you have (\d+|one|two|three|four|five) (?:luck points|[a-z]+ points|uses)/i);
   if (points) return { formula: Number(points[1]) || COUNT[points[1].toLowerCase()] || 1, reset };
-  const times = t.match(/\b(once|twice|three times|two times|four times)\b(?! per turn)/i);
+  // "four times your ranger level" (Beast Master companion HP) is a multiplier, not a use count.
+  const times = t.match(/\b(once|twice|(?:three|two|four) times(?! your| the| its| that))\b(?! per turn)/i);
   if (times) return { formula: COUNT[times[1].toLowerCase()], reset };
   if (/once you use (?:this|it)|you can't use (?:this|it) again|must finish a (?:short or long|long|short) rest before you can (?:use|cast) it/i.test(t)) return { formula: 1, reset };
   return null;

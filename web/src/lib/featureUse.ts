@@ -1,3 +1,4 @@
+import { scaledFeatureDice } from "./featureRolls";
 import { EFFECTS, activateEffect, addEffect, endEffect, type Reminder } from "./combat";
 import { featureDuration } from "./featureDuration";
 import { featureKind, spendEconomy } from "./economy";
@@ -67,7 +68,7 @@ export function applyFeatureUse(d: Character, f: Feature): string | undefined {
   if (duration) {
     if (duration.concentration) d.concentration = { name: f.name };
     if (d.combat?.active) {
-      const hit = triggerReminders(f);
+      const hit = triggerReminders(d, f);
       addEffect(d, {
         id: f.id, name: f.name, source: "feature", startedRound: d.combat.round,
         rounds: duration.untilNextTurn ? null : duration.rounds, untilNextTurn: duration.untilNextTurn, concentration: duration.concentration,
@@ -79,13 +80,14 @@ export function applyFeatureUse(d: Character, f: Feature): string | undefined {
 }
 
 /** What to remember while a feature's effect lasts: its "when you hit…" style sentences. */
-function triggerReminders(f: Feature): Omit<Reminder, "source">[] {
+function triggerReminders(c: Character, f: Feature): Omit<Reminder, "source">[] {
   // Drop the "*1st-level ranger optional feature…*" line, then prefer the sentence with the extra dice.
   const text = f.description.replace(/^\*[^*\n]+\*\s*/, "").replace(/\*\*?|_/g, "").replace(/\s+/g, " ");
   const sentences = text.split(/(?<=[.!?])\s+/);
   const withDice = sentences.find((s) => /\d*d\d+/.test(s) && /\b(?:hit|damage)\b/i.test(s));
   const trigger = sentences.find((s) => /\b(?:the first time|whenever|when) [^.]{0,60}you hit\b/i.test(s));
-  const hit = withDice ?? trigger;
+  const scaled = scaledFeatureDice(c, f.name);
+  const hit = scaled && withDice ? withDice.replace(/\b\d+d\d+\b/, scaled) : withDice ?? trigger;
   return hit ? [{ when: "hit", text: `${f.name}: ${hit}` }] : [];
 }
 

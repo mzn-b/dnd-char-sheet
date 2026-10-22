@@ -121,6 +121,8 @@ function featureModifiers(c: Character, chaMod: number, wisMod: number): Modifie
   if (classLevel(c, "fighter") >= 7 && has(names, "remarkable athlete")) add("remarkable-athlete", "Remarkable Athlete", "halfProfPhysical", 1);
   if (classLevel(c, "paladin") >= 6 && has(names, "aura of protection"))
     add("aura-of-protection", "Aura of Protection", "save", Math.max(1, chaMod), "while conscious");
+  // Gloom Stalker (Xanathar's): Wisdom modifier to initiative.
+  if (classLevel(c, "ranger") >= 3 && has(names, "dread ambusher")) add("dread-ambusher", "Dread Ambusher", "initiative", wisMod);
   // Fey Wanderer (Tasha's): add your Wisdom modifier to Charisma checks (minimum +1).
   if (classLevel(c, "ranger") >= 3 && has(names, "otherworldly glamour")) add("otherworldly-glamour", "Otherworldly Glamour", "check:cha", Math.max(1, wisMod), "WIS");
   return out;

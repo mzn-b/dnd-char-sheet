@@ -18,7 +18,8 @@ const UNIT_ROUNDS: Record<string, number> = { round: 1, minute: 10, hour: 600 };
 export function durationFromText(text: string): FeatureDuration | undefined {
   const plain = text.replace(/\*\*?|_/g, " ").replace(/\s+/g, " ");
   const concentration = /until you lose (?:your )?concentration|as if (?:you were )?concentrating|requires? concentration|\(concentration\)/i.test(plain);
-  const timed = plain.match(/\bfor (a|an|one|two|three|ten|\d+) (round|minute|hour)s?\b/i);
+  // "travel for an hour or more" (Natural Explorer) describes a condition, not a duration.
+  const timed = plain.match(/\bfor (a|an|one|two|three|ten|\d+) (round|minute|hour)s?\b(?! or (?:more|longer))/i);
   if (timed) {
     const n = NUM[timed[1].toLowerCase()] ?? Number(timed[1]);
     const unit = timed[2].toLowerCase();

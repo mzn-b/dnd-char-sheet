@@ -59,6 +59,18 @@ export function SpellBadges({ detail }: { detail?: ContentDetail }) {
   );
 }
 
+/** Classes with the Ritual Casting feature (rangers, paladins and sorcerers have none in 2014). */
+const RITUAL_CLASSES = /^(bard|cleric|druid|wizard|artificer)$/i;
+
+/** Whether this spell can be cast as a ritual: a Ritual Casting class, Book of Ancient Secrets or the Ritual Caster feat. */
+export function canRitualCast(c: Character, spell: SpellEntry) {
+  const cls = c.classes.find((k) => k.key === spell.classKey);
+  if (cls && RITUAL_CLASSES.test(cls.name)) return true;
+  const names = c.features.flatMap((f) => [f.name, ...(f.subfeatures ?? []).map((x) => x.name)]);
+  if (cls && /^warlock$/i.test(cls.name) && names.some((n) => /book of ancient secrets/i.test(n))) return true;
+  return names.some((n) => /^ritual caster/i.test(n)) && !cls;
+}
+
 /**
  * Cast a spell: pick a slot (or pact slot) of the spell's level or higher, cast as a ritual,
  * or spend an innate use. Starts concentration when needed.
@@ -74,12 +86,13 @@ export function CastButton({
     const decision = spellDecision(spell.ref.name);
     if (decision) setTimeout(() => ask(decision));
   };
-  const concentrate = (d: Character) => {
+  const concentrate = (d: Character, ritual = false) => {
     if (conc) d.concentration = { name: spell.ref.name, spellId: spell.id };
     const s = d.spellcasting.spells.find((x) => x.id === spell.id);
     if (s) s.castCount = (s.castCount ?? 0) + 1;
     // In combat, the casting time uses the action, bonus action or reaction.
-    spendEconomy(d, kindFromCastingTime(detail?.meta["Casting Time"]), `Cast ${spell.ref.name}`, { spellLevel: spell.level });
+    // A ritual takes 10 minutes longer: no action in combat.
+    spendEconomy(d, ritual ? "other" : kindFromCastingTime(detail?.meta["Casting Time"]), `Cast ${spell.ref.name}`, { spellLevel: spell.level });
     // In combat, lasting spells become active effects with reminders and a countdown.
     if (d.combat?.active) {
       const effect = effectForSpell(d, spell, detail);
@@ -123,12 +136,13 @@ export function CastButton({
         s.usesSpent = (s.usesSpent ?? 0) + 1;
       } else if (level === "pact") d.spellcasting.pactSlots.used += 1;
       else if (level !== "ritual") d.spellcasting.slots[level - 1].used += 1;
-      concentrate(d);
+      concentrate(d, level === "ritual");
     });
     setOpen(false);
     followUp();
   };
-  const nothing = !slots.length && !pactOk && !detail?.spell?.ritual && !freeLeft;
+  const ritual = !!detail?.spell?.ritual && canRitualCast(c, spell);
+  const nothing = !slots.length && !pactOk && !ritual && !freeLeft;
 
   return (
     <span className="relative">
@@ -155,7 +169,7 @@ export function CastButton({
               Free cast ({freeLeft} left, {spell.uses})
             </button>
           )}
-          {detail?.spell?.ritual && (
+          {ritual && (
             <button className="block w-full rounded px-2 py-1 text-left text-xs text-emerald-400 hover:bg-ink-800" onClick={() => castWith("ritual")}>
               As a ritual (+10 min, no slot)
             </button>

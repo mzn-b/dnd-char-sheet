@@ -536,9 +536,19 @@ function optionalFeatureOption(ds: Dataset, ref: string): ChoiceOption {
 /** Choices embedded in a feature's entries as {type: "options"} blocks, plus Expertise. */
 function featureChoices(ds: Dataset, name: string, entries: any, id: string): Choice[] {
   const choices: Choice[] = [];
-  const walk = (e: any) => {
+  const seen = new Set<any>();
+  const walk = (e: any, label = name) => {
     if (!e || typeof e !== "object") return;
-    if (Array.isArray(e)) return e.forEach(walk);
+    if (Array.isArray(e)) return e.forEach((x) => walk(x, label));
+    // Choices inside inlined features: "Hunter" → "Hunter's Prey" → Colossus Slayer / Giant Killer / Horde Breaker.
+    if (e.type === "refSubclassFeature" || e.type === "refClassFeature") {
+      const f = e.type === "refSubclassFeature" ? findSubclassFeature(ds, parseSubclassFeatureRef(e.subclassFeature)) : findClassFeature(ds, parseClassFeatureRef(e.classFeature, "PHB"));
+      if (f && !seen.has(f)) {
+        seen.add(f);
+        walk(f.entries, f.name);
+      }
+      return;
+    }
     if (e.type === "options") {
       const options: ChoiceOption[] = (e.entries ?? []).flatMap((o: any): ChoiceOption[] => {
         if (o.type === "refOptionalfeature") return [optionalFeatureOption(ds, o.optionalfeature)];
@@ -555,28 +565,32 @@ function featureChoices(ds: Dataset, name: string, entries: any, id: string): Ch
       });
       if (options.length) {
         const count = e.count ?? 1;
-        choices.push({ id: `${id}-${choices.length}`, label: `Choose ${count} ${name} option${count > 1 ? "s" : ""}`, kind: "feature", count, options });
+        choices.push({ id: `${id}-${choices.length}`, label: `Choose ${count} ${label} option${count > 1 ? "s" : ""}`, kind: "feature", count, options });
       }
       return;
     }
-    walk(e.entries);
+    walk(e.entries, label);
   };
   walk(entries);
   if (/^expertise/i.test(name) && !choices.length) choices.push(expertiseChoice(id));
   return choices;
 }
 
+const ordinal = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? "st" : n % 10 === 2 && n !== 12 ? "nd" : n % 10 === 3 && n !== 13 ? "rd" : "th"}`;
+
 /** Renders a feature, inlining any sub-features it references (e.g. a subclass's level-3 header). */
 function featureBody(ds: Dataset, entries: any): string {
   const expand = (e: any): any => {
     if (Array.isArray(e)) return e.map(expand);
+    // Inlined features carry a "*3rd-level Gloom Stalker feature*" line, as in the books, so the
+    // sheet can tell them apart from option lists.
     if (e?.type === "refSubclassFeature") {
       const f = findSubclassFeature(ds, parseSubclassFeatureRef(e.subclassFeature));
-      return f ? { type: "entries", name: f.name, entries: expand(f.entries) } : e;
+      return f ? { type: "entries", name: f.name, entries: [`{@i ${ordinal(f.level)}-level ${f.subclassShortName} feature}`, ...expand(f.entries)] } : e;
     }
     if (e?.type === "refClassFeature") {
       const f = findClassFeature(ds, parseClassFeatureRef(e.classFeature, "PHB"));
-      return f ? { type: "entries", name: f.name, entries: expand(f.entries) } : e;
+      return f ? { type: "entries", name: f.name, entries: [`{@i ${ordinal(f.level)}-level ${f.className} feature}`, ...expand(f.entries)] } : e;
     }
     if (e && typeof e === "object" && e.type !== "options" && e.entries) return { ...e, entries: expand(e.entries) };
     return e;

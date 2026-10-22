@@ -20,7 +20,7 @@ export function kindFromCastingTime(t?: string): ActionKind {
 const PATTERNS: [ActionKind, RegExp][] = [
   ["bonus", /\b(?:as a|use a|using a|take a|with a|spend a|your) bonus action\b|\bbonus action (?:to|on your turn)\b/i],
   ["reaction", /\b(?:use|uses|using|take|spend) (?:your|its|a) reaction\b|\bas a reaction\b|\byour reaction to\b/i],
-  ["action", /\b(?:as an|use an|using an|use your|take an|spend an|uses its) action\b|\baction to (?:magically|activate|use|channel|present|expend)\b|\btake the (?:attack|dash|disengage|dodge|help|hide|search) action\b/i],
+  ["action", /\b(?:as an|use an|using an|use your|take an|spend an|uses its) action\b|\baction to (?:magically|activate|use|channel|present|expend)\b|\btake the (?:dash|disengage|dodge|help|hide|search) action\b(?! as a bonus action)/i],
 ];
 
 /** Reads "as a bonus action", "use your reaction", "use your action to…" from a feature's text (earliest mention wins). */
@@ -49,7 +49,9 @@ const KNOWN: { match: RegExp; kind: ActionKind | ((c: Character) => ActionKind) 
   { match: /^channel divinity/i, kind: "action" },
   // Circle of the Moon's Combat Wild Shape makes it a bonus action.
   { match: /^wild shape$/i, kind: (c) => (c.features.some((f) => /^combat wild shape$/i.test(f.name)) || c.classes.some((k) => /moon/i.test(k.subclass?.name ?? "")) ? "bonus" : "action") },
-  { match: /^(divine smite|sneak attack|extra attack|stunning strike|favored foe)$/i, kind: "free" },
+  { match: /^(divine smite|sneak attack|extra attack|stunning strike|favored foe|dread ambusher|colossus slayer|dreadful strikes)$/i, kind: "free" },
+  // Takes a minute of preparation, not an action in combat.
+  { match: /^hide in plain sight$/i, kind: "other" },
 ];
 
 export function featureKind(c: Character, f: Pick<Feature, "name" | "description">): ActionKind | undefined {
@@ -109,6 +111,10 @@ export function spendEconomy(
     if (kind === "bonus") e.bonusSpell = true;
     if (kind === "action" && e.bonusSpell && opts.spellLevel > 0) warning ??= `You cast a bonus-action spell this turn, so your action spell must be a cantrip.`;
     if (kind === "bonus" && e.actionSpellLevel != null && e.actionSpellLevel > 0) warning ??= `You cast a leveled spell with your action, so you can't cast a bonus-action spell this turn.`;
+    // The same rule covers reaction spells cast on your own turn (Shield, Absorb Elements).
+    if (kind === "reaction" && s.myTurn && e.bonusSpell) warning ??= `You cast a bonus-action spell this turn, so you can't cast another spell (except an action cantrip) until it ends.`;
+    if (kind === "bonus" && e.reactionSpellOnTurn) warning ??= `You already cast a spell as a reaction this turn, so you can't cast a bonus-action spell.`;
+    if (kind === "reaction" && s.myTurn) e.reactionSpellOnTurn = true;
     if (kind === "action") e.actionSpellLevel = opts.spellLevel;
   }
   e[key] = true;

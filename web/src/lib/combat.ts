@@ -4,6 +4,7 @@ import { classResources } from "./resources";
 import { CONDITION_TEXT, abilityMod, totalLevel } from "./rules";
 import type { Character, ContentDetail, SpellEntry } from "./types";
 import { featureParts } from "./featureSections";
+import { scaledFeatureDice } from "./featureRolls";
 
 export type ReminderWhen = "turnStart" | "attack" | "hit" | "damaged" | "turnEnd" | "always";
 
@@ -54,6 +55,8 @@ export interface CombatState {
     bonusSpell?: boolean;
     /** Level of the spell cast with the action this turn. */
     actionSpellLevel?: number;
+    /** A spell was cast as a reaction during your own turn. */
+    reactionSpellOnTurn?: boolean;
   };
   effects: ActiveEffect[];
   log: { round: number; text: string }[];
@@ -125,6 +128,18 @@ export const EFFECTS: EffectDef[] = [
   { match: /^(greater )?invisibility$/i, reminders: [{ when: "attack", text: "Invisible: advantage on your attacks; attacks against you have disadvantage" }] },
   { match: /^enlarge\/reduce$/i, reminders: [{ when: "hit", text: "Enlarged: +1d4 weapon damage (reduced: −1d4)" }] },
   { match: /^armor of agathys$/i, reminders: [{ when: "damaged", text: "Armor of Agathys: melee attacker takes cold damage while you have the temp HP" }] },
+  // Ranger and smite-style spells: the effect waits for your next hit.
+  { match: /^hail of thorns$/i, reminders: [{ when: "hit", text: "Hail of Thorns: on your next ranged weapon hit, creatures within 5 ft of the target make a Dex save (1d10 piercing, +1d10 per slot above 1st, max 6d10; half on a success)" }] },
+  { match: /^ensnaring strike$/i, reminders: [{ when: "hit", text: "Ensnaring Strike: on your next weapon hit, the target makes a Str save or is restrained (1d6 piercing at the start of each of its turns)" }] },
+  { match: /^searing smite$/i, reminders: [{ when: "hit", text: "Searing Smite: on your next melee weapon hit, +1d6 fire and the target ignites (Con save at the start of each of its turns or 1d6 fire)" }] },
+  { match: /^zephyr strike$/i, reminders: [{ when: "attack", text: "Zephyr Strike: no opportunity attacks; once, advantage on a weapon attack that deals +1d8 force on a hit and gives +30 ft speed this turn" }] },
+  { match: /^lightning arrow$/i, reminders: [{ when: "hit", text: "Lightning Arrow: the next ranged weapon attack deals 4d8 lightning (half on a miss) instead of its damage; creatures within 10 ft make a Dex save for 2d8 lightning. +1d8 to both per slot above 3rd" }] },
+  { match: /^flame arrows$/i, reminders: [{ when: "hit", text: "Flame Arrows: ammunition from the quiver deals +1d6 fire on a hit (12 pieces)" }] },
+  { match: /^elemental weapon$/i, reminders: [{ when: "attack", text: "Elemental Weapon: +1 to attack rolls with the weapon (+2 with a 5th–6th-level slot, +3 with 7th+)" }, { when: "hit", text: "Elemental Weapon: +1d4 damage of the chosen type (2d4 with a 5th–6th-level slot, 3d4 with 7th+)" }] },
+  { match: /^guardian of nature$/i, reminders: [{ when: "attack", text: "Guardian of Nature — Primal Beast: advantage on Str melee attacks, +1d6 force on a melee weapon hit, +10 ft speed, darkvision 120 ft. Great Tree: advantage on Dex/Wis attacks, Con saves; 10 temp HP" }] },
+  { match: /^branding smite$/i, reminders: [{ when: "hit", text: "Branding Smite: on your next weapon hit, +2d6 radiant (+1d6 per slot above 2nd) and the target sheds light, can't be invisible" }] },
+  { match: /^(thunderous|wrathful|blinding|staggering|banishing) smite$/i, reminders: [{ when: "hit", text: "Smite: the extra damage and effect apply to your next melee weapon hit" }] },
+  { match: /^absorb elements$/i, untilNextTurn: true, reminders: [{ when: "damaged", text: "Absorb Elements: resistance to the triggering damage type until the start of your next turn" }, { when: "hit", text: "Absorb Elements: your first melee hit on your next turn deals +1d6 of the absorbed type (+1d6 per slot above 1st)" }] },
   { match: /^(dodge)$/i, label: "Dodge", always: true, untilNextTurn: true, reminders: [{ when: "always", text: "Dodging: attacks against you have disadvantage, advantage on Dex saves" }] },
   { match: /^wild shape$/i, label: "Wild Shape", rounds: null, resource: "druid:wildshape", activatedBy: /^wild shape$/i, reminders: [{ when: "always", text: "Wild Shape: use the beast's stats; revert at 0 HP (excess damage carries over)" }] },
   { match: /^bladesong$/i, label: "Bladesong", rounds: 10, activatedBy: /^bladesong$/i, reminders: [{ when: "always", text: "Bladesong: +INT to AC, +10 ft speed, advantage on Acrobatics, +INT to concentration saves" }] },
@@ -172,11 +187,12 @@ const PASSIVES: { match: RegExp; when: ReminderWhen; text: (c: Character) => str
   { match: /^great weapon fighting$/i, when: "hit", text: () => "Great Weapon Fighting: reroll 1s and 2s on two-handed weapon damage" },
   { match: /^dueling$/i, when: "hit", text: () => "Dueling: +2 damage with a one-handed melee weapon and no other weapon" },
   { match: /^archery$/i, when: "attack", text: () => "Archery: +2 to ranged weapon attack rolls" },
-  { match: /^dreadful strikes$/i, when: "hit", text: (c) => `Dreadful Strikes: +${(c.classes.find((k) => k.name === "Ranger")?.level ?? 3) >= 11 ? "1d6" : "1d4"} psychic damage on a weapon hit (once per turn per creature)` },
+  { match: /^dreadful strikes$/i, when: "hit", text: (c) => `Dreadful Strikes: +${scaledFeatureDice(c, "Dreadful Strikes") ?? "1d4"} psychic damage on a weapon hit (once per turn per creature)` },
   { match: /^colossus slayer$/i, when: "hit", text: () => "Colossus Slayer: +1d8 damage once per turn if the target is below its hit point maximum" },
   { match: /^dread ambusher$/i, when: "turnStart", text: () => "Dread Ambusher (first turn): +10 ft speed, and one extra weapon attack this turn that deals +1d8 on a hit" },
-  { match: /^planar warrior$/i, when: "turnStart", text: () => "Planar Warrior: bonus action to mark a creature; your next weapon hit on it this turn deals +1d8 force (2d8 at 11th)" },
-  { match: /^favored foe$/i, when: "hit", text: () => "Favored Foe: mark the creature on a hit (concentration); +1d4 damage once per turn while marked" },
+  { match: /^planar warrior$/i, when: "turnStart", text: (c) => `Planar Warrior: bonus action to mark a creature; your next weapon hit on it this turn deals +${scaledFeatureDice(c, "Planar Warrior") ?? "1d8"} force` },
+  { match: /^favored foe$/i, when: "hit", text: (c) => `Favored Foe: mark the creature on a hit (concentration); +${scaledFeatureDice(c, "Favored Foe") ?? "1d4"} damage once per turn while marked` },
+  { match: /^gathered swarm$/i, when: "hit", text: (c) => `Gathered Swarm: once per turn after you hit, the swarm deals +${scaledFeatureDice(c, "Gathered Swarm") ?? "1d6"} piercing, pushes 15 ft (Str save), or moves you 5 ft` },
 ];
 
 /** Trigger phrases in rules text, for features and spells without a hand-written reminder. */
@@ -196,7 +212,7 @@ function triggerSentence(text: string, re: RegExp): string | undefined {
 }
 
 /** Spells that add damage when you hit: the smites, Hunter's Mark, Hex, Hail of Thorns… */
-const ON_HIT_SPELL = /\b(?:the next time you hit|the first time you hit|whenever you hit|you hit (?:the|a) (?:creature|target)[^.]{0,40}with (?:a|an) (?:weapon|melee weapon|ranged weapon) attack|when you hit (?:it|a creature|the target))\b/i;
+const ON_HIT_SPELL = /\b(?:the next time you hit|the first time you hit|whenever you hit|you hit (?:the|a) (?:creature|target)[^.]{0,40}with (?:a|an) (?:weapon|melee weapon|ranged weapon) attack|when you hit (?:it|a creature|the target)|the next time you make a ranged weapon attack|(?:is )?hit by a ranged weapon attack|extra \d+d\d+ \w+ damage on a hit)\b/i;
 
 function hasFeature(c: Character, re: RegExp) {
   return c.features.some((f) => re.test(f.name) || f.subfeatures?.some((s) => re.test(s.name)));
@@ -317,7 +333,8 @@ export function startTurn(d: Character): string[] {
   s.economy = freshEconomy();
   const ended: string[] = [];
   for (const e of [...s.effects]) {
-    const expired = (e.untilNextTurn && e.startedRound < s.round) || (e.rounds != null && s.round >= e.startedRound + e.rounds);
+    // Anything lasting "until your next turn" was started before this turn (even before your first one).
+    const expired = e.untilNextTurn || (e.rounds != null && s.round >= e.startedRound + e.rounds);
     if (expired) {
       endEffect(d, e.id);
       ended.push(e.name);
@@ -379,7 +396,8 @@ export function reminders(c: Character, spellDetails: Record<string, ContentDeta
       if (cls?.spellModel && cls.spellModel !== "known") continue; // unprepared
     }
     const text = d.description ?? "";
-    if (!ON_HIT_SPELL.test(text)) continue;
+    // Reaction spells (Absorb Elements) are cast in response to something else, not before an attack.
+    if (!ON_HIT_SPELL.test(text) || /reaction/i.test(d.meta["Casting Time"] ?? "")) continue;
     const roll = extractRolls(text).find((r) => r.kind === "damage");
     const dice = roll ? resolveRoll(roll, { spellLevel: s.level, slotLevel: s.level, characterLevel: totalLevel(c) }) : undefined;
     const ct = d.meta["Casting Time"] ?? "";

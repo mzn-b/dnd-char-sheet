@@ -21,7 +21,9 @@ export function featureSections(f: Pick<Feature, "name" | "description">): { nam
   const sections = marks.map((m, i) => ({ name: m.name, text: text.slice(m.start, i + 1 < marks.length ? marks[i + 1].at : undefined).trim() }));
   // Only sections marked as features ("*3rd-level Fey Wanderer feature*"); option lists such as
   // Fighting Style's **Archery.** / **Defense.** are choices, not features you have.
-  const features = sections.filter((x) => FEATURE_MARK.test(x.text));
+  // Tasha's "Deft Explorer Improvement" holds one unmarked benefit (**Roving.**, **Tireless.**).
+  const benefit = /^You gain an additional benefit\b/i.test(text.trim());
+  const features = sections.filter((x) => FEATURE_MARK.test(x.text) || benefit);
   if (!features.length) return [{ name: f.name, text }];
   return [{ name: f.name, text: text.slice(0, marks[0].at) }, ...features];
 }
