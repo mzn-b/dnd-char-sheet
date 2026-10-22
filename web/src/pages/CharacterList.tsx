@@ -121,7 +121,7 @@ export default function CharacterList() {
           return (
             <div key={c.id} className="panel group relative flex gap-4 transition hover:border-ink-600">
               <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-ink-800 font-display text-2xl text-accent-400">
-                {c.portraitUrl ? <img src={c.portraitUrl} alt="" className="h-full w-full object-cover" /> : c.name.charAt(0)}
+                {c.portraitUrl ? <img src={c.portraitUrl} alt="" className="h-full w-full object-cover object-top" /> : c.name.charAt(0)}
               </div>
               <div className="min-w-0 flex-1">
                 <Link to={`/characters/${c.id}`} className="after:absolute after:inset-0">

@@ -16,9 +16,14 @@ export function BioTab({ c, update }: { c: Character; update: Update }) {
     <div className="grid gap-4 lg:grid-cols-[18rem_1fr]">
       <div className="space-y-4">
         <Section title="Portrait">
-          <div className="mb-2 flex aspect-square items-center justify-center overflow-hidden rounded-lg bg-ink-850">
-            {c.portraitUrl ? <img src={c.portraitUrl} alt={c.name} className="h-full w-full object-cover" /> : <span className="font-display text-6xl text-ink-700">{c.name.charAt(0)}</span>}
-          </div>
+          {/* The whole picture at its own proportions (tall portraits aren't cropped); a square placeholder without one. */}
+          {c.portraitUrl ? (
+            <img src={c.portraitUrl} alt={c.name} className="mb-2 h-auto max-h-[80vh] w-full rounded-lg bg-ink-850 object-contain" />
+          ) : (
+            <div className="mb-2 flex aspect-square items-center justify-center rounded-lg bg-ink-850">
+              <span className="font-display text-6xl text-ink-700">{c.name.charAt(0)}</span>
+            </div>
+          )}
           <TextField className="field-boxed text-xs" placeholder="Image URL" value={c.portraitUrl} onChange={(v) => update((d) => void (d.portraitUrl = v))} />
         </Section>
         <Section title="Details">
