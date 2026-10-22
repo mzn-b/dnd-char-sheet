@@ -13,6 +13,19 @@ export interface ContentRef {
   name: string;
 }
 
+/** One alternative of a feat's prerequisites; everything listed must hold. */
+export interface FeatPrereq {
+  level?: number;
+  /** Any one of these minimums ([{str: 13}, {dex: 13}]). */
+  abilities?: Record<string, number>[];
+  races?: { name: string; subrace?: string }[];
+  proficiency?: { armor?: string; weapon?: string }[];
+  spellcasting?: boolean;
+  feats?: string[];
+  backgrounds?: string[];
+  features?: string[];
+}
+
 export interface ContentSummary extends ContentRef {
   type: ContentType;
   level?: number;
@@ -26,6 +39,10 @@ export interface ContentSummary extends ContentRef {
   movement?: string[];
   /** Races: ability score increases as text ("CON +2, STR +1"). */
   abilities?: string;
+  /** Feats: prerequisites to check (one entry per alternative). */
+  prereqs?: FeatPrereq[];
+  /** Feats that can be taken more than once (Elemental Adept). */
+  repeatable?: boolean;
 }
 
 export interface ContentDetail extends ContentSummary {
@@ -97,6 +114,8 @@ export interface ChoiceOption {
   prerequisite?: string;
   /** Checkable prerequisites (the text is in `prerequisite`). */
   requires?: { level?: number; className?: string; pact?: string; spells?: string[]; features?: string[] };
+  /** Feat options: their prerequisites. */
+  prereqs?: FeatPrereq[];
 }
 
 /** Selected option keys per choice id. */
@@ -253,6 +272,8 @@ export interface Feature {
   effects?: Effect[];
   /** Spells this feature grants as the character levels (racial magic). */
   grantedSpells?: GrantedSpell[];
+  /** Spells this adds to your class spell list (Dragonmarks, Ravnica and Strixhaven backgrounds). */
+  expandedSpells?: ExpandedSpell[];
 }
 
 export interface SpellEntry {

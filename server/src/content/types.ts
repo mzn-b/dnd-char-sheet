@@ -20,6 +20,19 @@ export const ABILITIES: Ability[] = ["str", "dex", "con", "int", "wis", "cha"];
 export type Facets = Record<string, string | number | boolean | string[]>;
 
 /** Lightweight entry used in search results / pickers. */
+/** One alternative of a feat's prerequisites; everything listed must hold. */
+export interface FeatPrereq {
+  level?: number;
+  /** Any one of these minimums ([{str: 13}, {dex: 13}]). */
+  abilities?: Record<string, number>[];
+  races?: { name: string; subrace?: string }[];
+  proficiency?: { armor?: string; weapon?: string }[];
+  spellcasting?: boolean;
+  feats?: string[];
+  backgrounds?: string[];
+  features?: string[];
+}
+
 export interface ContentSummary {
   source: ContentSource;
   key: string;
@@ -40,6 +53,10 @@ export interface ContentSummary {
   cr?: string;
   /** Races: ability score increases as text ("CON +2, STR +1"). */
   abilities?: string;
+  /** Feats: prerequisites to check (one entry per alternative). */
+  prereqs?: FeatPrereq[];
+  /** Feats that can be taken more than once (Elemental Adept). */
+  repeatable?: boolean;
 }
 
 /** Full entry, normalized across all sources so the UI renders one shape. */

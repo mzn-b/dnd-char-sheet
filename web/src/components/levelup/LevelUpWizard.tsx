@@ -1,6 +1,6 @@
 import { takeSnapshot } from "../../lib/levelDown";
 import { splitFeature } from "../../lib/featureSections";
-import { prereqContext, unmetRequirement } from "../../lib/prereqs";
+import { featPrereqProblem, prereqContext, unmetRequirement } from "../../lib/prereqs";
 import { useBookFilter } from "../../lib/books";
 import { useMemo, useState } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -17,7 +17,7 @@ import {
 } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
 import { ChoiceList, ChoicePicker, unfinishedChoices } from "../ChoicePicker";
-import { ContentBrowser, ContentDetailView, contentId, expandedEntries } from "../ContentBrowser";
+import { ContentBrowser, ContentDetailView, allExpandedEntries, contentId } from "../ContentBrowser";
 import { Markdown, Modal, Spinner } from "../ui";
 import { planLevel } from "./plan";
 import { applyLevelUp, hpGainFor, newFeaturesFor, optionalSwaps, prepareLevelUp, type LevelUpPicks } from "./levelUp";
@@ -160,7 +160,7 @@ export function LevelUpWizard({
   const spellPicks = plan && activeSubclass
     ? (variant?.spellPicks ?? subRulesQuery.data?.spellPicks ?? []).filter((p) => (existing?.subclass ? p.level === plan.newLevel : p.level <= plan.newLevel))
     : [];
-  const expanded = activeSubclass ? expandedEntries(activeSubclass.name, variant?.expandedSpells ?? subRulesQuery.data?.expandedSpells) : undefined;
+  const expanded = allExpandedEntries(c, activeSubclass && { name: activeSubclass.name, spells: variant?.expandedSpells ?? subRulesQuery.data?.expandedSpells });
 
   // Eldritch Knight (abjuration/evocation) and Arcane Trickster (enchantment/illusion) learn spells from two
   // schools, except one pick from any school at class levels 3, 8, 14 and 20.
@@ -186,6 +186,7 @@ export function LevelUpWizard({
   }, [c, cls, plan, progressionSel, featureSel, newFeatures, cantrips, spells, featureDetails]);
   const blocked = (o: ChoiceOption) => unmetRequirement(o, prereqs, rules?.name);
 
+  const ownedFeats = new Set(c.features.filter((f) => f.kind === "feat" && f.ref).map((f) => contentId(f.ref!)));
   const progressionTaken = (name: string) => c.features.find((f) => f.name === name)?.subfeatures?.map((s) => s.key) ?? [];
 
   const warnings = [
@@ -511,7 +512,7 @@ export function LevelUpWizard({
                 type="feat"
                 limit={1}
                 selected={feat ? [feat] : []}
-                disabledIds={new Set(c.features.filter((f) => f.kind === "feat" && f.ref).map((f) => contentId(f.ref!)))}
+                blocked={(f) => (ownedFeats.has(contentId(f)) && !f.repeatable ? "Already taken" : featPrereqProblem(c, f.prereqs, totalLevel(c) + 1))}
                 onToggle={(f) => { setFeat(feat && contentId(feat) === contentId(f) ? null : f); setFeatSel({}); }}
               />
               {featDetail?.choices?.length ? (

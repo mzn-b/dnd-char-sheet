@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
-import type { ContentDetail, ContentSummary, ContentType } from "../lib/types";
+import type { Character, ContentDetail, ContentSummary, ContentType, ExpandedSpell } from "../lib/types";
 import { spellLevelLabel } from "../lib/rules";
 import { Markdown, Modal, SourceBadge, Spinner } from "./ui";
 import { BOOK_FILTERED, useBookFilter } from "../lib/books";
@@ -32,8 +32,10 @@ export interface ExtraEntries {
 }
 
 export function ContentBrowser({
-  type, filters = {}, selected, onToggle, disabledIds = new Set(), limit, classLabel, allowAnyClass = true, extra,
+  type, filters = {}, selected, onToggle, disabledIds = new Set(), limit, classLabel, allowAnyClass = true, extra, blocked,
 }: {
+  /** Why an entry can't be picked (unmet feat prerequisite), shown on its row. */
+  blocked?: (c: ContentSummary) => string | undefined;
   extra?: ExtraEntries;
   type: ContentType;
   filters?: BrowserFilters;
@@ -182,6 +184,7 @@ export function ContentBrowser({
             const id = contentId(c);
             const owned = disabledIds.has(id);
             const isSel = selectedIds.has(id);
+            const reason = isSel ? undefined : blocked?.(c);
             return (
               <div
                 key={id}
@@ -192,12 +195,16 @@ export function ContentBrowser({
                   type="checkbox"
                   className="accent-accent-500"
                   checked={isSel || owned}
-                  disabled={owned || (!isSel && full)}
+                  disabled={owned || !!reason || (!isSel && full)}
                   onClick={(e) => e.stopPropagation()}
                   onChange={() => onToggle(c)}
                 />
-                <span className={`flex-1 truncate ${owned ? "text-ink-400" : ""}`}>{c.name}</span>
-                {c.abilities && <span className="max-w-[45%] truncate text-xs text-accent-400" title={c.abilities}>{c.abilities}</span>}
+                {/* The name wraps rather than truncating; race ability increases go on their own line below it. */}
+                <span className="min-w-0 flex-1">
+                  <span className={`block break-words ${owned ? "text-ink-400" : ""}`}>{c.name}</span>
+                  {c.abilities && <span className="block text-xs text-accent-400">{c.abilities}</span>}
+                  {reason && <span className="block text-xs text-blood-500">{reason}</span>}
+                </span>
                 {extraIds.has(id) && <span className="chip border-fuchsia-800 text-fuchsia-300" title={extra?.label}>expanded</span>}
                 {type === "spell" && <span className="text-xs text-ink-400">{c.level === 0 ? "C" : c.level}</span>}
                 <SourceBadge source={c.source} label={c.sourceLabel} />
@@ -343,6 +350,20 @@ export function ContentPicker({
       />
     </Modal>
   );
+}
+
+/**
+ * Every expanded list that applies to a class's spell picks: the subclass's (patron, Divine Soul) and
+ * the race's or background's ("added to the spell list of your spellcasting class").
+ */
+export function allExpandedEntries(c: Character, subclass?: { name: string; spells?: ExpandedSpell[] }): ExtraEntries | undefined {
+  const lists = [
+    subclass && expandedEntries(subclass.name, subclass.spells),
+    ...c.features.filter((f) => f.expandedSpells?.length).map((f) => expandedEntries(f.name, f.expandedSpells)),
+  ].filter(Boolean) as ExtraEntries[];
+  if (!lists.length) return undefined;
+  if (lists.length === 1) return lists[0];
+  return { label: `Expanded spells (${lists.map((l) => l.label.replace(/ expanded spells$/, "")).join(", ")})`, items: lists.flatMap((l) => l.items) };
 }
 
 /** A subclass's expanded spells as picker entries. */

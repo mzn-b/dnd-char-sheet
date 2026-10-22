@@ -37,9 +37,10 @@ export async function setExcludedDocuments(excluded: string[]) {
  */
 const V2_ONLY: { key: string; title: string; organization: string; types: ("spells" | "backgrounds")[] }[] = [
   { key: "spells-that-dont-suck", title: "Spells That Don't Suck", organization: "Open5e community", types: ["spells"] },
-  { key: "a5e-ddg", title: "Level Up: Dungeon Delver's Guide", organization: "EN Publishing", types: ["backgrounds"] },
-  { key: "a5e-gpg", title: "Level Up: Gate Pass Gazette", organization: "EN Publishing", types: ["backgrounds"] },
 ];
+/** Open5e documents written for another ruleset: Level Up A5E and its Monstrous Menagerie. */
+export const NOT_2014 = /^(a5e|menagerie)/;
+
 const V2_BASE = (process.env.OPEN5E_API_URL ?? "https://api.open5e.com") + "/v2";
 
 async function v2(endpoint: "spells" | "backgrounds"): Promise<any[]> {
@@ -117,7 +118,8 @@ const ABILITY_BY_NAME: Record<string, Ability> = {
 
 export async function listOpen5e(type: ContentType, opts: { cls?: string }): Promise<ContentSummary[]> {
   const excluded = new Set(await excludedDocuments());
-  const keep = (x: any) => !excluded.has(x.document__slug);
+  // Level Up Advanced 5e (A5E) is a different ruleset (new skills, maneuvers, exploration rules), not 2014 5e.
+  const keep = (x: any) => !excluded.has(x.document__slug) && !NOT_2014.test(x.document__slug ?? "");
   switch (type) {
     case "spell":
       return (await allWithV2("spells"))

@@ -50,6 +50,12 @@ export function textChoices(description: string): Choice[] {
     const any = text.match(/(?:gain|have) proficiency (?:in|with) (one|two|three) (?:additional )?skills? of your choice/i);
     if (any) out.push({ id: "text-skill", label: `Skill proficiency: choose ${any[1].toLowerCase()}`, kind: "skill", count: COUNT[any[1].toLowerCase()], options: skillOptions() });
   }
+  // Elemental Adept: "choose one of the following damage types: acid, cold, fire, lightning, or thunder".
+  const damage = text.match(/choose one of the following damage types:\s*([^.]+)/i);
+  if (damage) {
+    const types = damage[1].split(/,\s*(?:or\s+)?|\s+or\s+/).map((t) => t.trim()).filter(Boolean);
+    out.push({ id: "text-damage", label: "Damage type", kind: "text", count: 1, options: types.map((t) => ({ key: t.toLowerCase(), name: t[0].toUpperCase() + t.slice(1) })) });
+  }
   // Iron Mind (Gloom Stalker), Slippery Mind…: "proficiency in Wisdom saving throws. If you already have
   // this proficiency, you instead gain proficiency in Intelligence or Charisma saving throws".
   const save = text.match(/gain proficiency in (\w+) saving throws\. If you already have this proficiency, you instead gain proficiency in (\w+) or (\w+) saving throws/i);

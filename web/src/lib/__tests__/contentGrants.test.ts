@@ -51,3 +51,22 @@ describe("grants from races, backgrounds and feats", () => {
     expect(parts[0].description).toContain("Insight");
   });
 });
+
+describe("feat prerequisites", async () => {
+  const { featPrereqProblem } = await import("../prereqs");
+  it("checks level, abilities (either), proficiency, race and other feats", () => {
+    const c = newCharacter();
+    c.classes = [{ source: "srd", key: "wizard", name: "Wizard", level: 3, hitDie: 6, spellcastingAbility: "int" }];
+    c.abilities = { str: 10, dex: 12, con: 14, int: 16, wis: 10, cha: 8 };
+    expect(featPrereqProblem(c, [{ level: 4 }], 3)).toBe("Needs level 4");
+    expect(featPrereqProblem(c, [{ level: 4 }], 4)).toBeUndefined();
+    expect(featPrereqProblem(c, [{ abilities: [{ int: 13 }, { wis: 13 }] }])).toBeUndefined();
+    expect(featPrereqProblem(c, [{ abilities: [{ str: 13 }] }])).toBe("Needs STR 13");
+    expect(featPrereqProblem(c, [{ proficiency: [{ armor: "medium" }] }])).toMatch(/medium armor/);
+    c.proficienciesAndLanguages = "Armor: light, medium, shield";
+    expect(featPrereqProblem(c, [{ proficiency: [{ armor: "medium" }] }])).toBeUndefined();
+    expect(featPrereqProblem(c, [{ races: [{ name: "halfling" }] }])).toMatch(/halfling/);
+    expect(featPrereqProblem(c, [{ spellcasting: true }])).toBeUndefined();
+    expect(featPrereqProblem(c, [{ feats: ["strike of the giants"] }])).toMatch(/Strike Of The Giants/);
+  });
+});

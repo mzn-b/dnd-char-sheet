@@ -5,7 +5,7 @@ import { uid } from "../../lib/defaults";
 import { ABILITY_NAMES, fmt, maxPrepared, spellAttack, spellLevelLabel, spellModel, spellSaveDC } from "../../lib/rules";
 import type { Character, ClassEntry, ClassRules, ContentSummary, SpellEntry, SubclassRules } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
-import { ContentDetailView, ContentPicker, contentId, expandedEntries } from "../ContentBrowser";
+import { ContentDetailView, ContentPicker, allExpandedEntries, contentId } from "../ContentBrowser";
 import { Modal, NumberField, Pips, Section } from "../ui";
 import { CastButton, canRitualCast, SpellBadges, SpellRollInfo, spellRollContext, useSpellDetails } from "../spells";
 import { RollButton } from "../dice";
@@ -232,7 +232,7 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
           type="spell"
           classLabel={adding.cls?.name}
           filters={adding.cls ? { class: spellList(adding.cls, rules[adding.cls.key]), maxLevel: maxSpellLevel(rules[adding.cls.key], adding.cls.level) } : {}}
-          extra={adding.cls?.subclass ? expandedEntries(adding.cls.subclass.name, subRules[adding.cls.key]?.spellVariants?.find((v) => v.name === adding.cls?.subclass?.variant)?.expandedSpells ?? subRules[adding.cls.key]?.expandedSpells) : undefined}
+          extra={adding.cls ? allExpandedEntries(c, adding.cls.subclass && { name: adding.cls.subclass.name, spells: subRules[adding.cls.key]?.spellVariants?.find((v) => v.name === adding.cls?.subclass?.variant)?.expandedSpells ?? subRules[adding.cls.key]?.expandedSpells }) : undefined}
           disabledIds={owned}
           onClose={() => setAdding(null)}
           onConfirm={(p) => addSpells(p, adding.cls)}

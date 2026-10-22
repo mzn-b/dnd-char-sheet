@@ -2,7 +2,7 @@ import { HttpError } from "../http.js";
 import {
   ABILITIES, SKILL_KEYS, expertiseChoice, singleClassSlots, skillName, toSkillKey,
   type Ability, type Choice, type ChoiceOption, type ClassRules, type ContentDetail, type ContentSummary,
-  type ContentType, type Effect, type EquipmentChoice, type ExpandedSpell, type FeatureRef, type GrantedSpell, type ItemData, type LevelRules, type Progression, type SpellDice, type SpellPick, type SpellVariant,
+  type ContentType, type Effect, type FeatPrereq, type EquipmentChoice, type ExpandedSpell, type FeatureRef, type GrantedSpell, type ItemData, type LevelRules, type Progression, type SpellDice, type SpellPick, type SpellVariant,
 } from "../types.js";
 import { diceFromText, mergeDice } from "../spellDice.js";
 import { getDataset, type Dataset } from "./data.js";
@@ -31,7 +31,7 @@ export async function list5etools(type: ContentType, opts: { cls?: string }): Pr
         .filter(({ classes }) => !opts.cls || classes.includes(lc(opts.cls)))
         .map(({ s, classes }) => summary(ds, type, s.name, key(s.name, s.source), s.source, { level: s.level, classes, facets: spellFacets5e(s) }));
     case "feat":
-      return ds.feat.filter((x) => !x._copy || x.entries).map((x) => summary(ds, type, x.name, key(x.name, x.source), x.source, { facets: featFacets5e(x) }));
+      return ds.feat.filter((x) => !x._copy || x.entries).map((x) => summary(ds, type, x.name, key(x.name, x.source), x.source, { facets: featFacets5e(x), prereqs: featPrereqs(x.prerequisite), repeatable: x.repeatable || undefined }));
     case "background":
       return ds.background.filter((x) => !x._copy || x.entries).map((x) => summary(ds, type, x.name, key(x.name, x.source), x.source, { facets: backgroundFacets5e(x) }));
     case "item":
@@ -197,6 +197,28 @@ function durationText(d: any): string {
   return d.type;
 }
 
+/**
+ * A feat's prerequisites in checkable form: one entry per alternative ("or"), each listing what must all
+ * hold. Campaign requirements aren't checked.
+ */
+function featPrereqs(prereqs?: any[]): FeatPrereq[] | undefined {
+  if (!prereqs?.length) return undefined;
+  const out = prereqs.map((p): FeatPrereq => {
+    const r: FeatPrereq = {};
+    if (typeof p.level === "number") r.level = p.level;
+    else if (p.level?.level) r.level = p.level.level;
+    if (Array.isArray(p.ability)) r.abilities = p.ability;
+    if (Array.isArray(p.race)) r.races = p.race.map((x: any) => ({ name: lc(x.name), subrace: x.subrace ? lc(x.subrace) : undefined }));
+    if (Array.isArray(p.proficiency)) r.proficiency = p.proficiency.map((x: any) => ({ armor: x.armor, weapon: x.weapon ?? x.weaponGroup }));
+    if (p.spellcasting || p.spellcasting2020 || p.spellcastingFeature) r.spellcasting = true;
+    if (Array.isArray(p.feat)) r.feats = p.feat.map((x: string) => lc(x.split("|")[0]));
+    if (Array.isArray(p.background)) r.backgrounds = p.background.map((x: any) => lc(x.name));
+    if (Array.isArray(p.feature)) r.features = p.feature.map(lc);
+    return r;
+  });
+  return out.some((r) => Object.keys(r).length) ? out : undefined;
+}
+
 /** Checkable prerequisites of an option (first alternative): class level, pact boon, known spells, other options. */
 function prerequisiteReq(prereqs?: any[]): ChoiceOption["requires"] {
   const p = prereqs?.[0];
@@ -357,6 +379,13 @@ function mixedBlock(block: any[] | undefined, id: string): Choice[] {
   const b = block?.[0];
   if (!b) return [];
   const out: Choice[] = [];
+  // Alternatives of "any…" counts (Custom Background: 2 languages, or 1 language and 1 tool, …) are one pick of
+  // that many from all the kinds involved.
+  if (block!.length > 1 && block!.every((alt: any) => Object.keys(alt).every((k) => k.startsWith("any")))) {
+    const kinds = [...new Set(block!.flatMap((alt: any) => Object.keys(alt)))];
+    const count = Math.max(...block!.map((alt: any) => Object.values(alt).reduce((n: number, v: any) => n + (Number(v) || 0), 0)));
+    return mixedBlock([Object.fromEntries(kinds.map((k) => [k, count]))], id).map((c) => ({ ...c, count, label: `Choose ${count} ${kinds.map((k) => k.replace(/^any/, "").toLowerCase()).join(" or ")} proficiencies` }));
+  }
   const groups = b.choose ? (Array.isArray(b.choose) ? b.choose : [b.choose]) : [b];
   for (const c of groups) {
     const from: string[] = c.from ?? Object.keys(c).filter((k) => k.startsWith("any"));
@@ -584,11 +613,29 @@ function raceDetail(ds: Dataset, r: { name: string; key: string; source: string;
     ) as Record<string, string>,
     effects,
     choices,
-    grantedSpells: grantedSpells(ds, additional),
+    grantedSpells: raceSpellLimits(ds, grantedSpells(ds, additional), entries),
     spellPicks: spellSet(ds, additional?.[0]).picks,
     spellVariants: spellVariants(ds, additional),
     featChoice: featChoice(ds, pick("feats")),
+    // Dragonmarks' "Spells of the Mark" join your class spell list.
+    expandedSpells: expandedSpells(ds, additional),
   };
+}
+
+/**
+ * Racial spells of 1st level or higher are cast once per rest with the trait ("Once you cast it with this
+ * trait, you can't do so again until you finish a long rest"); 5etools often leaves that limit to the text.
+ */
+function raceSpellLimits(ds: Dataset, spells: GrantedSpell[], entries: any[]): GrantedSpell[] {
+  const text = plain(renderEntries(entries));
+  const limit = /(?:can't|cannot) (?:cast|do so|use)[^.]*?again until you finish (?:a )?(short or long|long|short) rest|regain the ability to cast [^.]*?when you finish (?:a )?(short or long|long|short) rest|once (?:per|each) (long|short) rest/i.exec(text);
+  if (!limit) return spells;
+  const rest = (limit[1] ?? limit[2] ?? limit[3]).toLowerCase().startsWith("short") ? "short rest" : "long rest";
+  return spells.map((g) => {
+    if (g.uses || g.mode === "prepared") return g;
+    const level = ds.spell.find((x) => key(x.name, x.source) === g.spell.key)?.level ?? 0;
+    return level > 0 ? { ...g, uses: `1/${rest}` } : g;
+  });
 }
 
 /** Feats granted by a race or background: [{any: 1}] (Variant Human), [{"magic initiate|phb": true}], or alternatives. */
@@ -615,6 +662,8 @@ function backgroundDetail(ds: Dataset, b: any): ContentDetail {
   for (const [prefix, prop] of [["Languages", "languageProficiencies"], ["Tools", "toolProficiencies"]] as const) {
     // Alternative sets (House Agent: each house's tools) are a choice between the sets.
     const alts = b[prop] ?? [];
+    // Custom Background lists "two languages" again next to its "two tools or languages" pick.
+    if (b.skillToolLanguageProficiencies && alts.every((a: any) => Object.keys(a).every((k) => k.startsWith("any")))) continue;
     if (alts.length > 1 && alts.every((a: any) => !("choose" in a))) {
       const sets = alts.map((a: any) => Object.keys(a).map((k) => (ANY_OPTIONS[k] ? `one ${ANY_OPTIONS[k].label}` : titleCase(plain(`{@x ${k.split("|")[0]}}`)))).join(", "));
       choices.push({ id: `${lc(prefix)}-set`, kind: "proficiency", prefix, count: 1, label: `${prefix}: choose one set`, options: sets.map((n: string) => ({ key: lc(n), name: n })) });

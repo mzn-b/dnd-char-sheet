@@ -15,6 +15,7 @@ import type { Character, ContentDetail, Feature, Selections, SubFeature } from "
 import type { Update } from "../../lib/useCharacter";
 import { ChoiceList, ContentApplyDialog } from "../ChoicePicker";
 import { contentId } from "../ContentBrowser";
+import { featPrereqProblem } from "../../lib/prereqs";
 import { Markdown, Modal, NumberField, Pips, Section, TextField } from "../ui";
 
 const GROUPS: { kind: Feature["kind"][]; title: string }[] = [
@@ -80,7 +81,12 @@ export function FeaturesTab({ c, update }: { c: Character; update: Update }) {
         );
       })}
       {c.features.length === 0 && <p className="panel text-sm text-ink-400">Features from your class, race, background and feats will appear here as you level up.</p>}
-      {addingFeat && <ContentApplyDialog title="Add a feat" type="feat" character={c} disabledIds={owned} onClose={() => setAddingFeat(false)} onApply={addFeat} />}
+      {addingFeat && (
+        <ContentApplyDialog
+          title="Add a feat" type="feat" character={c} onClose={() => setAddingFeat(false)} onApply={addFeat}
+          blocked={(f) => (owned.has(contentId(f)) && !f.repeatable ? "Already taken" : featPrereqProblem(c, f.prereqs))}
+        />
+      )}
     </div>
   );
 }

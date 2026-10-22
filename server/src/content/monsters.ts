@@ -1,5 +1,5 @@
 import { cachedFetch } from "./http.js";
-import { excludedDocuments } from "./open5e.js";
+import { NOT_2014, excludedDocuments } from "./open5e.js";
 import { DATA_URL, brewFileUrl, enabledBrews, getDataset } from "./fivetools/data.js";
 import { renderEntries, renderTags } from "./fivetools/render.js";
 import { monsterFacets5e, monsterFacetsOpen5e, monsterFacetsSrd } from "./facets.js";
@@ -241,7 +241,7 @@ function open5eMonster(m: any): MonsterData {
 export async function listOpen5eMonsters(): Promise<ContentSummary[]> {
   const excluded = new Set(await excludedDocuments());
   return (await open5eAll())
-    .filter((m) => !excluded.has(m.document__slug))
+    .filter((m) => !excluded.has(m.document__slug) && !NOT_2014.test(m.document__slug ?? ""))
     .map((m) => {
       const speed: Record<string, number> = {};
       for (const [k, v] of Object.entries(m.speed ?? {})) if (typeof v === "number") speed[k] = v;

@@ -35,7 +35,7 @@ export function withGrantChoices(d: ContentDetail, allFeats?: ContentSummary[]):
   }
   const fc = d.featChoice;
   if (fc) {
-    const options = (fc.options ?? allFeats ?? []).map((f) => ({ key: f.key, name: f.name, source: f.source, type: "feat" as const }));
+    const options = (fc.options ?? allFeats ?? []).map((f) => ({ key: f.key, name: f.name, source: f.source, type: "feat" as const, prereqs: (f as ContentSummary).prereqs }));
     if (options.length) out.push({ id: FEAT_ID, kind: "feature", count: fc.count, label: fc.options?.length === 1 ? `Feat: ${options[0].name}` : `Choose ${fc.count === 1 ? "a feat" : `${fc.count} feats`}`, options, ...(options.length === 1 ? { required: [options[0].key] } : {}) });
   }
   return out;

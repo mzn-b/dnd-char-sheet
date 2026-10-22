@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { withRequired } from "../lib/apply";
 import { FEAT_ID, FEAT_PREFIX, choiceShown, featSelections } from "../lib/grants";
+import { featPrereqProblem } from "../lib/prereqs";
+import { totalLevel } from "../lib/rules";
 import type { Character, Choice, ChoiceOption, ContentDetail, ContentSummary, ContentType, Selections } from "../lib/types";
 import { ContentBrowser, ContentDetailView, contentId } from "./ContentBrowser";
 import { Markdown, Modal, Spinner } from "./ui";
@@ -105,7 +107,9 @@ export function ChoicePicker({
             const on = selected.includes(o.key);
             // Replicate Magic Item can be learned more than once (Tasha's).
             const isTaken = taken.includes(o.key) && !/^replicate magic item/i.test(o.name);
-            const reason = on ? undefined : blocked?.(o);
+            // Feats offered as a pick (Variant Human): their prerequisites; without a character only the level counts.
+            const featReason = o.prereqs && (character ? featPrereqProblem(character, o.prereqs, Math.max(1, totalLevel(character))) : o.prereqs.every((p) => (p.level ?? 0) > 1) ? `Needs level ${Math.min(...o.prereqs.map((p) => p.level ?? 1))}` : undefined);
+            const reason = on ? undefined : blocked?.(o) ?? featReason;
             return (
               <div
                 key={o.key}
@@ -121,7 +125,7 @@ export function ChoicePicker({
                   onChange={() => toggle(o.key)}
                 />
                 <span className={`flex-1 ${isTaken || reason ? "text-ink-400" : ""}`}>{o.name}</span>
-                {o.prerequisite && <span className={`max-w-[45%] truncate text-[11px] ${reason ? "text-blood-500" : "text-ink-600"}`} title={reason ?? o.prerequisite}>{reason ?? o.prerequisite}</span>}
+                {(reason || o.prerequisite) && <span className={`max-w-[45%] truncate text-[11px] ${reason ? "text-blood-500" : "text-ink-600"}`} title={reason ?? o.prerequisite}>{reason ?? o.prerequisite}</span>}
               </div>
             );
           })}
@@ -200,8 +204,9 @@ export const unfinishedChoices = (choices: Choice[] | undefined, selections: Sel
  * Two-step modal: browse content (race, background, feat…), then make its choices, then apply.
  */
 export function ContentApplyDialog({
-  type, title, onClose, onApply, disabledIds, character, filters,
+  type, title, onClose, onApply, disabledIds, character, filters, blocked,
 }: {
+  blocked?: (c: ContentSummary) => string | undefined;
   type: ContentType;
   title: string;
   onClose: () => void;
@@ -254,6 +259,7 @@ export function ContentApplyDialog({
           filters={filters}
           limit={1}
           disabledIds={disabledIds}
+          blocked={blocked}
           selected={picked ? [picked] : []}
           onToggle={(c) => { setPicked(picked && contentId(picked) === contentId(c) ? null : c); setSelections({}); }}
         />

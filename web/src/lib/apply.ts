@@ -136,6 +136,7 @@ export async function buildFeature(
     subfeatures: subfeatures.length ? subfeatures : undefined,
     effects: detail.effects?.length ? detail.effects : undefined,
     grantedSpells: detail.grantedSpells?.length ? detail.grantedSpells : undefined,
+    expandedSpells: detail.expandedSpells?.length ? detail.expandedSpells : undefined,
   };
 }
 
