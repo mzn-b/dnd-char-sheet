@@ -137,6 +137,25 @@ export interface GrantedSpell {
   uses?: string;
 }
 
+/** Spells to choose from a filtered list (Nature Domain's druid cantrip, Additional Magical Secrets). */
+export interface SpellPick {
+  /** Class level it's gained at. */
+  level: number;
+  count: number;
+  label: string;
+  mode: GrantedSpell["mode"];
+  uses?: string;
+  options: { source: ContentSource; key: string; name: string }[];
+}
+
+/** One of several alternative spell sets (Circle of the Land terrain, Divine Soul affinity, Genie kind). */
+export interface SpellVariant {
+  name: string;
+  grantedSpells: GrantedSpell[];
+  spellPicks: SpellPick[];
+  expandedSpells: ExpandedSpell[];
+}
+
 export type Effect =
   | { kind: "ability"; ability: Ability; amount: number }
   | { kind: "speed"; amount: number }

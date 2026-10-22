@@ -32,7 +32,7 @@ export function planLevel(c: Character, rules: ClassRules, sub?: SubclassRules):
   const sc = current?.spellcasting ?? subNow?.spellcasting ?? null;
   const prevSc = previous?.spellcasting ?? subPrev?.spellcasting ?? null;
   const model = rules.spellModel ?? sub?.spellModel ?? null;
-  const isCaster = !!(rules.spellcastingAbility ?? sub?.spellcastingAbility);
+  const isCaster = !!(rules.spellcastingAbility ?? (sub?.casterType ? sub.spellcastingAbility : null));
 
   let spellPicks = 0;
   if (sc && model === "known" && sc.spellsKnown != null) spellPicks = sc.spellsKnown - (prevSc?.spellsKnown ?? 0);

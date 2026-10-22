@@ -158,7 +158,8 @@ export type ProfLevel = 0 | 0.5 | 1 | 2;
 export interface ClassEntry extends ContentRef {
   level: number;
   hitDie: number;
-  subclass?: ContentRef;
+  /** The subclass, with its chosen spell set where it has alternatives (Land's terrain, Divine Soul's affinity). */
+  subclass?: ContentRef & { variant?: string };
   spellcastingAbility?: Ability | null;
   casterType?: CasterType;
   spellModel?: SpellModel | null;
@@ -208,6 +209,8 @@ export interface SubFeature {
   name: string;
   description: string;
   ref?: ContentRef & { type: ContentType };
+  /** Spells the picked option grants (Armor of Shadows: Mage Armor at will). */
+  grantedSpells?: GrantedSpell[];
 }
 
 export interface Feature {
@@ -509,9 +512,30 @@ export interface LevelRules {
   classSpecific?: Record<string, unknown>;
 }
 
+/** Spells to choose from a filtered list (Nature Domain's druid cantrip, Additional Magical Secrets). */
+export interface SpellPick {
+  /** Class level it's gained at. */
+  level: number;
+  count: number;
+  label: string;
+  mode: GrantedSpell["mode"];
+  uses?: string;
+  options: ContentRef[];
+}
+
+/** One of several alternative spell sets (Circle of the Land terrain, Divine Soul affinity, Genie kind). */
+export interface SpellVariant {
+  name: string;
+  grantedSpells: GrantedSpell[];
+  spellPicks: SpellPick[];
+  expandedSpells: ExpandedSpell[];
+}
+
 export interface SubclassRules {
   grantedSpells?: GrantedSpell[];
+  spellPicks?: SpellPick[];
   expandedSpells?: ExpandedSpell[];
+  spellVariants?: SpellVariant[];
   spellcastingAbility: Ability | null;
   casterType: CasterType | null;
   spellModel: SpellModel | null;

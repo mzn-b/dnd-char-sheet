@@ -7,7 +7,7 @@ import type { Character, ClassEntry, ClassRules, ContentSummary, SpellEntry, Sub
 import type { Update } from "../../lib/useCharacter";
 import { ContentDetailView, ContentPicker, contentId, expandedEntries } from "../ContentBrowser";
 import { Modal, NumberField, Pips, Section } from "../ui";
-import { CastButton, SpellBadges, SpellRollInfo, spellRollContext, useSpellDetails } from "../spells";
+import { CastButton, canRitualCast, SpellBadges, SpellRollInfo, spellRollContext, useSpellDetails } from "../spells";
 import { RollButton } from "../dice";
 import { d20 } from "../../lib/dice";
 
@@ -60,6 +60,10 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
   const [filter, setFilter] = useState<"all" | "ready">("all");
   const [q, setQ] = useState("");
 
+  const spellbookSpell = (s: SpellEntry) => {
+    const cls = c.classes.find((k) => k.key === s.classKey);
+    return !!cls && spellModel(cls) === "spellbook";
+  };
   const isReady = (s: SpellEntry) => {
     const cls = c.classes.find((k) => k.key === s.classKey);
     return s.level === 0 || s.prepared || s.alwaysPrepared || !!s.uses || !cls || spellModel(cls) === "known";
@@ -203,7 +207,12 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
                       <SpellRollInfo c={c} spell={s} detail={details[s.id]} />
                         <SpellBadges detail={details[s.id]} />
                       {(s.castCount ?? 0) > 0 && <span className="text-[10px] text-ink-600" title="Times cast since your last rest">cast {s.castCount}×</span>}
-                      {isReady(s) && <CastButton c={c} update={update} spell={s} detail={details[s.id]} />}
+                      {isReady(s) ? (
+                        <CastButton c={c} update={update} spell={s} detail={details[s.id]} />
+                      ) : (
+                        // Wizards cast rituals from their spellbook without preparing them.
+                        details[s.id]?.spell?.ritual && canRitualCast(c, s) && spellbookSpell(s) && <CastButton c={c} update={update} spell={s} detail={details[s.id]} ritualOnly />
+                      )}
                       {s.ref.source === "homebrew" && <span className="chip border-fuchsia-800 text-fuchsia-300">HB</span>}
                       <span className="text-xs text-ink-600">{cls?.name ?? "Other"}</span>
                       <button className="btn-ghost px-1.5 py-0 text-xs opacity-0 hover:text-blood-500 group-hover:opacity-100" title="Remove" onClick={() => update((d) => void (d.spellcasting.spells = d.spellcasting.spells.filter((x) => x.id !== s.id)))}>✕</button>
@@ -222,7 +231,7 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
           type="spell"
           classLabel={adding.cls?.name}
           filters={adding.cls ? { class: spellList(adding.cls, rules[adding.cls.key]), maxLevel: maxSpellLevel(rules[adding.cls.key], adding.cls.level) } : {}}
-          extra={adding.cls?.subclass ? expandedEntries(adding.cls.subclass.name, subRules[adding.cls.key]?.expandedSpells) : undefined}
+          extra={adding.cls?.subclass ? expandedEntries(adding.cls.subclass.name, subRules[adding.cls.key]?.spellVariants?.find((v) => v.name === adding.cls?.subclass?.variant)?.expandedSpells ?? subRules[adding.cls.key]?.expandedSpells) : undefined}
           disabledIds={owned}
           onClose={() => setAdding(null)}
           onConfirm={(p) => addSpells(p, adding.cls)}

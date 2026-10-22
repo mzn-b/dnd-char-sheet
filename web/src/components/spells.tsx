@@ -12,6 +12,7 @@ import { ActionBadge } from "./ActionBadge";
 import { useDecision } from "./decisions";
 import { spellDecision } from "../lib/featureUse";
 import { kindFromCastingTime, spendEconomy } from "../lib/economy";
+import { classResources } from "../lib/resources";
 import { d20 } from "../lib/dice";
 import type { Ability, Character, ContentDetail, SpellDice, SpellEntry } from "../lib/types";
 import type { Update } from "../lib/useCharacter";
@@ -67,7 +68,9 @@ export function canRitualCast(c: Character, spell: SpellEntry) {
   const cls = c.classes.find((k) => k.key === spell.classKey);
   if (cls && RITUAL_CLASSES.test(cls.name)) return true;
   const names = c.features.flatMap((f) => [f.name, ...(f.subfeatures ?? []).map((x) => x.name)]);
-  if (cls && /^warlock$/i.test(cls.name) && names.some((n) => /book of ancient secrets/i.test(n))) return true;
+  // Book of Ancient Secrets: warlock spells with the ritual tag, and the rituals in the Book of Shadows
+  // (added without a class, since they come from other classes' lists).
+  if ((!cls || /^warlock$/i.test(cls.name)) && names.some((n) => /book of ancient secrets/i.test(n))) return true;
   return names.some((n) => /^ritual caster/i.test(n)) && !cls;
 }
 
@@ -76,8 +79,8 @@ export function canRitualCast(c: Character, spell: SpellEntry) {
  * or spend an innate use. Starts concentration when needed.
  */
 export function CastButton({
-  c, update, spell, detail, onCast,
-}: { c: Character; update: Update; spell: SpellEntry; detail?: ContentDetail; onCast?: (d: Character) => void }) {
+  c, update, spell, detail, onCast, ritualOnly,
+}: { c: Character; update: Update; spell: SpellEntry; detail?: ContentDetail; onCast?: (d: Character) => void; ritualOnly?: boolean }) {
   const [open, setOpen] = useState(false);
   const ask = useDecision();
   const conc = !!detail?.spell?.concentration;
@@ -104,7 +107,33 @@ export function CastButton({
   if (c.wildShape && !canCastInWildShape(c)) {
     return <button className="btn px-2 py-0 text-xs" disabled title="You can't cast spells in Wild Shape (until Beast Spells at 18th level)">Cast</button>;
   }
-  const freeMax = spell.uses ? parseInt(spell.uses, 10) || (/at will/.test(spell.uses) ? 0 : 1) : 0;
+  const smallBtn = "btn px-2 py-0 text-xs";
+  // At will (Mask of Many Faces, Ancestral Guardian's Augury…): no limit, no slot.
+  if (spell.uses === "at will") {
+    return <button className={smallBtn} title="At will" onClick={() => { update((d) => concentrate(d)); followUp(); }}>Cast (at will)</button>;
+  }
+  // Ritual only (Totem Warrior's Beast Sense; Book of Ancient Secrets; unprepared spellbook spells).
+  if (spell.uses === "ritual" || ritualOnly) {
+    return <button className={`${smallBtn} text-emerald-400`} title="Cast as a ritual: 10 minutes longer, no slot" onClick={() => { update((d) => concentrate(d, true)); followUp(); }}>Ritual</button>;
+  }
+  // Paid with class resource points (Shadow Arts: 2 ki).
+  const cost = spell.uses?.match(/^(\d+) (ki|sorcery points?|superiority dice?|psionic energy dice?)$/i);
+  if (cost) {
+    const n = Number(cost[1]);
+    const res = classResources(c).find((r) => r.name.toLowerCase().startsWith(cost[2].toLowerCase().slice(0, 3)));
+    const left = res ? res.max - (c.resourcesUsed?.[res.id] ?? 0) : 0;
+    return (
+      <button
+        className={smallBtn}
+        disabled={!res || left < n}
+        title={res ? `${left} ${res.name} left` : `No ${cost[2]} pool`}
+        onClick={() => { update((d) => { if (res) d.resourcesUsed = { ...d.resourcesUsed, [res.id]: (d.resourcesUsed?.[res.id] ?? 0) + n }; concentrate(d); }); followUp(); }}
+      >
+        Cast ({n} {cost[2]})
+      </button>
+    );
+  }
+  const freeMax = spell.uses ? parseInt(spell.uses, 10) || 1 : 0;
   const freeLeft = Math.max(0, freeMax - (spell.usesSpent ?? 0));
   const anySlots = c.spellcasting.slots.some((s, i) => i + 1 >= spell.level && s.max > 0) || c.spellcasting.pactSlots.level >= spell.level && c.spellcasting.pactSlots.max > 0;
   // Innate-only spells (racial magic) get a simple button; spells that can also use slots get the menu.

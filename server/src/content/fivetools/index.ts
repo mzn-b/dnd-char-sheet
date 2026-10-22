@@ -2,7 +2,7 @@ import { HttpError } from "../http.js";
 import {
   ABILITIES, SKILL_KEYS, expertiseChoice, singleClassSlots, skillName, toSkillKey,
   type Ability, type Choice, type ChoiceOption, type ClassRules, type ContentDetail, type ContentSummary,
-  type ContentType, type Effect, type EquipmentChoice, type ExpandedSpell, type FeatureRef, type GrantedSpell, type ItemData, type LevelRules, type Progression, type SpellDice,
+  type ContentType, type Effect, type EquipmentChoice, type ExpandedSpell, type FeatureRef, type GrantedSpell, type ItemData, type LevelRules, type Progression, type SpellDice, type SpellPick, type SpellVariant,
 } from "../types.js";
 import { diceFromText, mergeDice } from "../spellDice.js";
 import { getDataset, type Dataset } from "./data.js";
@@ -300,45 +300,93 @@ function spellRef(ds: Dataset, raw: string) {
   return s ? { source: SOURCE, key: key(s.name, s.source), name: s.name } : undefined;
 }
 
+/** Spells matching a 5etools filter: "level=0;1;2|class=Wizard|school=N". */
+function spellsMatching(ds: Dataset, filter: string) {
+  const parts = Object.fromEntries(filter.split("|").map((p) => p.split("=") as [string, string]));
+  const levels = parts.level?.split(";").map(Number);
+  const cls = parts.class?.split(";").map(lc);
+  const schools = parts.school?.split(";");
+  return ds.spell
+    .filter((x) => (!levels || levels.includes(x.level)) && (!schools || schools.includes(x.school)) && (!cls || spellClasses(ds, x).some((c) => cls.includes(c))))
+    .map((x) => ({ source: SOURCE, key: key(x.name, x.source), name: x.name, level: x.level as number }))
+    .sort((x, y) => x.level - y.level || x.name.localeCompare(y.name));
+}
+
+const describeFilter = (filter: string) => {
+  const parts = Object.fromEntries(filter.split("|").map((p) => p.split("=") as [string, string]));
+  const lv = parts.level?.split(";").map((l) => (l === "0" ? "cantrip" : `level ${l}`)).join("/");
+  return [parts.class, lv, parts.school && `school ${parts.school}`].filter(Boolean).join(" ") || "spell";
+};
+
 /**
- * Translate 5etools additionalSpells (first option) into granted spells.
- * Keys are levels; values are spell lists or {daily: {"1": [...]}, rest: {...}}. "expanded" lists
- * only widen what can be learned, so they're not granted.
+ * One 5etools additionalSpells entry: spells you get outright, and spells you choose ("choose" filters:
+ * Nature Domain's druid cantrip, Lore's Additional Magical Secrets, Arcana's Arcane Mastery).
+ * Keys are class levels. Innate "_" means at will; "ritual" spells are cast only as rituals;
+ * "resource" spells cost class resource points (Shadow Arts: 2 ki).
  */
-function grantedSpells(ds: Dataset, additional: any[] | undefined): GrantedSpell[] {
-  const a = additional?.[0];
-  if (!a) return [];
-  const out: GrantedSpell[] = [];
+function spellSet(ds: Dataset, a: any): { granted: GrantedSpell[]; picks: SpellPick[] } {
+  const granted: GrantedSpell[] = [];
+  const picks: SpellPick[] = [];
+  if (!a) return { granted, picks };
   const push = (mode: GrantedSpell["mode"], level: string, spells: any, uses?: string) => {
+    const lv = Number(String(level).replace(/\D/g, "")) || 1;
     for (const raw of Array.isArray(spells) ? spells : []) {
-      if (typeof raw !== "string") continue;
-      const spell = spellRef(ds, raw);
-      if (spell) out.push({ level: Number(String(level).replace(/\D/g, "")) || 1, spell, mode, uses });
+      if (typeof raw === "string") {
+        const spell = spellRef(ds, raw);
+        if (spell) granted.push({ level: lv, spell, mode, uses });
+      } else if (raw?.choose && typeof raw.choose === "string") {
+        const options = spellsMatching(ds, raw.choose).map(({ level: _l, ...r }) => r);
+        if (options.length) picks.push({ level: lv, count: raw.count ?? 1, label: `Choose ${raw.count ?? 1} ${describeFilter(raw.choose)}`, mode, uses, options });
+      }
     }
   };
   for (const mode of ["innate", "known", "prepared"] as const) {
     for (const [level, v] of Object.entries(a[mode] ?? {})) {
+      // A bare list says nothing about how often (Consult the Spirits is limited by its feature text).
       if (Array.isArray(v)) push(mode, level, v);
       else if (v && typeof v === "object") {
         for (const [k, inner] of Object.entries(v as any)) {
-          if (k === "_") push(mode, level, inner);
+          if (k === "_") push(mode, level, inner, mode === "innate" ? "at will" : undefined);
           else if (k === "daily" || k === "rest") for (const [n, list] of Object.entries(inner as any)) push(mode, level, list, `${n.replace("e", "")}/${k === "daily" ? "long rest" : "short rest"}`);
           else if (k === "will") push(mode, level, inner, "at will");
+          else if (k === "ritual") push(mode, level, inner, "ritual");
+          else if (k === "resource") for (const [n, list] of Object.entries(inner as any)) push(mode, level, list, `${n} ${lc(a.resourceName ?? "resource")}`);
         }
       }
     }
   }
-  return out;
+  return { granted, picks };
+}
+
+/** Spells granted by the first (or only) additionalSpells entry. */
+function grantedSpells(ds: Dataset, additional: any[] | undefined): GrantedSpell[] {
+  return spellSet(ds, additional?.[0]).granted;
+}
+
+/**
+ * Alternatives when additionalSpells has several entries: Circle of the Land terrains, Divine Soul
+ * affinities, Genie kinds, Arcane Archer's cantrip. Unnamed ones are named after their spells.
+ */
+function spellVariants(ds: Dataset, additional: any[] | undefined): SpellVariant[] | undefined {
+  if (!additional || additional.length < 2) return undefined;
+  return additional.map((a) => {
+    const { granted, picks } = spellSet(ds, a);
+    return { name: a.name ?? granted.map((g) => g.spell.name).join(", "), grantedSpells: granted, spellPicks: picks, expandedSpells: expandedSpells(ds, [a]) };
+  });
 }
 
 /**
  * additionalSpells "expanded" lists: keys "s1".."s9" are spell levels; plain numbers are class
- * levels (the spell's own level is used then).
+ * levels (the spell's own level is used then). {all: "level=1|class=Cleric"} adds a whole list.
  */
 function expandedSpells(ds: Dataset, additional: any[] | undefined): ExpandedSpell[] {
   const out: ExpandedSpell[] = [];
   for (const [k, list] of Object.entries(additional?.[0]?.expanded ?? {})) {
     for (const raw of Array.isArray(list) ? list : []) {
+      if (raw?.all && typeof raw.all === "string") {
+        for (const sp of spellsMatching(ds, raw.all)) out.push({ spellLevel: sp.level, spell: { source: sp.source, key: sp.key, name: sp.name } });
+        continue;
+      }
       if (typeof raw !== "string") continue;
       const spell = spellRef(ds, raw);
       if (!spell) continue;
@@ -533,6 +581,19 @@ function optionalFeatureOption(ds: Dataset, ref: string): ChoiceOption {
   return { key: key("of", of?.name ?? name, of?.source ?? source), name: of?.name ?? name, source: SOURCE, type: "feature", prerequisite: prerequisiteText(of?.prerequisite) };
 }
 
+/** Option types (featureType) of the optional features an options block lists: ["MV:B"] for maneuvers. */
+function optionTypes(ds: Dataset, entries: any[] | undefined): string[] {
+  const refs = (entries ?? []).filter((o: any) => o?.type === "refOptionalfeature");
+  if (!refs.length || refs.length !== (entries ?? []).length) return [];
+  const types = new Set<string>();
+  for (const r of refs) {
+    const [name, source] = String(r.optionalfeature).split("|");
+    const of = ds.optionalfeature.find((o) => lc(o.name) === lc(name) && (!source || lc(o.source) === lc(source)));
+    for (const t of of?.featureType ?? []) types.add(t);
+  }
+  return [...types];
+}
+
 /** Choices embedded in a feature's entries as {type: "options"} blocks, plus Expertise. */
 function featureChoices(ds: Dataset, name: string, entries: any, id: string): Choice[] {
   const choices: Choice[] = [];
@@ -550,6 +611,19 @@ function featureChoices(ds: Dataset, name: string, entries: any, id: string): Ch
       return;
     }
     if (e.type === "options") {
+      // No count: you get every entry (Psionic Power, Tipsy Sway, Genie's Vessel) or pick one each time
+      // you use the feature (The Third Eye). Not a build choice; featureBody shows them all.
+      if (e.count == null) return;
+      // Maneuvers, Metamagic, Arcane Shots, Runes…: offer the whole pool of that option type, including
+      // Tasha's additions ("Maneuver Options"), not just the options printed in this feature.
+      const types = optionTypes(ds, e.entries);
+      if (types.length) {
+        const options = ds.optionalfeature
+          .filter((o) => o.featureType?.some((t: string) => types.includes(t)))
+          .map((o) => ({ key: key("of", o.name, o.source), name: o.name, source: SOURCE, type: "feature" as const, prerequisite: prerequisiteText(o.prerequisite) }));
+        choices.push({ id: `${id}-${choices.length}`, label: `Choose ${e.count} ${label} option${e.count > 1 ? "s" : ""}`, kind: "feature", count: e.count, options });
+        return;
+      }
       const options: ChoiceOption[] = (e.entries ?? []).flatMap((o: any): ChoiceOption[] => {
         if (o.type === "refOptionalfeature") return [optionalFeatureOption(ds, o.optionalfeature)];
         if (o.type === "refClassFeature") {
@@ -564,7 +638,7 @@ function featureChoices(ds: Dataset, name: string, entries: any, id: string): Ch
         return [];
       });
       if (options.length) {
-        const count = e.count ?? 1;
+        const count = e.count;
         choices.push({ id: `${id}-${choices.length}`, label: `Choose ${count} ${label} option${count > 1 ? "s" : ""}`, kind: "feature", count, options });
       }
       return;
@@ -598,7 +672,10 @@ function featureBody(ds: Dataset, entries: any): string {
       const f = findClassFeature(ds, parseClassFeatureRef(e.classFeature, "PHB"));
       return f ? { type: "entries", name: f.name, entries: [`{@i ${ordinal(f.level)}-level ${f.className} feature}`, ...expand(f.entries)] } : e;
     }
+    // Everything you get (no count): show each one in full, not just its name.
+    if (e?.type === "options" && e.count == null) return { type: "entries", entries: expand(e.entries ?? []) };
     if (e && typeof e === "object" && e.type !== "options" && e.entries) return { ...e, entries: expand(e.entries) };
+    if (e?.type === "list" && Array.isArray(e.items)) return { ...e, items: e.items.map((it: any) => (it?.type?.startsWith?.("ref") ? expand(it) : it)) };
     return e;
   };
   return renderEntries(expand(entries));
@@ -674,12 +751,35 @@ function progressionTotal(prog: any, level: number): number {
   return Object.entries(prog ?? {}).reduce((t, [l, n]) => (Number(l) <= level ? Math.max(t, n as number) : t), 0);
 }
 
+/** Option types of counted options blocks in a feature's entries, following feature references. */
+function embeddedOptionTypes(ds: Dataset, entries: any, seen = new Set<any>()): string[] {
+  const out: string[] = [];
+  const walk = (e: any) => {
+    if (Array.isArray(e)) return e.forEach(walk);
+    if (!e || typeof e !== "object") return;
+    if (e.type === "options" && e.count != null) out.push(...optionTypes(ds, e.entries));
+    if (e.type === "refSubclassFeature" || e.type === "refClassFeature") {
+      const f = e.type === "refSubclassFeature" ? findSubclassFeature(ds, parseSubclassFeatureRef(e.subclassFeature)) : findClassFeature(ds, parseClassFeatureRef(e.classFeature, "PHB"));
+      if (f && !seen.has(f)) {
+        seen.add(f);
+        walk(f.entries);
+      }
+    }
+    walk(e.entries);
+  };
+  walk(entries);
+  return out;
+}
+
 function progressionsAt(ds: Dataset, progs: any[] | undefined, level: number, featuresHere: { name: string; obj?: any }[]): Progression[] {
   return (progs ?? []).flatMap((p) => {
     const total = progressionTotal(p.progression, level);
     const gained = total - progressionTotal(p.progression, level - 1);
     // A feature at this level that already embeds the options (e.g. Fighting Style) covers the pick.
-    const covered = featuresHere.some((f) => f.name === p.name && JSON.stringify(f.obj?.entries ?? "").includes('"options"'));
+    // Also when the options sit in a feature the subclass entry references ("Battle Master" → "Maneuvers"),
+    // matched by option type since names differ ("Rune Carver" vs "Runes").
+    const covered = featuresHere.some((f) => f.name === p.name && JSON.stringify(f.obj?.entries ?? "").includes('"options"'))
+      || featuresHere.some((f) => embeddedOptionTypes(ds, f.obj?.entries).some((t) => p.featureType.includes(t)));
     if (gained <= 0 || covered) return [];
     const options = ds.optionalfeature
       .filter((o) => o.featureType?.some((t: string) => p.featureType.includes(t)))
@@ -820,11 +920,15 @@ export async function subclassLevels5etools(k: string) {
   const feats = subclassFeatures(ds, sc);
   const casterType = CASTER[sc.casterProgression];
   return {
-    spellcastingAbility: sc.spellcastingAbility ?? null,
+    // Only subclasses with a caster progression (Eldritch Knight, Arcane Trickster) cast spells; others
+    // (Ancestral Guardian, Four Elements) carry an ability just for their own granted spells.
+    spellcastingAbility: casterType ? sc.spellcastingAbility ?? null : null,
     casterType: casterType ?? null,
-    spellModel: sc.spellcastingAbility ? (sc.spellsKnownProgression ? "known" : "prepared") : null,
+    spellModel: casterType ? (sc.spellsKnownProgression ? "known" : "prepared") : null,
     grantedSpells: grantedSpells(ds, sc.additionalSpells),
+    spellPicks: spellSet(ds, sc.additionalSpells?.[0]).picks,
     expandedSpells: expandedSpells(ds, sc.additionalSpells),
+    spellVariants: spellVariants(ds, sc.additionalSpells),
     levels: Array.from({ length: 20 }, (_, i) => {
       const level = i + 1;
       const here = feats.filter((f: any) => f.level === level);

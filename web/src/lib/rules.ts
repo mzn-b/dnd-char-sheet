@@ -234,7 +234,9 @@ export const xpForNextLevel = (c: Character) => XP_THRESHOLDS[Math.min(totalLeve
 
 export const CASTER_TYPE: Record<string, CasterType> = {
   bard: "full", cleric: "full", druid: "full", sorcerer: "full", wizard: "full",
-  paladin: "half", ranger: "half", warlock: "pact",
+  paladin: "half", ranger: "half", warlock: "pact", artificer: "artificer",
+  // Spellcasting only through a subclass that sets its own caster type (Eldritch Knight, Arcane Trickster).
+  barbarian: "none", fighter: "none", monk: "none", rogue: "none",
 };
 
 /** Fallback for characters saved before the class carried its own spell model. */
@@ -251,6 +253,8 @@ export const spellModel = (k: Pick<ClassEntry, "key" | "name" | "spellModel"> | 
 /** Number of spells a prepared caster (or wizard) can have prepared. */
 export function maxPrepared(c: Character, k: ClassEntry): number | null {
   if (spellModel(k) === "known" || !k.spellcastingAbility) return null;
+  // Paladins (and other half casters) gain Spellcasting at 2nd level.
+  if (casterType(k) === "half" && k.level < 2) return null;
   const divisor = k.preparedDivisor ?? (k.name.toLowerCase() === "paladin" ? 2 : 1);
   return Math.max(1, abilityMod(c, k.spellcastingAbility) + Math.floor(k.level / divisor));
 }

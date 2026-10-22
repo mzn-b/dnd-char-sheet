@@ -19,8 +19,11 @@ export async function resolveSubfeatures(choices: Choice[], selections: Selectio
   return Promise.all(
     picks.map(async ({ ch, opt }) => {
       let description = opt.description ?? "";
-      if (!description && opt.source && opt.type) {
-        description = await api.detail(opt.type, opt.source, opt.key).then((d) => d.description).catch(() => "");
+      let grantedSpells: GrantedSpell[] | undefined;
+      if (opt.source && opt.type && opt.type !== "spell" && (!description || opt.type === "feature")) {
+        const det = await api.detail(opt.type, opt.source, opt.key).catch(() => null);
+        description ||= det?.description ?? "";
+        grantedSpells = det?.grantedSpells?.length ? det.grantedSpells : undefined;
       }
       return {
         id: uid(),
@@ -29,6 +32,7 @@ export async function resolveSubfeatures(choices: Choice[], selections: Selectio
         name: subfeatureName(ch, opt),
         description,
         ref: opt.source && opt.type ? { source: opt.source, key: opt.key, name: opt.name, type: opt.type } : undefined,
+        grantedSpells,
       };
     }),
   );

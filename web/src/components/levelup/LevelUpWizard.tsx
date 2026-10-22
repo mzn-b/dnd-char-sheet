@@ -70,6 +70,8 @@ export function LevelUpWizard({
   const [swapOut, setSwapOut] = useState<string>("");
   const [swapIn, setSwapIn] = useState<ContentSummary[]>([]);
   const [applying, setApplying] = useState(false);
+  const [variantPick, setVariantPick] = useState("");
+  const [spellPickSel, setSpellPickSel] = useState<Record<number, string[]>>({});
 
   const rulesQuery = useQuery({
     queryKey: ["classRules", cls?.source, cls?.key],
@@ -175,7 +177,17 @@ export function LevelUpWizard({
     [c, skillPicks],
   );
 
-  const expanded = activeSubclass ? expandedEntries(activeSubclass.name, subRulesQuery.data?.expandedSpells) : undefined;
+  // Subclasses with alternative spell sets (Land's terrain, Divine Soul's affinity, Genie kind, Arcane Archer's cantrip).
+  const variants = subRulesQuery.data?.spellVariants;
+  const storedVariant = existing?.subclass?.variant;
+  const variant = variants?.find((v) => v.name === (storedVariant ?? variantPick));
+  const subGranted = variant?.grantedSpells ?? subRulesQuery.data?.grantedSpells;
+  // Spells to pick (Nature Domain's cantrip, Additional Magical Secrets): those of this level, or all so far
+  // when the subclass is taken now.
+  const spellPicks = plan && activeSubclass
+    ? (variant?.spellPicks ?? subRulesQuery.data?.spellPicks ?? []).filter((p) => (existing?.subclass ? p.level === plan.newLevel : p.level <= plan.newLevel))
+    : [];
+  const expanded = activeSubclass ? expandedEntries(activeSubclass.name, variant?.expandedSpells ?? subRulesQuery.data?.expandedSpells) : undefined;
 
   const progressionTaken = (name: string) => c.features.find((f) => f.name === name)?.subfeatures?.map((s) => s.key) ?? [];
 
@@ -185,6 +197,8 @@ export function LevelUpWizard({
     plan?.needsSubclass && !subclass && `No ${rules?.subclassTitle ?? "subclass"} chosen`,
     ...newFeatures.flatMap((f, i) => unfinishedChoices(detailOf(i)?.choices, featureSel[f.key] ?? {}).map((ch) => `${f.name}: ${ch.label}`)),
     ...(plan?.progressions ?? []).filter((p) => (progressionSel[p.name]?.length ?? 0) < p.gained).map((p) => `${p.name}: ${p.gained - (progressionSel[p.name]?.length ?? 0)} left to choose`),
+    variants?.length && !variant && `No ${activeSubclass?.name ?? "subclass"} option chosen (${variants.map((v) => v.name).join(", ")})`,
+    ...spellPicks.filter((p, i) => (spellPickSel[i]?.length ?? 0) < p.count).map((p) => `${p.label}: not chosen`),
     plan?.grantsAsi && asiMode === "asi" && asiPoints < 2 && `Only ${asiPoints}/2 ability points assigned`,
     plan?.grantsAsi && asiMode === "feat" && !feat && "No feat chosen",
     plan?.grantsAsi && asiMode === "feat" && featDetail && unfinishedChoices(featDetail.choices, featSel).length > 0 && `${featDetail.name}: choices incomplete`,
@@ -223,12 +237,23 @@ export function LevelUpWizard({
       const race = c.features.find((f) => f.kind === "race");
       const grantedSpells = [
         ...(await prepareGrantedSpells(race?.grantedSpells, totalLevel(c) + 1, "race")),
-        ...(activeSubclass ? await prepareGrantedSpells(subRules?.grantedSpells, plan.newLevel, `subclass:${activeSubclass.key}`, rules.index) : []),
-        // Class features that teach spells by level (Primal Awareness).
+        ...(activeSubclass ? await prepareGrantedSpells(variant?.grantedSpells ?? subRules?.grantedSpells, plan.newLevel, `subclass:${activeSubclass.key}`, rules.index) : []),
+        // Spells picked from a subclass list (Nature Domain cantrip, Additional Magical Secrets).
+        ...(activeSubclass
+          ? await prepareGrantedSpells(
+              spellPicks.flatMap((p, i) => (spellPickSel[i] ?? []).map((k) => ({ level: p.level, mode: p.mode, uses: p.uses, spell: p.options.find((o) => o.key === k)! }))).filter((g) => g.spell),
+              plan.newLevel, `subclass:${activeSubclass.key}`, rules.index,
+            )
+          : []),
+        // Class and subclass features that teach spells by level (Primal Awareness), and spells from chosen
+        // options (Armor of Shadows' Mage Armor, Pact of the Chain's Find Familiar).
         ...(await Promise.all(
-          [...c.features.filter((f) => f.kind === "class" && f.origin.startsWith(`${rules.name} `)), ...builtFeatures]
-            .filter((f) => f.grantedSpells?.length)
-            .map((f) => prepareGrantedSpells(f.grantedSpells, plan.newLevel, `feature:${f.name}`, rules.index)),
+          [...c.features.filter((f) => f.origin.startsWith(`${rules.name} `)), ...builtFeatures]
+            .flatMap((f) => [{ name: f.name, spells: f.grantedSpells }, ...(f.subfeatures ?? []).map((x) => ({ name: x.name, spells: x.grantedSpells }))])
+            .concat(builtProgressions.flatMap(({ subs }) => subs.map((x) => ({ name: x.name, spells: x.grantedSpells }))))
+            .concat(c.features.flatMap((f) => (f.subfeatures ?? []).filter((x) => x.grantedSpells?.length && !f.origin.startsWith(`${rules.name} `)).map((x) => ({ name: x.name, spells: x.grantedSpells }))))
+            .filter((f) => f.spells?.length)
+            .map((f) => prepareGrantedSpells(f.spells, plan.newLevel, `feature:${f.name}`, rules.index)),
         )).flat(),
       ];
 
@@ -254,8 +279,14 @@ export function LevelUpWizard({
         entry.level = plan.newLevel;
         if (subclass) {
           entry.subclass = { source: subclass.source, key: subclass.key, name: subclass.name };
+        }
+        if (entry.subclass && variant && !entry.subclass.variant) {
+          entry.subclass.variant = variant.name;
+          summary.push(`${entry.subclass.name}: ${variant.name}`);
+        }
+        if (subclass) {
           // Subclasses like Eldritch Knight grant spellcasting to a non-caster class.
-          if (!entry.spellcastingAbility && subRules?.spellcastingAbility) {
+          if (!entry.spellcastingAbility && subRules?.spellcastingAbility && subRules.casterType) {
             Object.assign(entry, { spellcastingAbility: subRules.spellcastingAbility, casterType: subRules.casterType, spellModel: subRules.spellModel });
           }
           summary.push(`Chose ${rules.subclassTitle}: ${subclass.name}`);
@@ -466,6 +497,37 @@ export function LevelUpWizard({
               ))}
             </div>
           )}
+          {variants?.length && !storedVariant ? (
+            <div className="space-y-1 rounded-lg border border-ink-800 bg-ink-850/50 p-3 text-sm">
+              <div className="label">{activeSubclass?.name}: choose one</div>
+              <div className="flex flex-wrap gap-1.5">
+                {variants.map((v) => (
+                  <button
+                    key={v.name}
+                    type="button"
+                    onClick={() => setVariantPick(v.name)}
+                    title={v.grantedSpells.map((g) => `${g.spell.name} (level ${g.level})`).join(", ")}
+                    className={`rounded-lg border px-2.5 py-1 transition ${variantPick === v.name ? "border-accent-500 bg-accent-500/15 text-accent-400" : "border-ink-700 hover:border-ink-600"}`}
+                  >
+                    {v.name}
+                  </button>
+                ))}
+              </div>
+              {variant && variant.grantedSpells.length > 0 && (
+                <p className="text-xs text-ink-400">Spells: {variant.grantedSpells.map((g) => `${g.spell.name} (${g.level})`).join(", ")}</p>
+              )}
+            </div>
+          ) : null}
+          {spellPicks.map((p, i) => (
+            <div key={i} className="rounded-lg border border-ink-800 bg-ink-850/50 p-3">
+              <ChoicePicker
+                choice={{ id: `spellpick-${i}`, kind: "feature", count: p.count, label: `${activeSubclass?.name}: ${p.label} (doesn't count against spells known)`, options: p.options.map((o) => ({ ...o, type: "spell" as const })) } satisfies Choice}
+                taken={[...ownedSpells].map((id) => id.split(":").slice(1).join(":"))}
+                selected={spellPickSel[i] ?? []}
+                onChange={(keys) => setSpellPickSel({ ...spellPickSel, [i]: keys })}
+              />
+            </div>
+          ))}
           <h3 className="font-display text-lg text-accent-400">You gain</h3>
           {newFeatures.length === 0 && plan.progressions.length === 0 && <p className="text-sm text-ink-400">No new class features at this level.</p>}
           <div className="space-y-3">
