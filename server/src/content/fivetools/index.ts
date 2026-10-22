@@ -635,7 +635,9 @@ function tableSpells(ds: Dataset, entries: any): GrantedSpell[] {
   const walk = (e: any) => {
     if (Array.isArray(e)) return e.forEach(walk);
     if (!e || typeof e !== "object") return;
-    if (e.type === "table" && /spells/i.test(e.caption ?? "") && /level/i.test(String(e.colLabels?.[0] ?? ""))) {
+    // Only "<Class> Level | Spell" tables teach spells; a patron's "Expanded Spells" table
+    // ("Spell Level | Spells") only widens the list you choose from.
+    if (e.type === "table" && /spells/i.test(e.caption ?? "") && !/expanded/i.test(e.caption ?? "") && /\w+ level/i.test(String(e.colLabels?.[0] ?? "")) && !/^\W*spell level/i.test(String(e.colLabels?.[0] ?? ""))) {
       for (const row of e.rows ?? []) {
         const level = Number(String(row?.[0] ?? "").replace(/\D/g, ""));
         for (const m of String(row?.[1] ?? "").matchAll(/\{@spell ([^}]+)\}/g)) {

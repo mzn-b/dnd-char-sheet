@@ -41,14 +41,18 @@ export async function resolveItem(name: string, qty: number): Promise<Item> {
  * by name ("longswords", "hand crossbows"), ignoring a magic "+1" and plurals.
  */
 export function weaponProficient(proficiencies: string, category: string, itemName: string): boolean {
-  const profs = proficiencies.toLowerCase();
   const cat = category.toLowerCase();
-  if (/simple/.test(cat) && /simple weapons?/.test(profs)) return true;
-  if (/martial/.test(cat) && /martial weapons?/.test(profs)) return true;
-  const base = itemName.toLowerCase().replace(/[+−-]\d+\s*/g, "").replace(/,.*$/, "").replace(/\(.*?\)/g, "").trim();
   const singular = (w: string) => w.replace(/(?<=\w)(?:es|s)$/, "");
-  const words = profs.split(/[,;\n]|\band\b/).map((x) => singular(x.trim()));
-  return !!base && words.some((x) => x && (x === singular(base) || singular(base).endsWith(` ${x}`) || singular(base).startsWith(`${x} `)));
+  // "Weapons: simple, martial" / "Simple weapons, hand crossbows" → ["simple", "martial", "hand crossbow"…]
+  const words = proficiencies
+    .toLowerCase()
+    .split("\n")
+    .flatMap((line) => line.replace(/^[\w ]+:\s*/, "").split(/[,;]|\band\b/))
+    .map((x) => singular(x.replace(/\bweapons?\b/, "").trim()));
+  if (/simple/.test(cat) && words.includes("simple")) return true;
+  if (/martial/.test(cat) && words.includes("martial")) return true;
+  const base = singular(itemName.toLowerCase().replace(/[+−-]\d+\s*/g, "").replace(/,.*$/, "").replace(/\(.*?\)/g, "").trim());
+  return !!base && words.some((x) => x && (x === base || base.endsWith(` ${x}`) || base.startsWith(`${x} `)));
 }
 
 /** Build an attack from a weapon: finesse/ranged pick Dex, versatile damage noted. */

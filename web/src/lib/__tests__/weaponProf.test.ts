@@ -16,6 +16,11 @@ describe("weaponProficient", () => {
     expect(weaponProficient(wizard, "Simple Ranged", "Light Crossbow")).toBe(true);
     expect(weaponProficient(rogue, "Martial Melee", "Greatsword")).toBe(false);
   });
+  it("reads class proficiency lines", () => {
+    expect(weaponProficient("Armor: light, medium, shield\nWeapons: simple", "Simple Melee", "Mace")).toBe(true);
+    expect(weaponProficient("Weapons: simple, hand crossbows, longswords", "Martial Melee", "Longsword")).toBe(true);
+    expect(weaponProficient("Armor: light\nWeapons: simple", "Martial Melee", "Longsword")).toBe(false);
+  });
   it("martial weapons", () => {
     expect(weaponProficient("Simple weapons, martial weapons", "Martial Melee", "Greatsword")).toBe(true);
   });
