@@ -11,6 +11,7 @@ import { CastButton, canRitualCast, SpellBadges, SpellRollInfo, spellRollContext
 import { RollButton } from "../dice";
 import { d20 } from "../../lib/dice";
 import { addGrantedSpells, prepareGrantedSpells, type OptionSpellSelections } from "../../lib/apply";
+import { ResetTag } from "./ResourcesPanel";
 import { OptionSpellPicks, useOptionSpellPicks, type OptionSpellPick } from "../OptionSpellPicks";
 
 /** Class whose spell list a class draws from; subclass casters (Eldritch Knight…) use the wizard list. */
@@ -226,7 +227,7 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
         })}
       </div>
 
-      <Section title="Spell Slots" action={<span className="text-[10px] text-ink-600">click pips to spend · edit totals on the right</span>}>
+      <Section title="Spell Slots" action={<span className="text-[10px] text-ink-600">click pips to spend · edit totals on the right · slots return on a ☀ long rest</span>}>
         <div className="grid gap-2 sm:grid-cols-3">
           {slotLevels.map((s) => (
             <div key={s.level} className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 ${s.max ? "bg-ink-850" : "opacity-50"}`}>
@@ -244,7 +245,7 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
           ))}
           {c.spellcasting.pactSlots.max > 0 && (
             <div className="flex items-center justify-between gap-2 rounded-lg border border-arcane-500/40 bg-ink-850 px-2 py-1.5">
-              <span className="text-sm font-semibold">Pact ({spellLevelLabel(c.spellcasting.pactSlots.level).replace(" level", "")})</span>
+              <span className="text-sm font-semibold">Pact ({spellLevelLabel(c.spellcasting.pactSlots.level).replace(" level", "")}) <ResetTag reset="short" /></span>
               <Pips max={c.spellcasting.pactSlots.max} used={c.spellcasting.pactSlots.used} color="bg-arcane-400" onChange={(u) => update((d) => void (d.spellcasting.pactSlots.used = u))} />
             </div>
           )}
