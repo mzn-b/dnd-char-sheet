@@ -6,7 +6,8 @@ import { useMemo, useState } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import {
-  addGrantedSpells, addProficiencyLine, applyEffects, applySubfeatureMechanics, prepareGrantedSpells, attachProgression, buildFeature, grantFeature, grantProgression, resolveSubfeatures,
+  addGrantedSpells, addProficiencyLine, applyEffects, applySubfeatureMechanics, prepareGrantedSpells, attachProgression, buildFeature, grantFeature, grantProgression, resolveSubfeatures, withRequired,
+  type OptionSpellSelections,
 } from "../../lib/apply";
 import { uid } from "../../lib/defaults";
 import { applyDetectedUses } from "../../lib/uses";
@@ -17,6 +18,7 @@ import {
 } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
 import { ChoiceList, ChoicePicker, unfinishedChoices } from "../ChoicePicker";
+import { OptionSpellPicks, unfinishedOptionSpellPicks, useOptionSpellPicks } from "../OptionSpellPicks";
 import { ContentBrowser, ContentDetailView, allExpandedEntries, contentId } from "../ContentBrowser";
 import { Markdown, Modal, Spinner } from "../ui";
 import { planLevel } from "./plan";
@@ -60,6 +62,7 @@ export function LevelUpWizard({
   const [variantPick, setVariantPick] = useState("");
   const [spellPickSel, setSpellPickSel] = useState<Record<number, string[]>>({});
   const [arcanum, setArcanum] = useState<ContentSummary | null>(null);
+  const [optionSpellSel, setOptionSpellSel] = useState<OptionSpellSelections>({});
 
   const rulesQuery = useQuery({
     queryKey: ["classRules", cls?.source, cls?.key],
@@ -189,6 +192,13 @@ export function LevelUpWizard({
   const ownedFeats = new Set(c.features.filter((f) => f.kind === "feat" && f.ref).map((f) => contentId(f.ref!)));
   const progressionTaken = (name: string) => c.features.find((f) => f.name === name)?.subfeatures?.map((s) => s.key) ?? [];
 
+  // Options picked now that come with spells to choose (Pact of the Tome, Book of Ancient Secrets).
+  const pickedOptions = [
+    ...newFeatures.flatMap((f, i) => (detailOf(i)?.choices ?? []).flatMap((ch) => withRequired(ch, featureSel[f.key]?.[ch.id] ?? []).flatMap((k) => ch.options.filter((o) => o.key === k)))),
+    ...(plan?.progressions ?? []).flatMap((p) => [...(progressionSel[p.name] ?? []), ...(swapSel[p.name]?.in ?? [])].flatMap((k) => p.options.filter((o) => o.key === k))),
+  ];
+  const optionSpellPicks = useOptionSpellPicks(pickedOptions);
+
   const warnings = [
     ...(opts.strictMulticlass === false ? [] : multiclassProblems.map((p) => `Multiclass prerequisite not met: ${p}`)),
     skillChoices && skillPicks.length < skillChoices.count && `${skillChoices.count - skillPicks.length} class skill(s) left to choose`,
@@ -199,6 +209,7 @@ export function LevelUpWizard({
     arcanumLevel > 0 && !arcanum && `Mystic Arcanum: no ${ordinal(arcanumLevel)}-level spell chosen`,
     variants?.length && !variant && `No ${activeSubclass?.name ?? "subclass"} option chosen (${variants.map((v) => v.name).join(", ")})`,
     ...spellPicks.filter((p, i) => (spellPickSel[i]?.length ?? 0) < p.count).map((p) => `${p.label}: not chosen`),
+    ...unfinishedOptionSpellPicks(optionSpellPicks, optionSpellSel).map((p) => `${p.option.name}: ${p.pick.label}`),
     plan?.grantsAsi && asiMode === "asi" && asiPoints < 2 && `Only ${asiPoints}/2 ability points assigned`,
     plan?.grantsAsi && asiMode === "feat" && !feat && "No feat chosen",
     plan?.grantsAsi && asiMode === "feat" && featDetail && unfinishedChoices(featDetail.choices, featSel).length > 0 && `${featDetail.name}: choices incomplete`,
@@ -213,7 +224,7 @@ export function LevelUpWizard({
     try {
       const picks: LevelUpPicks = {
         subclass, activeSubclass, variant, newFeatures, featureDetails: newFeatures.map((_, i) => detailOf(i)), featureSel,
-        asiMode, asi, featDetail, featSel, progressionSel, swapSel, spellPicks, spellPickSel, cantrips, spells, swapOut, swapIn,
+        asiMode, asi, featDetail, featSel, progressionSel, swapSel, spellPicks, spellPickSel, optionSpellSel, cantrips, spells, swapOut, swapIn,
         arcanum, arcanumLevel, skillPicks, profLines, hpGain,
       };
       const fetchDetail = (type: "feature" | "subclass", ref: ContentRef) =>
@@ -474,6 +485,11 @@ export function LevelUpWizard({
               </div>
             ))}
           </div>
+          <OptionSpellPicks
+            picks={optionSpellPicks}
+            sel={optionSpellSel}
+            onChange={setOptionSpellSel}
+          />
         </div>
       )}
 

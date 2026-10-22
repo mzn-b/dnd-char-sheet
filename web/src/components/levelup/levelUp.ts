@@ -1,7 +1,8 @@
 import { takeSnapshot } from "../../lib/levelDown";
 import { splitFeature } from "../../lib/featureSections";
 import {
-  addGrantedSpells, addProficiencyLine, applyEffects, applySubfeatureMechanics, attachProgression, buildFeature, grantFeature, grantProgression, prepareGrantedSpells,
+  addGrantedSpells, addOptionSpellPicks, addProficiencyLine, applyEffects, applySubfeatureMechanics, attachProgression, buildFeature, grantFeature, grantProgression, prepareGrantedSpells,
+  type OptionSpellSelections,
 } from "../../lib/apply";
 import { uid } from "../../lib/defaults";
 import { applyGrants, resolveGrants } from "../../lib/grants";
@@ -84,6 +85,8 @@ export interface LevelUpPicks {
   swapSel: Record<string, { out: string; in: string[] }>;
   spellPicks: SpellPick[];
   spellPickSel: Record<number, string[]>;
+  /** Spells chosen for picked options that grant a choice of spells (Pact of the Tome, Book of Ancient Secrets). */
+  optionSpellSel?: OptionSpellSelections;
   cantrips: ContentSummary[];
   spells: ContentSummary[];
   swapOut: string;
@@ -129,6 +132,10 @@ export async function prepareLevelUp(
     plan.progressions
       .filter((p) => picks.swapSel[p.name]?.out && picks.swapSel[p.name].in[0])
       .map(async (p) => ({ p, out: picks.swapSel[p.name].out, ...(await grantProgression(p, picks.swapSel[p.name].in)) })),
+  );
+  await addOptionSpellPicks(
+    [...builtFeatures.flatMap((f) => f.subfeatures ?? []), ...builtProgressions.flatMap((x) => x.subs), ...builtSwaps.flatMap((x) => x.subs)],
+    picks.optionSpellSel,
   );
   const subRules = subRulesIn ?? (picks.subclass ? await fetchSubclassRules(picks.subclass).catch(() => undefined) : undefined);
   const active = picks.activeSubclass;
@@ -260,7 +267,8 @@ export function applyLevelUp(d: Character, rules: ClassRules, plan: LevelPlan, p
   if (picks.spells.length) summary.push(`Learned spells: ${picks.spells.map((s) => s.name).join(", ")}`);
 
   const before = d.spellcasting.spells.length;
-  addGrantedSpells(d, grantedSpells);
+  // Spells picked for options (Pact of the Tome) take over a copy already on the list.
+  addGrantedSpells(d, grantedSpells, Object.values(picks.optionSpellSel ?? {}).flatMap((byPick) => Object.values(byPick).flat()));
   const added = d.spellcasting.spells.slice(before).map((s) => s.ref.name);
   if (added.length) summary.push(`Spells granted: ${added.join(", ")}`);
 

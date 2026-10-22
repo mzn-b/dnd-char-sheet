@@ -165,12 +165,38 @@ export async function prepareGrantedSpells(granted: GrantedSpell[] | undefined, 
   );
 }
 
-export function addGrantedSpells(d: Character, entries: SpellEntry[]) {
+/** Spells picked for options that let you choose them (Pact of the Tome's cantrips), keyed by option key, then pick index. */
+export type OptionSpellSelections = Record<string, Record<number, string[]>>;
+
+/** Record the spells picked for chosen options on their sub-features, so they're granted with the rest. */
+export async function addOptionSpellPicks(subs: SubFeature[], sel: OptionSpellSelections | undefined) {
+  for (const x of subs) {
+    const chosen = sel?.[x.key];
+    if (!chosen || !x.ref) continue;
+    const det = await api.detail(x.ref.type, x.ref.source, x.ref.key).catch(() => null);
+    const picked = (det?.spellPicks ?? []).flatMap((p, i) =>
+      (chosen[i] ?? []).flatMap((k) => {
+        const spell = p.options.find((o) => o.key === k);
+        return spell ? [{ level: p.level, spell, mode: p.mode, uses: p.uses }] : [];
+      }),
+    );
+    if (picked.length) x.grantedSpells = [...(x.grantedSpells ?? []), ...picked];
+  }
+}
+
+/**
+ * Add granted spells. `adopt` lists spells (by key) the player picked for a feature (Pact of the Tome's
+ * cantrips): one already on their list moves to the feature and stops counting against spells known.
+ */
+export function addGrantedSpells(d: Character, entries: SpellEntry[], adopt: string[] = []) {
   for (const e of entries) {
     const existing = d.spellcasting.spells.find((s) => s.ref.key === e.ref.key && s.ref.source === e.ref.source);
     if (existing) {
       // Already known through a class: mark it as always prepared rather than duplicating it.
       if (e.alwaysPrepared) existing.alwaysPrepared = existing.prepared = true;
+      // Picked for a feature but added by hand before (Pact of the Tome cantrips): it comes from the
+      // feature now, so it stops counting against spells known.
+      if (!existing.grantedBy && e.grantedBy && adopt.includes(e.ref.key)) Object.assign(existing, { grantedBy: e.grantedBy, uses: existing.uses ?? e.uses, classKey: e.classKey ?? existing.classKey });
       continue;
     }
     d.spellcasting.spells.push(e);

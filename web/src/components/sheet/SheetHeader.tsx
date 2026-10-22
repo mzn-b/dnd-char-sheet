@@ -43,7 +43,7 @@ export function SheetHeader({
   };
 
   return (
-    <div className="panel grid items-start gap-x-6 gap-y-3 lg:grid-cols-[minmax(14rem,1fr)_2fr_auto]">
+    <div className="panel grid items-start gap-x-6 gap-y-3 lg:grid-cols-[minmax(12rem,1fr)_2fr_auto]">
       <div className="min-w-0">
         <TextField
           className="field -ml-1.5 font-display text-2xl font-bold text-ink-200 sm:text-3xl"
@@ -95,7 +95,7 @@ export function SheetHeader({
         </div>
       </div>
 
-      <div className="flex items-center gap-3 lg:flex-col lg:items-end">
+      <div className="flex items-center gap-3 lg:max-w-[24rem] lg:flex-col lg:items-end">
         <div className="flex flex-wrap justify-end gap-2">
           {restButtons}
           <button className="btn" title="Optional rules for this character" onClick={() => setEditingRules(true)}>⚙ Rules</button>

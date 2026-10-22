@@ -473,10 +473,14 @@ function spellsMatching(ds: Dataset, filter: string) {
     .sort((x, y) => x.level - y.level || x.name.localeCompare(y.name));
 }
 
-const describeFilter = (filter: string) => {
+const describeFilter = (filter: string, count = 1) => {
   const parts = Object.fromEntries(filter.split("|").map((p) => p.split("=") as [string, string]));
-  const lv = parts.level?.split(";").map((l) => (l === "0" ? "cantrip" : `level ${l}`)).join("/");
-  return [parts.class, lv, parts.school && `school ${parts.school}`].filter(Boolean).join(" ") || "spell";
+  const levels = parts.level?.split(";") ?? [];
+  const cantrips = levels.length > 0 && levels.every((l) => l === "0");
+  const lv = cantrips ? "" : levels.map((l) => (l === "0" ? "cantrip" : `level ${l}`)).join("/");
+  const ritual = /ritual/i.test(parts["components & miscellaneous"] ?? "") ? "ritual" : "";
+  const noun = cantrips ? "cantrip" : "spell";
+  return [parts.class, lv, parts.school && `school ${parts.school}`, ritual, count > 1 ? `${noun}s` : noun].filter(Boolean).join(" ");
 };
 
 /**
@@ -497,7 +501,7 @@ function spellSet(ds: Dataset, a: any): { granted: GrantedSpell[]; picks: SpellP
         if (spell) granted.push({ level: lv, spell, mode, uses });
       } else if (raw?.choose && typeof raw.choose === "string") {
         const options = spellsMatching(ds, raw.choose).map(({ level: _l, ...r }) => r);
-        if (options.length) picks.push({ level: lv, count: raw.count ?? 1, label: `Choose ${raw.count ?? 1} ${describeFilter(raw.choose)}`, mode, uses, options });
+        if (options.length) picks.push({ level: lv, count: raw.count ?? 1, label: `Choose ${raw.count ?? 1} ${describeFilter(raw.choose, raw.count ?? 1)}`, mode, uses, options });
       }
     }
   };
@@ -957,6 +961,8 @@ function featureDetail(ds: Dataset, k: string): ContentDetail | undefined {
       ch.kind === "expertise" && obj.className && obj.className !== "Rogue" ? { ...ch, options: ch.options.filter((o) => o.key !== "thieves-tools") } : ch,
     ),
     grantedSpells: obj.additionalSpells ? grantedSpells(ds, obj.additionalSpells) : tableSpells(ds, obj.entries),
+    // Spells you choose (Pact of the Tome's three cantrips, Book of Ancient Secrets' rituals).
+    spellPicks: obj.additionalSpells ? spellSet(ds, obj.additionalSpells[0]).picks : undefined,
   };
 }
 

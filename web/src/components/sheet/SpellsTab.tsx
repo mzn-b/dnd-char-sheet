@@ -10,6 +10,8 @@ import { Modal, NumberField, Pips, Section } from "../ui";
 import { CastButton, canRitualCast, SpellBadges, SpellRollInfo, spellRollContext, useSpellDetails } from "../spells";
 import { RollButton } from "../dice";
 import { d20 } from "../../lib/dice";
+import { addGrantedSpells, prepareGrantedSpells, type OptionSpellSelections } from "../../lib/apply";
+import { OptionSpellPicks, useOptionSpellPicks, type OptionSpellPick } from "../OptionSpellPicks";
 
 /** Class whose spell list a class draws from; subclass casters (Eldritch Knight…) use the wizard list. */
 const spellList = (k: ClassEntry, r: ClassRules | undefined) => (r && !r.spellcastingAbility ? "wizard" : k.source === "srd" ? k.key : k.name);
@@ -47,6 +49,78 @@ export function useClassRules(classes: ClassEntry[]) {
     })),
   });
   return Object.fromEntries(classes.map((k, i) => [k.key, results[i].data])) as Record<string, ClassRules | undefined>;
+}
+
+/**
+ * Spells still to choose for features you have: Pact of the Tome's cantrips, Book of Ancient Secrets'
+ * rituals (sheets made before these were asked for at level-up). A spell already on your list that you pick
+ * here moves to the feature and stops counting against spells known.
+ */
+function FeatureSpellChoices({ c, update }: { c: Character; update: Update }) {
+  const subs = c.features.flatMap((f) => (f.subfeatures ?? []).filter((s) => s.ref && s.ref.type !== "spell").map((s) => ({ s, f })));
+  const picks = useOptionSpellPicks(subs.map(({ s }) => ({ key: s.key, name: s.name, source: s.ref!.source, type: s.ref!.type })));
+  const [open, setOpen] = useState<OptionSpellPick | null>(null);
+  const [sel, setSel] = useState<OptionSpellSelections>({});
+  const [busy, setBusy] = useState(false);
+  const chosen = (p: OptionSpellPick) =>
+    c.spellcasting.spells.filter((sp) => sp.grantedBy === `feature:${p.option.name}` && p.pick.options.some((o) => o.key === sp.ref.key && o.source === sp.ref.source));
+  const due = picks.filter((p) => chosen(p).length < Math.min(p.pick.count, p.pick.options.length));
+  if (!due.length) return null;
+
+  const start = (p: OptionSpellPick) => {
+    setSel({ [p.option.key]: { [p.index]: chosen(p).map((sp) => sp.ref.key) } });
+    setOpen(p);
+  };
+  const apply = async () => {
+    if (!open) return;
+    setBusy(true);
+    try {
+      const { f } = subs.find(({ s }) => s.key === open.option.key)!;
+      const cls = c.classes.find((k) => f.origin.startsWith(`${k.name} `));
+      const keys = sel[open.option.key]?.[open.index] ?? [];
+      const granted = open.pick.options.filter((o) => keys.includes(o.key)).map((spell) => ({ level: 1, spell, mode: open.pick.mode, uses: open.pick.uses }));
+      const entries = await prepareGrantedSpells(granted, 20, `feature:${open.option.name}`, cls?.key);
+      update((d) => {
+        addGrantedSpells(d, entries, keys);
+        // Remember the picks on the feature too, like a level-up would.
+        const sub = d.features.flatMap((x) => x.subfeatures ?? []).find((x) => x.key === open.option.key);
+        if (sub) sub.grantedSpells = [...(sub.grantedSpells ?? []).filter((g) => !open.pick.options.some((o) => o.key === g.spell.key)), ...granted];
+      });
+      setOpen(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="panel space-y-2 border-accent-700/60">
+      {due.map((p) => (
+        <div key={`${p.option.key}:${p.index}`} className="flex flex-wrap items-center gap-2 text-sm">
+          <span>
+            <b>{p.option.name}</b>: {p.pick.label.replace(/^Choose/, "choose")}
+            <span className="ml-2 text-ink-400">({chosen(p).length}/{p.pick.count} chosen)</span>
+          </span>
+          <button className="btn-primary ml-auto px-3 py-1 text-xs" onClick={() => start(p)}>Choose</button>
+        </div>
+      ))}
+      {open && (
+        <Modal
+          wide
+          title={open.option.name}
+          onClose={() => setOpen(null)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setOpen(null)}>Cancel</button>
+              <button className="btn-primary" disabled={busy || !(sel[open.option.key]?.[open.index]?.length)} onClick={apply}>{busy ? "Adding…" : "Add spells"}</button>
+            </>
+          }
+        >
+          <p className="mb-2 text-sm text-ink-400">If one of these is already on your spell list, picking it here moves it to {open.option.name}, so it no longer counts against your spells known.</p>
+          <OptionSpellPicks picks={[open]} sel={sel} onChange={setSel} />
+        </Modal>
+      )}
+    </div>
+  );
 }
 
 export function SpellsTab({ c, update }: { c: Character; update: Update }) {
@@ -110,6 +184,8 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
           None of your classes cast spells, but you can still track spells from feats, items or racial traits.
         </div>
       )}
+
+      <FeatureSpellChoices c={c} update={update} />
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {casters.map((k) => {

@@ -11,7 +11,7 @@ import type { Character, ClassRules, ContentDetail, Effect, Feature, SpellEntry,
  * Bump when rules parsing or automation changes in a way existing characters should pick up. Characters
  * store the version they were last synced with; the sheet offers a resync when it's older.
  */
-export const RULES_VERSION = 2;
+export const RULES_VERSION = 3;
 
 export const needsResync = (c: Character) => (c.rulesVersion ?? 0) < RULES_VERSION;
 
@@ -88,6 +88,16 @@ export async function planResync(c: Character): Promise<ResyncPlan> {
     if (det?.grantedSpells?.length && (f.kind === "class" || f.kind === "subclass")) grants.push(...(await prepareGrantedSpells(det.grantedSpells, cls?.level ?? level, `feature:${f.name}`, cls?.key)));
   }
 
+  // Options picked inside features (Armor of Shadows → Mage Armor, Pact of the Chain → Find Familiar).
+  const subDetails = new Map<string, ContentDetail | null>();
+  const subs = c.features.flatMap((f) => (f.subfeatures ?? []).filter((x) => x.ref && x.ref.type !== "spell").map((x) => ({ f, x })));
+  await Promise.all(subs.map(async ({ x }) => subDetails.set(x.id, await api.detail(x.ref!.type, x.ref!.source, x.ref!.key).catch(() => null))));
+  for (const { f, x } of subs) {
+    const det = subDetails.get(x.id);
+    const cls = c.classes.find((k) => f.origin.startsWith(`${k.name} `));
+    if (det?.grantedSpells?.length) grants.push(...(await prepareGrantedSpells(det.grantedSpells, cls?.level ?? level, `feature:${x.name}`, cls?.key)));
+  }
+
   const unsure = new Set<string>();
   const apply = (d: Character) => {
     migrateCharacter(d);
@@ -156,6 +166,14 @@ export async function planResync(c: Character): Promise<ResyncPlan> {
       const pactUsed = d.spellcasting.pactSlots.used;
       Object.assign(d.spellcasting, recomputeSlots(d.classes, k, sc, d.spellcasting));
       d.spellcasting.pactSlots.used = Math.min(pactUsed, d.spellcasting.pactSlots.max);
+    }
+    // Picked options keep their chosen spells (Pact of the Tome's cantrips) and take the fixed ones as they read now.
+    for (const x of d.features.flatMap((f) => f.subfeatures ?? [])) {
+      const det = subDetails.get(x.id);
+      if (!det) continue;
+      const chosen = (x.grantedSpells ?? []).filter((g) => det.spellPicks?.some((p) => p.options.some((o) => o.key === g.spell.key)));
+      const all = [...(det.grantedSpells ?? []), ...chosen];
+      x.grantedSpells = all.length ? all : undefined;
     }
     // 5. Granted spells: add missing ones and refresh limits on the ones there.
     for (const g of grants) {
