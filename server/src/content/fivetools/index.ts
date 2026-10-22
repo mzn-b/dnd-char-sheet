@@ -358,8 +358,9 @@ function spellSet(ds: Dataset, a: any): { granted: GrantedSpell[]; picks: SpellP
   };
   for (const mode of ["innate", "known", "prepared"] as const) {
     for (const [level, v] of Object.entries(a[mode] ?? {})) {
-      // A bare list says nothing about how often (Consult the Spirits is limited by its feature text).
-      if (Array.isArray(v)) push(mode, level, v);
+      // A bare list under "_" (no level: invocations like Mask of Many Faces) is at will; under a class level
+      // it says nothing about how often (Consult the Spirits is limited by its feature text).
+      if (Array.isArray(v)) push(mode, level, v, mode === "innate" && level === "_" ? "at will" : undefined);
       else if (v && typeof v === "object") {
         for (const [k, inner] of Object.entries(v as any)) {
           if (k === "_") push(mode, level, inner, mode === "innate" ? "at will" : undefined);
