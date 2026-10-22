@@ -483,3 +483,53 @@ export const monsterFacetsOpen5e = safe(monsterFacetsOpen5eRaw);
 export const spellFacetsSrd = safe(spellFacetsSrdRaw);
 export const raceFacetsSrd = safe(raceFacetsSrdRaw);
 export const monsterFacetsSrd = safe(monsterFacetsSrdRaw);
+
+// ---------------------------------------------------------------------------
+// Ability score increases as text, for race lists ("CON +2, STR +1").
+
+const AB = (k: string) => k.slice(0, 3).toUpperCase();
+
+function chooseText5e(c: any): string {
+  if (c?.weighted) {
+    const w: number[] = c.weighted.weights ?? [];
+    const from: string[] | undefined = c.weighted.from;
+    return `${w.map((n) => `+${n}`).join(" and ")} (${from && from.length < 6 ? from.map(AB).join("/") : "your choice"})`;
+  }
+  const count = c?.count ?? 1;
+  const from: string[] | undefined = c?.from;
+  return `+${c?.amount ?? 1} to ${count === 1 ? "one" : count} of ${from && from.length < 6 ? from.map(AB).join("/") : "your choice"}`;
+}
+
+/** 5etools race (+ subrace) ability increases: "CON +2, STR +1", "+2 and +1, or +1 to three (your choice)". */
+export function abilityText5e(race: any, sub?: any): string | undefined {
+  try {
+    if (race.lineage || sub?.lineage) return "+2 and +1, or +1 to three (your choice)";
+    const describe = (b: any) =>
+      Object.entries(b ?? {}).map(([k, v]) => (k === "choose" ? chooseText5e(v) : typeof v === "number" ? `${AB(k)} ${v > 0 ? "+" : ""}${v}` : "")).filter(Boolean).join(", ");
+    const blocks: any[] = sub?.overwrite?.ability
+      ? sub.ability
+      : sub?.ability?.length
+        ? [{ ...(race.ability?.[0] ?? {}), ...(sub.ability[0] ?? {}) }]
+        : race.ability ?? [];
+    const text = blocks.map(describe).filter(Boolean).join(", or ");
+    return text || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** SRD race ability bonuses: "DEX +2, INT +1" plus Half-Elf style options. */
+export function abilityTextSrd(r: any, sub?: any): string | undefined {
+  const fixed = [...(r.ability_bonuses ?? []), ...(sub?.ability_bonuses ?? [])].map((b: any) => `${AB(b.ability_score.index)} +${b.bonus}`);
+  const opt = r.ability_bonus_options;
+  if (opt) fixed.push(`+${opt.from?.options?.[0]?.bonus ?? 1} to ${opt.choose} others`);
+  return fixed.join(", ") || undefined;
+}
+
+/** Open5e race ASI: [{attributes: ["Dexterity"], value: 2}]. */
+export function abilityTextOpen5e(r: any, sub?: any): string | undefined {
+  const parts = [...(r.asi ?? []), ...(sub?.asi ?? [])].flatMap((a: any) =>
+    (a.attributes ?? []).map((attr: string) => (/other|any/i.test(attr) ? `+${a.value} (your choice)` : `${AB(attr)} +${a.value}`)),
+  );
+  return parts.join(", ") || undefined;
+}

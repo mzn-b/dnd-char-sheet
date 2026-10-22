@@ -197,6 +197,7 @@ export function ContentBrowser({
                   onChange={() => onToggle(c)}
                 />
                 <span className={`flex-1 truncate ${owned ? "text-ink-400" : ""}`}>{c.name}</span>
+                {c.abilities && <span className="max-w-[45%] truncate text-xs text-accent-400" title={c.abilities}>{c.abilities}</span>}
                 {extraIds.has(id) && <span className="chip border-fuchsia-800 text-fuchsia-300" title={extra?.label}>expanded</span>}
                 {type === "spell" && <span className="text-xs text-ink-400">{c.level === 0 ? "C" : c.level}</span>}
                 <SourceBadge source={c.source} label={c.sourceLabel} />
@@ -243,7 +244,7 @@ export interface RollContext {
 
 export function ContentDetailView({
   type, item, children, rollContext,
-}: { type: ContentType; item: { source: ContentSummary["source"]; key: string; name: string }; children?: React.ReactNode; rollContext?: RollContext }) {
+}: { type: ContentType; item: { source: ContentSummary["source"]; key: string; name: string; abilities?: string }; children?: React.ReactNode; rollContext?: RollContext }) {
   const { data, isLoading, error } = useContentDetail(type, item);
   return (
     <div className="space-y-3">
@@ -256,6 +257,7 @@ export function ContentDetailView({
               {data.spell?.ritual ? " (ritual)" : ""}
             </p>
           )}
+          {item.abilities && <p className="text-sm text-accent-400"><span className="label mr-2">Ability scores</span>{item.abilities}</p>}
         </div>
         {data && <SourceBadge source={data.source} label={data.sourceLabel} />}
       </div>

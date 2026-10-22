@@ -2,6 +2,7 @@ import { api } from "./api";
 import { uid } from "./defaults";
 import { skillName } from "./rules";
 import { applyDetectedUses } from "./uses";
+import { splitFeature } from "./featureSections";
 import type {
   Ability, Character, Choice, ChoiceOption, ContentDetail, ContentType, Feature, GrantedSpell, Progression, Selections, SpellEntry, SubFeature,
 } from "./types";
@@ -11,10 +12,14 @@ import type {
  * feat, class feature) goes through here, so effects and choices behave the same everywhere.
  */
 
+/** Picks plus the options a choice always includes (Elemental Attunement). Repeated keys (+2 as two picks) stay. */
+export const withRequired = (ch: Choice, picks: string[]) =>
+  ch.required?.length ? [...ch.required, ...picks.filter((k) => !ch.required!.includes(k))] : picks;
+
 /** Fetch text for picked "feature" options so sub-features carry their description. */
 export async function resolveSubfeatures(choices: Choice[], selections: Selections): Promise<SubFeature[]> {
   const picks = choices.flatMap((ch) =>
-    [...new Set([...(ch.required ?? []), ...(selections[ch.id] ?? [])])].map((k) => ({ ch, opt: ch.options.find((o) => o.key === k) })).filter((p) => p.opt),
+    withRequired(ch, selections[ch.id] ?? []).map((k) => ({ ch, opt: ch.options.find((o) => o.key === k) })).filter((p) => p.opt),
   ) as { ch: Choice; opt: ChoiceOption }[];
   return Promise.all(
     picks.map(async ({ ch, opt }) => {
@@ -151,9 +156,12 @@ export function addGrantedSpells(d: Character, entries: SpellEntry[]) {
 /** Add a built feature to the character with all of its effects and choice mechanics. */
 export function grantFeature(d: Character, feature: Feature, detail?: Pick<ContentDetail, "effects" | "name">) {
   if (detail) applyEffects(d, detail);
-  applyDetectedUses(d, feature);
   applySubfeatureMechanics(d, feature.choices ?? [], feature.subfeatures ?? []);
-  d.features.push(feature);
+  // Races (and subclass entries) that bundle several traits become one feature per trait, each with its
+  // own uses and action cost.
+  const parts = splitFeature(feature);
+  for (const p of parts) applyDetectedUses(d, p);
+  d.features.push(...parts);
 }
 
 /** Replace a race or background, undoing the previous one's ability bonuses and choices. */

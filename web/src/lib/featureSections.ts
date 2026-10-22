@@ -14,16 +14,27 @@ export interface FeaturePart {
  */
 const FEATURE_MARK = /^\*?\s*\d+(?:st|nd|rd|th)-level [^*\n]*feature\b/i;
 
-export function featureSections(f: Pick<Feature, "name" | "description">): { name: string; text: string }[] {
+/** Race "traits" that are description rather than something you use; they stay in the race's own text. */
+const FLAVOR_TRAIT = /^(age|alignment|size|speed|languages?|creature type|ability score increase)$/i;
+
+export function featureSections(f: Pick<Feature, "name" | "description"> & { kind?: Feature["kind"] }): { name: string; text: string }[] {
   const text = f.description ?? "";
   const heading = /(?:^|\n)\*\*([^*\n]{2,60}?)\.\*\*/g;
   const marks = [...text.matchAll(heading)].map((m) => ({ name: m[1].trim(), start: m.index! + m[0].length, at: m.index! }));
-  const sections = marks.map((m, i) => ({ name: m.name, text: text.slice(m.start, i + 1 < marks.length ? marks[i + 1].at : undefined).trim() }));
+  const sections = marks.map((m, i) => ({ name: m.name, text: text.slice(m.start, i + 1 < marks.length ? marks[i + 1].at : undefined).trim(), at: m.at, end: i + 1 < marks.length ? marks[i + 1].at : text.length }));
+  // A race's traits (**Claws.**, **Daunting Roar.**) are each something you have; flavor (Age, Size…)
+  // stays with the race.
+  if (f.kind === "race") {
+    const traits = sections.filter((x) => !FLAVOR_TRAIT.test(x.name));
+    if (!traits.length) return [{ name: f.name, text }];
+    const intro = [text.slice(0, marks[0].at), ...sections.filter((x) => FLAVOR_TRAIT.test(x.name)).map((x) => text.slice(x.at, x.end))].join("").trim();
+    return [{ name: f.name, text: intro }, ...traits.map(({ name, text: t }) => ({ name, text: t }))];
+  }
   // Only sections marked as features ("*3rd-level Fey Wanderer feature*"); option lists such as
   // Fighting Style's **Archery.** / **Defense.** are choices, not features you have.
   // Tasha's "Deft Explorer Improvement" holds one unmarked benefit (**Roving.**, **Tireless.**).
   const benefit = /^You gain an additional benefit\b/i.test(text.trim());
-  const features = sections.filter((x) => FEATURE_MARK.test(x.text) || benefit);
+  const features = sections.filter((x) => FEATURE_MARK.test(x.text) || benefit).map(({ name, text: t }) => ({ name, text: t }));
   if (!features.length) return [{ name: f.name, text }];
   return [{ name: f.name, text: text.slice(0, marks[0].at) }, ...features];
 }

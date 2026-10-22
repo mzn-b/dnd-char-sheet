@@ -97,3 +97,20 @@ describe("class audit fixes", () => {
     expect(unmetRequirement({ key: "b", name: "Agonizing Blast", requires: { spells: ["Eldritch Blast"] } }, ctx)).toBeUndefined();
   });
 });
+
+describe("races", () => {
+  it("splits race traits; flavor stays with the race", async () => {
+    const { splitFeature } = await import("../featureSections");
+    const parts = splitFeature({ id: "r", name: "Leonin", origin: "Race", kind: "race", description: "**Age.** Old.\n\n**Claws.** Your claws deal 1d4 + Strength.\n\n**Daunting Roar.** As a bonus action, you roar. Once you use this trait, you can't use it again until you finish a short or long rest." });
+    expect(parts.map((p) => p.name)).toEqual(["Leonin", "Claws", "Daunting Roar"]);
+    expect(parts[0].description).toContain("Age");
+    expect(featureKind(hero([]), parts[2])).toBe("bonus");
+    expect(detectUses(parts[2].description)).toEqual({ formula: 1, reset: "short" });
+  });
+
+  it("keeps repeated picks for +2 as two +1s", async () => {
+    const { withRequired } = await import("../apply");
+    expect(withRequired({ id: "a", label: "", kind: "ability", count: 3, maxPerOption: 2, options: [] }, ["dex", "dex", "wis"])).toEqual(["dex", "dex", "wis"]);
+    expect(withRequired({ id: "b", label: "", kind: "feature", count: 2, required: ["x"], options: [] }, ["x", "y"])).toEqual(["x", "y"]);
+  });
+});

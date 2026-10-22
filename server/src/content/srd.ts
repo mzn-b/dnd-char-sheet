@@ -5,7 +5,7 @@ import {
   type ContentType, type Effect, type Facets, type EquipmentChoice, type ExpandedSpell, type GrantedSpell, type ItemData, type LevelRules, type SpellDice,
 } from "./types.js";
 import { diceFromText, mergeDice } from "./spellDice.js";
-import { raceFacetsSrd, spellFacetsSrd } from "./facets.js";
+import { abilityTextSrd, raceFacetsSrd, spellFacetsSrd } from "./facets.js";
 
 const BASE = (process.env.SRD_API_URL ?? "https://www.dnd5eapi.co") + "/api/2014";
 const GRAPHQL = (process.env.SRD_API_URL ?? "https://www.dnd5eapi.co") + "/graphql/2014";
@@ -64,10 +64,13 @@ export async function listSrd(type: ContentType, opts: { cls?: string }): Promis
     // List each subrace as its own option ("High Elf"), plus races without subraces.
     const { results } = await srd<{ results: any[] }>("races");
     const [races, facets] = await Promise.all([Promise.all(results.map((r) => srd<any>(`races/${r.index}`))), srdFacets("races")]);
+    const subs = new Map<string, any>(
+      await Promise.all(races.flatMap((r) => (r.subraces ?? []).map(async (s: any) => [s.index, await srd<any>(`subraces/${s.index}`).catch(() => null)] as [string, any]))),
+    );
     return races.flatMap((r) =>
       r.subraces?.length
-        ? r.subraces.map((s: any) => ({ ...base(r), key: `${r.index}/${s.index}`, name: s.name, facets: facets.get(`${r.index}/${s.index}`) }))
-        : [{ ...base(r), facets: facets.get(r.index) }],
+        ? r.subraces.map((s: any) => ({ ...base(r), key: `${r.index}/${s.index}`, name: s.name, facets: facets.get(`${r.index}/${s.index}`), abilities: abilityTextSrd(r, subs.get(s.index)) }))
+        : [{ ...base(r), facets: facets.get(r.index), abilities: abilityTextSrd(r) }],
     );
   }
   const { results } = await srd<{ results: any[] }>(ENDPOINT[type]);

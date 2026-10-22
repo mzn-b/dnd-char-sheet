@@ -69,8 +69,8 @@ export function applyDetectedUses(c: Character, f: Feature): boolean {
   if (f.uses || coveredByResources(c, f.name)) return false;
   // Tracked on the spell it grants.
   if (/^mystic arcanum/i.test(f.name)) return false;
-  // Racial spellcasting is tracked on the granted spells themselves.
-  if (f.kind === "race" && f.grantedSpells?.length) return false;
+  // Racial spellcasting is tracked on the granted spells themselves ("cast … with this trait").
+  if (f.kind === "race" && (f.grantedSpells?.length || /\bcast\b[^.]*with this trait/i.test(f.description))) return false;
   const d = detectUses(f.description);
   if (!d) return false;
   f.uses = { max: usesMax(c, d.formula, 1), used: 0, reset: d.reset, formula: d.formula };

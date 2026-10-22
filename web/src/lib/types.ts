@@ -24,6 +24,8 @@ export interface ContentSummary extends ContentRef {
   cr?: string;
   creatureType?: string;
   movement?: string[];
+  /** Races: ability score increases as text ("CON +2, STR +1"). */
+  abilities?: string;
 }
 
 export interface ContentDetail extends ContentSummary {

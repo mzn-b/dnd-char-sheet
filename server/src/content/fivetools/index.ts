@@ -7,7 +7,7 @@ import {
 import { diceFromText, mergeDice } from "../spellDice.js";
 import { getDataset, type Dataset } from "./data.js";
 import {
-  backgroundFacets5e, classFacets5e, featFacets5e, itemFacets5e, optionalFeatureFacets5e, raceFacets5e, spellFacets5e, subclassFacets5e,
+  abilityText5e, backgroundFacets5e, classFacets5e, featFacets5e, itemFacets5e, optionalFeatureFacets5e, raceFacets5e, spellFacets5e, subclassFacets5e,
 } from "../facets.js";
 import { plain, renderEntries, renderTags } from "./render.js";
 
@@ -37,7 +37,7 @@ export async function list5etools(type: ContentType, opts: { cls?: string }): Pr
     case "item":
       return [...ds.baseitem, ...ds.item].map((x) => summary(ds, type, x.name, key(x.name, x.source), x.source, { facets: itemFacets5e(x) }));
     case "race":
-      return races(ds).map((r) => summary(ds, type, r.name, r.key, r.source, { facets: raceFacets5e(r.race, r.sub) }));
+      return races(ds).map((r) => summary(ds, type, r.name, r.key, r.source, { facets: raceFacets5e(r.race, r.sub), abilities: abilityText5e(r.race, r.sub) }));
     case "class":
       return ds.class.map((c) => summary(ds, type, c.name, key(c.name, c.source), c.source, { facets: classFacets5e(c) }));
     case "subclass":

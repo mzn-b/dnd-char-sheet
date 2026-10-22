@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
+import { withRequired } from "../lib/apply";
 import type { Character, Choice, ChoiceOption, ContentDetail, ContentSummary, ContentType, Selections } from "../lib/types";
 import { ContentBrowser, ContentDetailView, contentId } from "./ContentBrowser";
 import { Markdown, Modal, Spinner } from "./ui";
@@ -20,8 +21,8 @@ export function ChoicePicker({
 }) {
   const [focused, setFocused] = useState<ChoiceOption | null>(null);
   const required = choice.required ?? [];
-  const chosen = [...new Set([...required, ...selectedIn])];
-  const selected = chosen;
+  // Point-style choices repeat keys (+2 = the same score twice), so only merge when there are required options.
+  const selected = withRequired(choice, selectedIn);
   const full = selected.length >= choice.count;
   const toggle = (key: string) =>
     required.includes(key) ? undefined
@@ -164,7 +165,7 @@ export function ChoiceList({
 }
 
 export const unfinishedChoices = (choices: Choice[] | undefined, selections: Selections) =>
-  (choices ?? []).filter((ch) => new Set([...(ch.required ?? []), ...(selections[ch.id] ?? [])]).size < Math.min(ch.count, ch.options.length));
+  (choices ?? []).filter((ch) => withRequired(ch, selections[ch.id] ?? []).length < (ch.maxPerOption ? ch.count : Math.min(ch.count, ch.options.length)));
 
 /**
  * Two-step modal: browse content (race, background, feat…), then make its choices, then apply.

@@ -38,6 +38,8 @@ export interface ContentSummary {
   movement?: string[];
   /** Monsters: challenge rating as printed ("1/4"); level holds the numeric value. */
   cr?: string;
+  /** Races: ability score increases as text ("CON +2, STR +1"). */
+  abilities?: string;
 }
 
 /** Full entry, normalized across all sources so the UI renders one shape. */

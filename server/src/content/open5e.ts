@@ -2,7 +2,7 @@ import { cachedFetch } from "./http.js";
 import { pool } from "../db.js";
 import { diceFromText } from "./spellDice.js";
 import {
-  armorFacetsOpen5e, backgroundFacetsOpen5e, featFacetsOpen5e, magicItemFacetsOpen5e, raceFacetsOpen5e, spellFacetsOpen5e, weaponFacetsOpen5e,
+  armorFacetsOpen5e, backgroundFacetsOpen5e, featFacetsOpen5e, magicItemFacetsOpen5e, raceFacetsOpen5e, spellFacetsOpen5e, abilityTextOpen5e, weaponFacetsOpen5e,
 } from "./facets.js";
 import {
   ABILITIES, SKILL_KEYS, toSkillKey,
@@ -132,8 +132,8 @@ export async function listOpen5e(type: ContentType, opts: { cls?: string }): Pro
     case "race":
       return (await all("races")).filter(keep).flatMap((r) =>
         r.subraces?.length
-          ? r.subraces.map((s: any) => summary(type, { ...r, name: `${r.name} (${s.name})` }, `${r.slug}/${s.slug}`, { facets: raceFacetsOpen5e(r, s) }))
-          : [summary(type, r, r.slug, { facets: raceFacetsOpen5e(r) })],
+          ? r.subraces.map((s: any) => summary(type, { ...r, name: `${r.name} (${s.name})` }, `${r.slug}/${s.slug}`, { facets: raceFacetsOpen5e(r, s), abilities: abilityTextOpen5e(r, s) }))
+          : [summary(type, r, r.slug, { facets: raceFacetsOpen5e(r), abilities: abilityTextOpen5e(r) })],
       );
     case "item": {
       const [magic, weapons, armor] = await Promise.all([all("magicitems"), all("weapons"), all("armor")]);
