@@ -51,6 +51,7 @@ export default function CharacterList() {
       setResync({ done: i + 1, total: data.length, results: [...results] });
     }
     qc.invalidateQueries({ queryKey: ["characters"] });
+    qc.removeQueries({ queryKey: ["character"] });
   };
 
   const importFile = async (file: File) => {

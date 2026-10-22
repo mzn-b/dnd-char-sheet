@@ -46,6 +46,10 @@ export function useCharacter(id: string) {
     }
   }, [qc]);
 
+  // Keep the cached copy in step with the working copy, so reopening the sheet doesn't start from the
+  // character as it was first loaded (and, say, offer a level-up that was already taken).
+  const keep = useCallback((c: Character) => qc.setQueryData(["character", id], c), [qc, id]);
+
   const update: Update = useCallback(
     (mutate) => {
       if (!latest.current) return;
@@ -58,13 +62,14 @@ export function useCharacter(id: string) {
       }
       lastEditAt.current = Date.now();
       latest.current = next;
+      keep(next);
       dirty.current = true;
       setCharacter(next);
       setSaveState("saving");
       clearTimeout(timer.current);
       timer.current = setTimeout(flush, 600);
     },
-    [flush],
+    [flush, keep],
   );
 
   const travel = useCallback(
@@ -73,6 +78,7 @@ export function useCharacter(id: string) {
       if (!target || !latest.current) return;
       to.current.push(latest.current);
       latest.current = target;
+      keep(target);
       dirty.current = true;
       lastEditAt.current = 0;
       setCharacter(target);
@@ -80,7 +86,7 @@ export function useCharacter(id: string) {
       clearTimeout(timer.current);
       timer.current = setTimeout(flush, 600);
     },
-    [flush],
+    [flush, keep],
   );
   const undo = useCallback(() => travel(past, future), [travel]);
   const redo = useCallback(() => travel(future, past), [travel]);
