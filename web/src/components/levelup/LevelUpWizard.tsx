@@ -19,28 +19,13 @@ import type { Update } from "../../lib/useCharacter";
 import { ChoiceList, ChoicePicker, unfinishedChoices } from "../ChoicePicker";
 import { ContentBrowser, ContentDetailView, contentId, expandedEntries } from "../ContentBrowser";
 import { Markdown, Modal, Spinner } from "../ui";
-import { planLevel, recomputeSlots } from "./plan";
+import { planLevel } from "./plan";
+import { applyLevelUp, hpGainFor, newFeaturesFor, optionalSwaps, prepareLevelUp, type LevelUpPicks } from "./levelUp";
 
 type StepId = "class" | "proficiencies" | "hp" | "features" | "asi" | "spells" | "review";
 const STEP_LABEL: Record<StepId, string> = {
   class: "Class", proficiencies: "Proficiencies", hp: "Hit Points", features: "Features", asi: "Ability / Feat", spells: "Spells", review: "Review",
 };
-
-/**
- * Features replaced by Tasha's optional ones: those swapped at this level plus any the character
- * already swapped ("…optional feature, which replaces the Natural Explorer feature").
- */
-function replacedFeatures(c: Character, now: string[]): Set<string> {
-  const before = c.features.flatMap((f) => [...(f.description ?? "").matchAll(/which replaces the (.+?) feature/gi)].map((m) => m[1]));
-  return new Set([...now, ...before].map((n) => n.toLowerCase()));
-}
-
-/** "Favored Enemy", or its later "Favored Enemy improvement" / "Favored Enemy and Natural Explorer improvements" when all are replaced. */
-function isReplaced(name: string, replaced: Set<string>) {
-  if (replaced.has(name.toLowerCase())) return true;
-  const m = name.match(/^(.+?) improvements?$/i);
-  return !!m && m[1].split(/ and /i).every((n) => replaced.has(n.trim().toLowerCase()));
-}
 
 export interface QueueInfo {
   cls: ContentRef;
@@ -97,23 +82,8 @@ export function LevelUpWizard({
   /** Optional (Tasha's) features the player chose not to take, keeping the feature they replace. */
   const [keepOriginal, setKeepOriginal] = useState<Record<string, boolean>>({});
   const optionalOn = opts.optionalClassFeatures !== false;
-  /** Optional features at this level that replace another one: offered as a swap. */
-  const swaps = useMemo(() => (optionalOn ? (plan?.current?.features ?? []).filter((f) => f.optional && f.replaces) : []), [plan, optionalOn]);
-  const newFeatures = useMemo(() => {
-    if (!plan) return [];
-    const fromClass = (plan.current?.features ?? []).map((f) => ({ ...f, kind: "class" as const }));
-    const fromSub = (subRulesQuery.data?.levels.find((l) => l.level === plan.newLevel)?.features ?? []).map((f) => ({ ...f, kind: "subclass" as const }));
-    const replaced = replacedFeatures(c, swaps.filter((f) => !keepOriginal[f.key]).map((f) => f.replaces!));
-    const owned = new Set(c.features.map((f) => f.name.toLowerCase()));
-    // ASI is represented by the choice step instead of a feature entry.
-    return [...fromClass, ...fromSub]
-      .filter((f) => !/ability score improvement/i.test(f.name))
-      .filter((f) => optionalOn || !f.optional)
-      .filter((f) => !(f.optional && f.replaces && keepOriginal[f.key]))
-      .filter((f) => !isReplaced(f.name, replaced))
-      // "Deft Explorer Improvement" only for those who took Deft Explorer.
-      .filter((f) => !(f.optional && /^(.+) improvement$/i.test(f.name) && !owned.has(f.name.replace(/ improvement$/i, "").toLowerCase()) && !fromClass.some((x) => x.name === f.name.replace(/ improvement$/i, ""))));
-  }, [plan, subRulesQuery.data, optionalOn, swaps, keepOriginal, c]);
+  const swaps = useMemo(() => optionalSwaps(plan, optionalOn), [plan, optionalOn]);
+  const newFeatures = useMemo(() => newFeaturesFor(c, plan, subRulesQuery.data, optionalOn, keepOriginal), [plan, subRulesQuery.data, optionalOn, keepOriginal, c]);
 
   const featureDetails = useQueries({
     queries: newFeatures.map((f) => ({
@@ -155,14 +125,14 @@ export function LevelUpWizard({
   }, [plan, queue]);
   const currentStep = steps.includes(step) ? step : steps[0];
 
-  const conMod = baseAbilityMod(c, "con");
   const hitDie = rules?.hitDie ?? 8;
   const featCon = asiMode === "feat" ? (featDetail?.effects?.find((e) => e.kind === "ability" && e.ability === "con") as { amount: number } | undefined)?.amount ?? (featSel.ability?.includes("con") ? 1 : 0) : 0;
   const conGain = asiMode === "asi" ? asi.con ?? 0 : featCon;
+  const hpGain = plan ? hpGainFor(c, plan, hitDie, { hpMode, hpRoll, conGain }) : 0;
+  // For the breakdown shown on the Hit Points step.
+  const conMod = baseAbilityMod(c, "con");
   const baseHp = plan?.isFirstLevelOverall ? hitDie : hpMode === "average" ? Math.floor(hitDie / 2) + 1 : hpRoll ?? 0;
   const newConMod = mod(c.abilities.con + (plan?.grantsAsi ? conGain : 0));
-  // A Constitution increase raises HP retroactively for every level.
-  const hpGain = Math.max(1, baseHp + newConMod) + (newConMod - conMod) * totalLevel(c);
 
   const asiPoints = Object.values(asi).reduce((s, n) => s + (n ?? 0), 0);
   const ownedSpells = new Set(c.spellcasting.spells.map((s) => contentId(s.ref)));
@@ -240,159 +210,18 @@ export function LevelUpWizard({
     if (!rules || !plan) return;
     setApplying(true);
     try {
-      const origin = `${rules.name} ${plan.newLevel}`;
+      const picks: LevelUpPicks = {
+        subclass, activeSubclass, variant, newFeatures, featureDetails: newFeatures.map((_, i) => detailOf(i)), featureSel,
+        asiMode, asi, featDetail, featSel, progressionSel, swapSel, spellPicks, spellPickSel, cantrips, spells, swapOut, swapIn,
+        arcanum, arcanumLevel, skillPicks, profLines, hpGain,
+      };
       const fetchDetail = (type: "feature" | "subclass", ref: ContentRef) =>
         qc.fetchQuery({ queryKey: ["detail", type, ref.source, ref.key], queryFn: () => api.detail(type, ref.source, ref.key), staleTime: Infinity });
       // Resolve everything async first; the update itself must be synchronous.
-      const builtFeatures: Feature[] = await Promise.all(
-        newFeatures.map(async (f, i) => {
-          const det = detailOf(i) ?? (await fetchDetail("feature", f).catch(() => null));
-          if (!det) return { id: uid(), name: f.name, origin, kind: f.kind, description: "", ref: { ...f, type: "feature" as const } };
-          return buildFeature({ ...det, name: f.name }, featureSel[f.key] ?? {}, origin, f.kind);
-        }),
-      ).then((fs) => fs.flatMap(splitFeature));
-      const subclassDetail = subclass ? await fetchDetail("subclass", subclass).catch(() => null) : null;
-      const builtFeat = plan.grantsAsi && asiMode === "feat" && featDetail ? await buildFeature(featDetail, featSel, "Feat", "feat") : null;
-      const builtProgressions = await Promise.all(
-        plan.progressions.map(async (p) => ({ p, ...(await grantProgression(p, progressionSel[p.name] ?? [])) })),
-      );
-      const builtSwaps = await Promise.all(
-        plan.progressions
-          .filter((p) => swapSel[p.name]?.out && swapSel[p.name].in[0])
-          .map(async (p) => ({ p, out: swapSel[p.name].out, ...(await grantProgression(p, swapSel[p.name].in)) })),
-      );
-      const subRules = subRulesQuery.data ?? (subclass ? await api.subclassRules(subclass.source, subclass.key).catch(() => undefined) : undefined);
-      // Racial spells unlock by character level, subclass (domain/oath/circle) spells by class level.
-      const race = c.features.find((f) => f.kind === "race");
-      const grantedSpells = [
-        ...(await prepareGrantedSpells(race?.grantedSpells, totalLevel(c) + 1, "race")),
-        ...(activeSubclass ? await prepareGrantedSpells(variant?.grantedSpells ?? subRules?.grantedSpells, plan.newLevel, `subclass:${activeSubclass.key}`, rules.index) : []),
-        // Spells picked from a subclass list (Nature Domain cantrip, Additional Magical Secrets).
-        ...(activeSubclass
-          ? await prepareGrantedSpells(
-              spellPicks.flatMap((p, i) => (spellPickSel[i] ?? []).map((k) => ({ level: p.level, mode: p.mode, uses: p.uses, spell: p.options.find((o) => o.key === k)! }))).filter((g) => g.spell),
-              plan.newLevel, `subclass:${activeSubclass.key}`, rules.index,
-            )
-          : []),
-        // Class and subclass features that teach spells by level (Primal Awareness), and spells from chosen
-        // options (Armor of Shadows' Mage Armor, Pact of the Chain's Find Familiar).
-        ...(await Promise.all(
-          [...c.features.filter((f) => f.origin.startsWith(`${rules.name} `)), ...builtFeatures]
-            .flatMap((f) => [{ name: f.name, spells: f.grantedSpells }, ...(f.subfeatures ?? []).map((x) => ({ name: x.name, spells: x.grantedSpells }))])
-            .concat(builtProgressions.flatMap(({ subs }) => subs.map((x) => ({ name: x.name, spells: x.grantedSpells }))))
-            .concat(c.features.flatMap((f) => (f.subfeatures ?? []).filter((x) => x.grantedSpells?.length && !f.origin.startsWith(`${rules.name} `)).map((x) => ({ name: x.name, spells: x.grantedSpells }))))
-            .filter((f) => f.spells?.length)
-            .map((f) => prepareGrantedSpells(f.spells, plan.newLevel, `feature:${f.name}`, rules.index)),
-        )).flat(),
-      ];
-
-      const summary: string[] = [];
+      const prep = await prepareLevelUp(c, rules, plan, picks, subRulesQuery.data, fetchDetail, (ref) => api.subclassRules(ref.source, ref.key));
       let snapshot: Character | null = null;
       update((d) => {
-        // The build before this level, so "Level down" can undo it exactly.
-        const buildBefore = takeSnapshot(d);
-        // Class & level
-        let entry = d.classes.find((k) => k.key === rules.index && k.source === rules.source);
-        if (!entry) {
-          entry = {
-            source: rules.source, key: rules.index, name: rules.name, level: 0, hitDie: rules.hitDie,
-            spellcastingAbility: rules.spellcastingAbility, casterType: rules.casterType, spellModel: rules.spellModel, preparedDivisor: rules.preparedDivisor,
-          } satisfies ClassEntry;
-          d.classes.push(entry);
-          if (plan.isFirstLevelOverall) d.saveProficiencies = [...new Set([...d.saveProficiencies, ...rules.savingThrows])];
-          for (const line of profLines) addProficiencyLine(d, line);
-          for (const s of skillPicks) d.skills[s] = Math.max(1, d.skills[s] ?? 0) as 1 | 2;
-          summary.push(plan.isFirstLevelOverall ? `Became a ${rules.name}` : `Multiclassed into ${rules.name}`);
-          if (skillPicks.length) summary.push(`Skill proficiencies: ${skillPicks.map(skillName).join(", ")}`);
-        }
-        entry.level = plan.newLevel;
-        if (subclass) {
-          entry.subclass = { source: subclass.source, key: subclass.key, name: subclass.name };
-        }
-        if (entry.subclass && variant && !entry.subclass.variant) {
-          entry.subclass.variant = variant.name;
-          summary.push(`${entry.subclass.name}: ${variant.name}`);
-        }
-        if (subclass) {
-          // Subclasses like Eldritch Knight grant spellcasting to a non-caster class.
-          if (!entry.spellcastingAbility && subRules?.spellcastingAbility && subRules.casterType) {
-            Object.assign(entry, { spellcastingAbility: subRules.spellcastingAbility, casterType: subRules.casterType, spellModel: subRules.spellModel });
-          }
-          summary.push(`Chose ${rules.subclassTitle}: ${subclass.name}`);
-          // 5etools subclasses ship an intro feature named after the subclass; don't add the same text twice.
-          const hasIntro = builtFeatures.some((f) => f.kind === "subclass" && subclass.name.includes(f.name));
-          if (subclassDetail && !hasIntro) d.features.push({ id: uid(), name: subclass.name, origin, kind: "subclass", description: subclassDetail.description, ref: { ...subclass, type: "subclass" } });
-        }
-
-        // Ability scores / feat (before HP so Constitution increases count)
-        if (plan.grantsAsi && asiMode === "asi") {
-          for (const [a, n] of Object.entries(asi)) if (n) d.abilities[a as Ability] = Math.min(20, d.abilities[a as Ability] + n);
-          const parts = Object.entries(asi).filter(([, n]) => n).map(([a, n]) => `${a.toUpperCase()} +${n}`);
-          if (parts.length) summary.push(`Ability Score Improvement: ${parts.join(", ")}`);
-        }
-        if (builtFeat && featDetail) {
-          grantFeature(d, builtFeat, { ...featDetail, effects: featDetail.effects?.filter((e) => e.kind !== "speed") });
-          summary.push(`Took feat: ${builtFeat.name}${builtFeat.subfeatures?.length ? ` (${builtFeat.subfeatures.map((s) => s.name).join(", ")})` : ""}`);
-        }
-
-        d.hp.max += hpGain;
-        d.hp.current += hpGain;
-
-        for (const f of builtFeatures) {
-          // Proficiencies the feature grants (Bonus Proficiencies, Slippery Mind, Diamond Soul…).
-          if (f.effects?.length) applyEffects(d, { name: f.name, effects: f.effects });
-          applySubfeatureMechanics(d, f.choices ?? [], f.subfeatures ?? []);
-          applyDetectedUses(d, f);
-          d.features.push(f);
-        }
-        if (builtFeatures.length) summary.push(`New features: ${builtFeatures.map((f) => f.name).join(", ")}`);
-        for (const f of builtFeatures) if (f.subfeatures?.length) summary.push(`${f.name}: ${f.subfeatures.map((s) => s.name).join(", ")}`);
-        for (const { p, choice, subs } of builtProgressions) {
-          if (!subs.length) continue;
-          attachProgression(d, p, choice, subs, origin);
-          summary.push(`${p.name}: ${subs.map((s) => s.name).join(", ")}`);
-        }
-        for (const { p, out, choice, subs } of builtSwaps) {
-          const parent = d.features.find((f) => f.name === p.name);
-          const old = parent?.subfeatures?.find((s) => s.id === out);
-          if (!parent || !old) continue;
-          parent.subfeatures = parent.subfeatures!.filter((s) => s.id !== out);
-          attachProgression(d, p, choice, subs, origin);
-          summary.push(`${p.name}: replaced ${old.name} with ${subs.map((s) => s.name).join(", ")}`);
-        }
-
-        // Spells
-        const addSpell = (s: ContentSummary) =>
-          d.spellcasting.spells.push({
-            id: uid(), ref: { source: s.source, key: s.key, name: s.name }, level: s.level ?? 0, classKey: rules.index,
-            prepared: (s.level ?? 0) === 0 || plan.spellModel === "known", alwaysPrepared: false, notes: "",
-          });
-        if (arcanum && arcanumLevel) {
-          d.spellcasting.spells.push({
-            id: uid(), ref: { source: arcanum.source, key: arcanum.key, name: arcanum.name }, level: arcanumLevel, classKey: rules.index,
-            prepared: true, alwaysPrepared: true, notes: "", grantedBy: "feature:Mystic Arcanum", uses: "1/long rest",
-          });
-          summary.push(`Mystic Arcanum: ${arcanum.name}`);
-        }
-        cantrips.forEach(addSpell);
-        spells.forEach(addSpell);
-        if (swapOut && swapIn[0]) {
-          const old = d.spellcasting.spells.find((s) => s.id === swapOut);
-          d.spellcasting.spells = d.spellcasting.spells.filter((s) => s.id !== swapOut);
-          addSpell(swapIn[0]);
-          summary.push(`Swapped ${old?.ref.name} for ${swapIn[0].name}`);
-        }
-        if (cantrips.length) summary.push(`Learned cantrips: ${cantrips.map((s) => s.name).join(", ")}`);
-        if (spells.length) summary.push(`Learned spells: ${spells.map((s) => s.name).join(", ")}`);
-
-        const before = d.spellcasting.spells.length;
-        addGrantedSpells(d, grantedSpells);
-        const added = d.spellcasting.spells.slice(before).map((s) => s.ref.name);
-        if (added.length) summary.push(`Spells granted: ${added.join(", ")}`);
-
-        Object.assign(d.spellcasting, recomputeSlots(d.classes, entry, plan.spellcasting, d.spellcasting));
-
-        d.levelHistory.push({ classKey: rules.index, className: rules.name, level: plan.newLevel, hpGained: hpGain, summary, at: new Date().toISOString(), snapshot: buildBefore });
+        applyLevelUp(d, rules, plan, picks, prep);
         onApplied?.(d);
         snapshot = d;
       });

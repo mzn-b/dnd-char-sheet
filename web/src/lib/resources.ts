@@ -83,6 +83,8 @@ const SUBCLASS_RESOURCES: Record<string, Def> = {
   "way of the open hand": (k, c) => (k.level >= 11 && !c.spellcasting.spells.some((s) => /^sanctuary$/i.test(s.ref.name) && s.uses) ? { name: "Tranquility", max: 1, reset: "long" } : null),
   "psi warrior": psionicDice,
   soulknife: psionicDice,
+  // Celestial Healing Light: a pool of 1 + warlock level d6s per long rest.
+  "the celestial": (k) => ({ name: "Healing Light", max: 1 + k.level, reset: "long", die: "d6", pool: true }),
   "the fiend": (k) => (k.level >= 6 ? { name: "Dark One's Own Luck", max: 1, reset: "short" } : null),
   "school of divination": (k) => (k.level >= 2 ? { name: "Portent", max: k.level >= 14 ? 3 : 2, reset: "long" } : null),
 };

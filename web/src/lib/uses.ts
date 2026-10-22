@@ -18,11 +18,15 @@ const ABILITY: Record<string, Ability> = { strength: "str", dexterity: "dex", co
  */
 export function detectUses(text: string): DetectedUses | null {
   const t = text.replace(/\*/g, "").replace(/\s+/g, " ");
-  const it = "(?:this(?: feature| ability)?|it|them|that feature)";
-  const rest = "((?:short or long|long|short) )?rest";
+  const it = "(?:this(?: feature| ability)?|it|them|that feature|the feature)";
+  // "a long rest", "1d4 long rests" (Necrotic Husk); "you", or third person in the DMG's Oathbreaker.
+  const rest = "((?:short or long|long|short) )?rests?";
+  const until = "until (?:you|he or she|they) finish(?:es)? (?:a|your next|1d4)";
   // The limit sentence decides the rest type; a trigger like "When you finish a short rest, …" doesn't.
   const restMatch =
-    t.match(new RegExp(`(?:can't|cannot) use ${it} again until you finish a ${rest}`, "i")) ??
+    t.match(new RegExp(`(?:can't|cannot) (?:use ${it}|do so)(?: [^.]{0,30}?)? again ${until} ${rest}`, "i")) ??
+    // Master Transmuter: "Your transmuter's stone is destroyed and can't be remade until you finish a long rest."
+    t.match(new RegExp(`can't be (?:remade|recreated|used) ${until} ${rest}`, "i")) ??
     t.match(new RegExp(`must finish a ${rest} before you can (?:use|cast) ${it} again`, "i")) ??
     t.match(new RegExp(`to use ${it} again, you must finish a ${rest}`, "i")) ??
     t.match(new RegExp(`regain (?:all )?(?:of )?(?:your )?(?:expended )?(?:uses|use|it|them)[^.]*?when you finish a ${rest}`, "i")) ??
@@ -42,7 +46,7 @@ export function detectUses(text: string): DetectedUses | null {
   // aren't use counts.
   const times = t.match(/\b(once|twice|(?:three|two|four) times)\b(?! your| the| its| that| per turn| on each| you(?:'ve| have)| each turn)/i);
   if (times) return { formula: COUNT[times[1].toLowerCase()], reset };
-  if (new RegExp(`once you use ${it}|(?:can't|cannot) use ${it} again|before you can (?:use|cast) ${it} again|to use ${it} again`, "i").test(t)) return { formula: 1, reset };
+  if (new RegExp(`once you use ${it}|(?:can't|cannot) (?:use ${it}|do so)(?: [^.]{0,30}?)? again|before you can (?:use|cast) ${it} again|to use ${it} again|can't be (?:remade|recreated) until`, "i").test(t)) return { formula: 1, reset };
   return null;
 }
 

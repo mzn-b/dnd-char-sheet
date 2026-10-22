@@ -57,6 +57,10 @@ const KNOWN: { match: RegExp; kind: ActionKind | ((c: Character) => ActionKind) 
   // War Magic: a weapon attack as a bonus action after casting a cantrip / spell.
   { match: /^(improved )?war magic$/i, kind: "bonus" },
   { match: /^(arcane charge|inspiring surge)$/i, kind: "free" },
+  // Rolled after casting a spell, not something you do.
+  { match: /^wild magic surge$/i, kind: "other" },
+  // Special attacks made as part of the Attack action.
+  { match: /^(radiant sun bolt|breath of the dragon)$/i, kind: "action" },
   // Circle of the Moon's Combat Wild Shape makes it a bonus action.
   { match: /^wild shape$/i, kind: (c) => (c.features.some((f) => /^combat wild shape$/i.test(f.name)) || c.classes.some((k) => /moon/i.test(k.subclass?.name ?? "")) ? "bonus" : "action") },
   { match: /^(divine smite|sneak attack|extra attack|stunning strike|favored foe|dread ambusher|colossus slayer|dreadful strikes)$/i, kind: "free" },
