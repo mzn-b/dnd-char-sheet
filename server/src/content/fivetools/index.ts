@@ -696,7 +696,10 @@ function featureDetail(ds: Dataset, k: string): ContentDetail | undefined {
     prerequisite: prerequisiteText(obj.prerequisite),
     description: featureBody(ds, obj.entries),
     meta: {},
-    choices: featureChoices(ds, obj.name, obj.entries, lc(obj.name).replace(/\W+/g, "-")),
+    // Thieves' tools expertise is a rogue option; bards' Expertise is skills only.
+    choices: featureChoices(ds, obj.name, obj.entries, lc(obj.name).replace(/\W+/g, "-")).map((ch) =>
+      ch.kind === "expertise" && obj.className && obj.className !== "Rogue" ? { ...ch, options: ch.options.filter((o) => o.key !== "thieves-tools") } : ch,
+    ),
     grantedSpells: obj.additionalSpells ? grantedSpells(ds, obj.additionalSpells) : tableSpells(ds, obj.entries),
   };
 }

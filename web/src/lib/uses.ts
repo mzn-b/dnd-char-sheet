@@ -18,20 +18,31 @@ const ABILITY: Record<string, Ability> = { strength: "str", dexterity: "dex", co
  */
 export function detectUses(text: string): DetectedUses | null {
   const t = text.replace(/\*/g, "").replace(/\s+/g, " ");
-  const restMatch = t.match(/(?:until|before|when|must) (?:you )?finish (?:a|your next) (short or long|long|short) rest|regain (?:all )?(?:expended )?uses? [^.]*?(short or long|long|short) rest|regain your expended [^.]*?(short or long|long|short) rest/i);
+  const it = "(?:this(?: feature| ability)?|it|them|that feature)";
+  const rest = "((?:short or long|long|short) )?rest";
+  // The limit sentence decides the rest type; a trigger like "When you finish a short rest, …" doesn't.
+  const restMatch =
+    t.match(new RegExp(`(?:can't|cannot) use ${it} again until you finish a ${rest}`, "i")) ??
+    t.match(new RegExp(`must finish a ${rest} before you can (?:use|cast) ${it} again`, "i")) ??
+    t.match(new RegExp(`to use ${it} again, you must finish a ${rest}`, "i")) ??
+    t.match(new RegExp(`regain (?:all )?(?:of )?(?:your )?(?:expended )?(?:uses|use|it|them)[^.]*?when you finish a ${rest}`, "i")) ??
+    t.match(new RegExp(`(?:until|before|when|must) (?:you )?finish (?:a|your next) ${rest}`, "i"));
   if (!restMatch) return null;
-  const restWord = (restMatch[1] ?? restMatch[2] ?? restMatch[3] ?? "long").toLowerCase();
+  // "until you finish a rest" (either kind) resets on a short rest.
+  const restWord = (restMatch[1] ?? "short").trim().toLowerCase();
   const reset: "short" | "long" = restWord.startsWith("short") ? "short" : "long";
 
   if (/number of times equal to your proficiency bonus/i.test(t)) return { formula: "prof", reset };
   const abilityTimes = t.match(/number of times equal to your (strength|dexterity|constitution|intelligence|wisdom|charisma) modifier/i);
   if (abilityTimes) return { formula: ABILITY[abilityTimes[1].toLowerCase()], reset };
-  const points = t.match(/you have (\d+|one|two|three|four|five) (?:luck points|[a-z]+ points|uses)/i);
+  // Luck points; not class pools tracked as resources ("you have 2 sorcery points").
+  const points = t.match(/you have (\d+|one|two|three|four|five) (?:luck points|uses)/i);
   if (points) return { formula: Number(points[1]) || COUNT[points[1].toLowerCase()] || 1, reset };
-  // "four times your ranger level" (Beast Master companion HP) is a multiplier, not a use count.
-  const times = t.match(/\b(once|twice|(?:three|two|four) times(?! your| the| its| that))\b(?! per turn)/i);
+  // Multipliers ("four times your ranger level", "twice your proficiency bonus") and "once you have…"
+  // aren't use counts.
+  const times = t.match(/\b(once|twice|(?:three|two|four) times)\b(?! your| the| its| that| per turn| on each| you(?:'ve| have)| each turn)/i);
   if (times) return { formula: COUNT[times[1].toLowerCase()], reset };
-  if (/once you use (?:this|it)|you can't use (?:this|it) again|must finish a (?:short or long|long|short) rest before you can (?:use|cast) it/i.test(t)) return { formula: 1, reset };
+  if (new RegExp(`once you use ${it}|(?:can't|cannot) use ${it} again|before you can (?:use|cast) ${it} again|to use ${it} again`, "i").test(t)) return { formula: 1, reset };
   return null;
 }
 
@@ -48,7 +59,9 @@ export const formulaLabel = (f: UsesFormula | undefined) =>
 /** Features already tracked as class resources (Rage, Channel Divinity…) aren't tracked twice. */
 export function coveredByResources(c: Character, name: string) {
   const n = name.toLowerCase();
-  return classResources(c).some((r) => n === r.name.toLowerCase() || n.startsWith(r.name.toLowerCase()) || r.name.toLowerCase().startsWith(n));
+  return classResources(c).some((r) =>
+    [r.name, ...(r.aliases ?? [])].map((a) => a.toLowerCase()).some((a) => n === a || n.startsWith(`${a} `) || n.startsWith(`${a}:`) || n.startsWith(`${a} (`) || a.startsWith(n)),
+  );
 }
 
 /** Add use tracking to a feature when its text says it's limited. Returns true if it changed. */

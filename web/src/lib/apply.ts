@@ -75,6 +75,7 @@ export function applyEffects(d: Character, detail: Pick<ContentDetail, "effects"
     if (e.kind === "ability") d.abilities[e.ability] += e.amount;
     if (e.kind === "speed") d.speed = e.amount;
     if (e.kind === "skill" && d.skills[e.skill] != null) d.skills[e.skill] = Math.max(1, d.skills[e.skill]) as 1 | 2;
+    if (e.kind === "expertise" && d.skills[e.skill] != null) d.skills[e.skill] = 2;
     if (e.kind === "save" && !d.saveProficiencies.includes(e.ability)) d.saveProficiencies.push(e.ability);
     if (e.kind === "proficiency") addProficiencyLine(d, e.value);
   }

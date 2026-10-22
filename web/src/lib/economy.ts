@@ -19,8 +19,10 @@ export function kindFromCastingTime(t?: string): ActionKind {
 
 const PATTERNS: [ActionKind, RegExp][] = [
   ["bonus", /\b(?:as a|use a|using a|take a|with a|spend a|your) bonus action\b|\bbonus action (?:to|on your turn)\b/i],
-  ["reaction", /\b(?:use|uses|using|take|spend) (?:your|its|a) reaction\b|\bas a reaction\b|\byour reaction to\b/i],
-  ["action", /\b(?:as an|use an|using an|use your|take an|spend an|uses its) action\b|\baction to (?:magically|activate|use|channel|present|expend)\b|\btake the (?:dash|disengage|dodge|help|hide|search) action\b(?! as a bonus action)/i],
+  // Not "uses its reaction": that's another creature's (Infectious Fury's target).
+  ["reaction", /\b(?:use|uses|using|take|spend) (?:your|a) reaction\b|\bas a reaction\b|\byour reaction to\b/i],
+  // "use your Action Surge" is not the action.
+  ["action", /\b(?:as an|use an|using an|use your|using your|take an|spend an|uses its) action\b(?! surge)|\baction to (?:magically|activate|use|channel|present|expend)\b|\btake the (?:dash|disengage|dodge|help|hide|search) action\b(?! as a bonus action)/i],
 ];
 
 /** Reads "as a bonus action", "use your reaction", "use your action to…" from a feature's text (earliest mention wins). */
@@ -46,7 +48,15 @@ const KNOWN: { match: RegExp; kind: ActionKind | ((c: Character) => ActionKind) 
   { match: /^uncanny dodge$/i, kind: "reaction" },
   { match: /^lay on hands$/i, kind: "action" },
   { match: /^divine sense$/i, kind: "action" },
-  { match: /^channel divinity/i, kind: "action" },
+  // Channel Divinity options with another cost; the rest read their text (most say "use your action").
+  { match: /harness divine power/i, kind: "bonus" },
+  { match: /guided strike|destructive wrath|touch of death/i, kind: "free" },
+  { match: /war god'?s blessing/i, kind: "reaction" },
+  { match: /artisan'?s blessing/i, kind: "other" },
+  { match: /^channel divinity$/i, kind: "action" },
+  // War Magic: a weapon attack as a bonus action after casting a cantrip / spell.
+  { match: /^(improved )?war magic$/i, kind: "bonus" },
+  { match: /^(arcane charge|inspiring surge)$/i, kind: "free" },
   // Circle of the Moon's Combat Wild Shape makes it a bonus action.
   { match: /^wild shape$/i, kind: (c) => (c.features.some((f) => /^combat wild shape$/i.test(f.name)) || c.classes.some((k) => /moon/i.test(k.subclass?.name ?? "")) ? "bonus" : "action") },
   { match: /^(divine smite|sneak attack|extra attack|stunning strike|favored foe|dread ambusher|colossus slayer|dreadful strikes)$/i, kind: "free" },

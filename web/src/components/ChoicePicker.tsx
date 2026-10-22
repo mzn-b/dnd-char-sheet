@@ -74,7 +74,8 @@ export function ChoicePicker({
               <button
                 key={o.key}
                 type="button"
-                disabled={taken.includes(o.key) || (!on && full && choice.count > 1)}
+                // Expertise needs proficiency in the skill first.
+                disabled={taken.includes(o.key) || (!on && full && choice.count > 1) || (!on && choice.kind === "expertise" && !choice.grantsProficiency && !!character && character.skills[o.key] != null && character.skills[o.key] < 1)}
                 onClick={() => toggle(o.key)}
                 className={`rounded-lg border px-2.5 py-1 text-sm transition disabled:opacity-40 ${on ? "border-accent-500 bg-accent-500/15 text-accent-400" : "border-ink-700 hover:border-ink-600"}`}
               >

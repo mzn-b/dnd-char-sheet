@@ -2,7 +2,8 @@ import type {
   Character, CharacterSummary, ClassRules, ContentDetail, ContentSource, ContentSummary, ContentType, SubclassRules,
 } from "./types";
 import { normalizeCharacter } from "./defaults";
-import { withTextChoices } from "./textChoices";
+import { textEffects, withTextChoices } from "./textChoices";
+import { migrateCharacter } from "./migrate";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -23,7 +24,7 @@ const qs = (params: Record<string, string | number | undefined>) => {
 
 export const api = {
   listCharacters: () => request<CharacterSummary[]>("/characters"),
-  getCharacter: async (id: string) => normalizeCharacter(await request<Character>(`/characters/${id}`)),
+  getCharacter: async (id: string) => migrateCharacter(normalizeCharacter(await request<Character>(`/characters/${id}`))),
   createCharacter: (c: Character) => request<Character>("/characters", { method: "POST", body: JSON.stringify(c) }),
   saveCharacter: (c: Character) =>
     request<Character>(`/characters/${c.id}`, { method: "PUT", body: JSON.stringify(c) }),
@@ -50,6 +51,11 @@ export const api = {
     if (["feature", "feat", "race", "background", "subclass"].includes(type)) {
       const choices = withTextChoices(d.choices, d.description ?? "");
       if (choices.length) d.choices = choices;
+    }
+    // Class and subclass features state their proficiencies only in prose (Bonus Proficiencies, Slippery Mind).
+    if (type === "feature" && !d.effects?.length) {
+      const effects = textEffects(d.description ?? "");
+      if (effects.length) d.effects = effects;
     }
     return d;
   },

@@ -17,9 +17,18 @@ const UNIT_ROUNDS: Record<string, number> = { round: 1, minute: 10, hour: 600 };
 /** Reads "for 1 minute", "for 10 minutes or until…", "until the start of your next turn", concentration. */
 export function durationFromText(text: string): FeatureDuration | undefined {
   const plain = text.replace(/\*\*?|_/g, " ").replace(/\s+/g, " ");
-  const concentration = /until you lose (?:your )?concentration|as if (?:you were )?concentrating|requires? concentration|\(concentration\)/i.test(plain);
-  // "travel for an hour or more" (Natural Explorer) describes a condition, not a duration.
-  const timed = plain.match(/\bfor (a|an|one|two|three|ten|\d+) (round|minute|hour)s?\b(?! or (?:more|longer))/i);
+  // Not "If the spell requires concentration, the creature must concentrate" (Spell-Storing Item).
+  const concentration = /until you lose (?:your )?concentration|as if (?:you were )?concentrating|\(concentration\)/i.test(plain);
+  // "travel for an hour or more" (Natural Explorer) is a condition, and "can't use this feature on it again
+  // for 24 hours" / "again until the start of your next turn" are cooldowns, not durations.
+  const timed = /(?<!again )\bfor (?:the next )?(a|an|one|two|three|ten|\d+) (round|minute|hour)s?\b(?! or (?:more|longer))/i.exec(plain);
+  const nextTurn = /(?<!again )until the (start|end) of your next turn/i.exec(plain);
+  // The first one mentioned is the feature's own (Intimidating Presence: frightened until the end of your next turn).
+  if (nextTurn && (!timed || nextTurn.index < timed.index)) {
+    return nextTurn[1].toLowerCase() === "end"
+      ? { rounds: 2, concentration, label: "until the end of your next turn" }
+      : { rounds: null, untilNextTurn: true, concentration, label: "until your next turn" };
+  }
   if (timed) {
     const n = NUM[timed[1].toLowerCase()] ?? Number(timed[1]);
     const unit = timed[2].toLowerCase();
@@ -28,7 +37,6 @@ export function durationFromText(text: string): FeatureDuration | undefined {
     const label = unit === "round" ? `${n} round${n > 1 ? "s" : ""}` : unit === "minute" ? `${n} min` : `${n} hr`;
     return { rounds: rounds >= 600 ? null : rounds, concentration, label };
   }
-  if (/until the (?:start|end) of your next turn/i.test(plain)) return { rounds: null, untilNextTurn: true, concentration, label: "until your next turn" };
   if (concentration) return { rounds: null, concentration, label: "concentration" };
   return undefined;
 }

@@ -9,7 +9,10 @@ import type { Feature } from "../types";
 describe("feature durations", () => {
   it("reads minutes, rounds, next turn and concentration", () => {
     expect(featureDuration(foe)).toEqual({ rounds: 10, concentration: true, label: "1 min" });
-    expect(durationFromText("For the next 10 minutes, nothing.")).toBeUndefined();
+    expect(durationFromText("For the next 10 minutes, you have advantage on Athletics checks.")).toMatchObject({ rounds: 100, label: "10 min" });
+    expect(durationFromText("You can't use this feature again until the start of your next turn.")).toBeUndefined();
+    expect(durationFromText("If the spell requires concentration, the creature must concentrate.")).toBeUndefined();
+    expect(durationFromText("frightened of you until the end of your next turn. You can't use it on that creature again for 24 hours.")).toMatchObject({ label: "until the end of your next turn" });
     expect(durationFromText("Your speed increases by 10 feet for 1 round.")).toMatchObject({ rounds: 1, label: "1 round" });
     expect(durationFromText("You gain resistance until the start of your next turn.")).toMatchObject({ untilNextTurn: true });
     expect(durationFromText("This lasts for 1 hour.")).toMatchObject({ rounds: null, label: "1 hr" });

@@ -3,7 +3,8 @@ import { EFFECTS, activateEffect, addEffect, endEffect, type Reminder } from "./
 import { featureDuration } from "./featureDuration";
 import { featureKind, spendEconomy } from "./economy";
 import { startWildShape } from "./extras";
-import { classResources } from "./resources";
+import { classResources, type Resource } from "./resources";
+import { usesMax } from "./uses";
 import type { Character, CreatureRole, Feature } from "./types";
 import type { Preset } from "./extras";
 
@@ -27,28 +28,60 @@ export function featureDecision(f: Pick<Feature, "name">): Decision | undefined 
   return /^wild shape$/i.test(f.name.trim()) ? { kind: "wildshape" } : undefined;
 }
 
-/** The class resource a feature spends (Rage → barbarian:rage), if the app tracks one. */
-function resourceFor(c: Character, f: Pick<Feature, "name">) {
+/** Pools other features draw on, by the words their text uses: "expend one use of your Wild Shape". */
+const POOL_WORDS: [RegExp, RegExp][] = [
+  [/(?:expend|use) (?:a|one) use of (?:your )?wild shape|expend a use of this feature|as an action, you (?:can )?expend a use of your wild shape/i, /^wild shape$/i],
+  [/(?:expend|use|spend) (?:a|one) (?:use of (?:your )?)?bardic inspiration|expend(?:ing)? one of your (?:uses of )?bardic inspiration/i, /^bardic inspiration$/i],
+  [/(?:use|expend) (?:your|a use of your|one use of your) channel divinity/i, /^channel divinity$/i],
+  [/expend (?:one|a) superiority die/i, /^superiority dice$/i],
+  [/expend (?:one|a) psionic energy die/i, /^psionic energy dice$/i],
+];
+
+/** The class resource a feature spends and how much (Rage → barbarian:rage; Shadow Step costs nothing; Stunning Strike 1 ki). */
+function resourceFor(c: Character, f: Pick<Feature, "name"> & { description?: string }): { res: Resource; cost: number } | undefined {
   const def = EFFECTS.find((e) => e.resource && e.activatedBy?.test(f.name));
   const resources = classResources(c);
-  return resources.find((r) => r.id === def?.resource) ?? resources.find((r) => r.name.toLowerCase() === f.name.toLowerCase());
+  const own = resources.find((r) => r.id === def?.resource) ?? resources.find((r) => [r.name, ...(r.aliases ?? [])].some((a) => a.toLowerCase() === f.name.toLowerCase()));
+  if (own) return { res: own, cost: 1 };
+  const text = (f.description ?? "").replace(/\*/g, "");
+  // Channel Divinity options ("Channel Divinity: Turn Undead", Harness Divine Power) spend Channel Divinity.
+  if (/^channel divinity\b/i.test(f.name)) {
+    const cd = resources.find((r) => /^channel divinity$/i.test(r.name));
+    if (cd) return { res: cd, cost: 1 };
+  }
+  // Ki / sorcery point costs: "spend 1 ki point", "spend 2 sorcery points".
+  const points = text.match(/spend (\d+|one|two|three) (ki|sorcery) points?/i);
+  if (points) {
+    const res = resources.find((r) => r.name.toLowerCase().startsWith(points[2].toLowerCase()));
+    if (res) return { res, cost: Number(points[1]) || ({ one: 1, two: 2, three: 3 } as Record<string, number>)[points[1].toLowerCase()] || 1 };
+  }
+  for (const [words, pool] of POOL_WORDS) {
+    if (!words.test(text)) continue;
+    const res = resources.find((r) => pool.test(r.name));
+    if (res) return { res, cost: 1 };
+  }
+  return undefined;
 }
 
 /** Uses left for a feature: from its class resource or its own use tracker; undefined = unlimited. */
 export function usesLeft(c: Character, f: Feature): number | undefined {
-  const res = resourceFor(c, f);
-  if (res) return res.max >= 99 ? undefined : Math.max(0, res.max - (c.resourcesUsed?.[res.id] ?? 0));
-  if (f.uses) return Math.max(0, f.uses.max - f.uses.used);
-  return undefined;
+  // Its own limit (Harness Divine Power 1/long rest) comes first; the pool it also draws on is checked when used.
+  if (f.uses) return Math.max(0, usesMax(c, f.uses.formula, f.uses.max) - f.uses.used);
+  const r = resourceFor(c, f);
+  const left = (res: Resource, cost = 1) => (res.max >= 99 ? Infinity : Math.floor(Math.max(0, res.max - (c.resourcesUsed?.[res.id] ?? 0)) / cost));
+  const harness = /harness divine power/i.test(f.name) ? classResources(c).find((x) => /^harness divine power$/i.test(x.name)) : undefined;
+  const n = Math.min(r ? left(r.res, r.cost) : Infinity, harness ? left(harness) : Infinity);
+  return n === Infinity ? undefined : n;
 }
 
-function spendUse(d: Character, f: Pick<Feature, "name">) {
-  const res = resourceFor(d, f);
-  if (res) d.resourcesUsed = { ...d.resourcesUsed, [res.id]: (d.resourcesUsed?.[res.id] ?? 0) + 1 };
-  else {
-    const own = d.features.find((x) => x.name === f.name && x.uses);
-    if (own?.uses) own.uses.used = Math.min(own.uses.max, own.uses.used + 1);
-  }
+function spendUse(d: Character, f: Pick<Feature, "name" | "description">) {
+  const own = d.features.find((x) => x.name === f.name && x.uses);
+  if (own?.uses) own.uses.used = Math.min(usesMax(d, own.uses.formula, own.uses.max), own.uses.used + 1);
+  const r = resourceFor(d, f);
+  if (r) d.resourcesUsed = { ...d.resourcesUsed, [r.res.id]: (d.resourcesUsed?.[r.res.id] ?? 0) + r.cost };
+  // Harness Divine Power has its own per-long-rest count on top of the Channel Divinity it spends.
+  const harness = /harness divine power/i.test(f.name) && classResources(d).find((x) => /^harness divine power$/i.test(x.name));
+  if (harness && harness.id !== r?.res.id) d.resourcesUsed = { ...d.resourcesUsed, [harness.id]: (d.resourcesUsed?.[harness.id] ?? 0) + 1 };
 }
 
 /**

@@ -49,6 +49,7 @@ export type Effect =
   | { kind: "ability"; ability: Ability; amount: number }
   | { kind: "speed"; amount: number }
   | { kind: "skill"; skill: string }
+  | { kind: "expertise"; skill: string }
   | { kind: "save"; ability: Ability }
   | { kind: "proficiency"; value: string };
 
@@ -63,6 +64,8 @@ export interface Choice {
   count: number;
   options: ChoiceOption[];
   amount?: number;
+  /** Expertise choices that also grant the proficiency (Knowledge Domain's Blessings of Knowledge). */
+  grantsProficiency?: boolean;
   /** The same option may be picked up to this many times (+2 to one ability = two +1 picks). */
   maxPerOption?: number;
 }

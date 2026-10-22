@@ -1,10 +1,11 @@
 import { takeSnapshot } from "../../lib/levelDown";
+import { splitFeature } from "../../lib/featureSections";
 import { useBookFilter } from "../../lib/books";
 import { useMemo, useState } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import {
-  addGrantedSpells, addProficiencyLine, applySubfeatureMechanics, prepareGrantedSpells, attachProgression, buildFeature, grantFeature, grantProgression, resolveSubfeatures,
+  addGrantedSpells, addProficiencyLine, applyEffects, applySubfeatureMechanics, prepareGrantedSpells, attachProgression, buildFeature, grantFeature, grantProgression, resolveSubfeatures,
 } from "../../lib/apply";
 import { uid } from "../../lib/defaults";
 import { applyDetectedUses } from "../../lib/uses";
@@ -221,7 +222,7 @@ export function LevelUpWizard({
           if (!det) return { id: uid(), name: f.name, origin, kind: f.kind, description: "", ref: { ...f, type: "feature" as const } };
           return buildFeature({ ...det, name: f.name }, featureSel[f.key] ?? {}, origin, f.kind);
         }),
-      );
+      ).then((fs) => fs.flatMap(splitFeature));
       const subclassDetail = subclass ? await fetchDetail("subclass", subclass).catch(() => null) : null;
       const builtFeat = plan.grantsAsi && asiMode === "feat" && featDetail ? await buildFeature(featDetail, featSel, "Feat", "feat") : null;
       const builtProgressions = await Promise.all(
@@ -310,6 +311,8 @@ export function LevelUpWizard({
         d.hp.current += hpGain;
 
         for (const f of builtFeatures) {
+          // Proficiencies the feature grants (Bonus Proficiencies, Slippery Mind, Diamond Soul…).
+          if (f.effects?.length) applyEffects(d, { name: f.name, effects: f.effects });
           applySubfeatureMechanics(d, f.choices ?? [], f.subfeatures ?? []);
           applyDetectedUses(d, f);
           d.features.push(f);

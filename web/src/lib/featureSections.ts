@@ -35,3 +35,24 @@ export function featureParts(c: Character): FeaturePart[] {
     ...(f.subfeatures ?? []).map((s) => ({ name: s.name, text: s.description ?? "", feature: f })),
   ]);
 }
+
+/**
+ * Split a subclass entry that bundles several features ("Gloom Stalker" → Dread Ambusher, Umbral Sight…)
+ * into one feature per section, so each has its own uses, action cost and reminders. The first part keeps
+ * the entry's intro text, choices, effects and granted spells. Ids are derived, so splitting is stable.
+ */
+export function splitFeature(f: Feature): Feature[] {
+  const sections = featureSections(f);
+  if (sections.length < 2) return [f];
+  const [intro, ...parts] = sections;
+  return [
+    { ...f, description: intro.text.trim(), uses: undefined },
+    ...parts.map((s): Feature => ({
+      id: `${f.id}:${s.name.toLowerCase().replace(/\W+/g, "-")}`,
+      name: s.name,
+      origin: f.origin,
+      kind: f.kind,
+      description: s.text,
+    })),
+  ];
+}
