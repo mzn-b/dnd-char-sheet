@@ -12,7 +12,7 @@ import {
 } from "../lib/rules";
 import { ABILITIES, type Ability, type ContentDetail, type ContentSummary, type RuleOptions, type Selections } from "../lib/types";
 import { RuleOptionsEditor } from "../components/RuleOptions";
-import { BookPicker } from "../components/BookPicker";
+import { BookPicker, CORE_BOOKS } from "../components/BookPicker";
 import { BooksContext, useBookFilter } from "../lib/books";
 import { ChoiceList, unfinishedChoices } from "../components/ChoicePicker";
 import { ContentBrowser, contentId } from "../components/ContentBrowser";
@@ -65,7 +65,7 @@ export default function CharacterCreator() {
   const [skipEquipment, setSkipEquipment] = useState(false);
   const [details, setDetails] = useState({ alignment: "", playerName: "", traits: "", ideals: "", bonds: "", flaws: "", backstory: "" });
   const [creating, setCreating] = useState(false);
-  const [options, setOptions] = useState<RuleOptions>({});
+  const [options, setOptions] = useState<RuleOptions>({ books: CORE_BOOKS });
   /** Customizing Your Origin: where each racial increase goes (from → to). */
   const [originMap, setOriginMap] = useState<Partial<Record<Ability, Ability>>>({});
   const [error, setError] = useState("");

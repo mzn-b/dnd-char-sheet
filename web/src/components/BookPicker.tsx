@@ -10,7 +10,7 @@ const TCE = "Tasha's Cauldron of Everything";
 const DMG = "Dungeon Master's Guide (2014)";
 
 /** "Core": the 2014 core books plus the supplements and setting books usually allowed at the table. */
-const CORE = [
+export const CORE_BOOKS = [
   "Acquisitions Incorporated", "Astral Adventurer's Guide", DMG, "Eberron: Rising from the Last War",
   "Elemental Evil Player's Companion", "Explorer's Guide to Wildemount", "Fizban's Treasury of Dragons",
   "Guildmasters' Guide to Ravnica", "Mordenkainen Presents: Monsters of the Multiverse", "Mordenkainen's Tome of Foes",
@@ -22,7 +22,7 @@ const VANILLA = [DMG, "Fizban's Treasury of Dragons", "Mordenkainen Presents: Mo
 
 const PRESETS: { label: string; books: string[]; title?: string }[] = [
   { label: "All books", books: [] },
-  { label: "Core", books: CORE, title: CORE.join(", ") },
+  { label: "Core", books: CORE_BOOKS, title: CORE_BOOKS.join(", ") },
   { label: "Vanilla", books: VANILLA, title: VANILLA.join(", ") },
   { label: "PHB only", books: [PHB] },
   { label: "PHB + Xanathar's + Tasha's", books: [PHB, XGE, TCE] },

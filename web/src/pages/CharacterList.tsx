@@ -7,6 +7,7 @@ import { classSummary } from "../lib/rules";
 import type { Character } from "../lib/types";
 import { Modal, Spinner } from "../components/ui";
 import { planResync } from "../lib/resync";
+import { CORE_BOOKS } from "../components/BookPicker";
 
 export default function CharacterList() {
   const qc = useQueryClient();
@@ -78,7 +79,7 @@ export default function CharacterList() {
             </button>
           )}
           <button className="btn" onClick={() => fileInput.current?.click()}>Import JSON</button>
-          <button className="btn" onClick={() => create.mutate(newCharacter())} disabled={create.isPending} title="Blank sheet: fill everything in yourself">Blank sheet</button>
+          <button className="btn" onClick={() => create.mutate({ ...newCharacter(), options: { books: CORE_BOOKS } })} disabled={create.isPending} title="Blank sheet: fill everything in yourself">Blank sheet</button>
           <button className="btn-primary" onClick={() => navigate("/new")}>+ Create character</button>
         </div>
       </div>
