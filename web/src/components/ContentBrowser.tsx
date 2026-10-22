@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import type { Character, ContentDetail, ContentSummary, ContentType, ExpandedSpell } from "../lib/types";
 import { spellLevelLabel } from "../lib/rules";
@@ -9,6 +9,8 @@ import { FacetFilters } from "./FacetFilters";
 import { matches as matchesFacets, sortBy, type FilterState } from "../lib/facets";
 import { RollList, SpellRollBreakdown } from "./rolls";
 import { extractRolls } from "../lib/rollText";
+import { featureSections } from "../lib/featureSections";
+import { ordinal } from "../lib/rules";
 
 export const contentId = (c: { source: string; key: string }) => `${c.source}:${c.key}`;
 
@@ -271,10 +273,73 @@ export function ContentDetailView({
       {isLoading && <Spinner />}
       {error && <p className="text-sm text-blood-500">{(error as Error).message}</p>}
       {data && <DetailBody detail={data} rollContext={rollContext} />}
+      {type === "subclass" && <SubclassFeatures item={item} intro={data?.description} />}
       {children}
     </div>
   );
 }
+
+/** Every feature a subclass grants, level by level, with its rules text. */
+function SubclassFeatures({ item, intro }: { item: { source: ContentSummary["source"]; key: string }; intro?: string }) {
+  const rules = useQuery({ queryKey: ["subclassRules", item.source, item.key], queryFn: () => api.subclassRules(item.source, item.key), staleTime: Infinity });
+  const refs = (rules.data?.levels ?? []).flatMap((l) => l.features.filter((f) => !f.optional).map((f) => ({ ...f, level: l.level })));
+  const details = useQueries({
+    queries: refs.map((f) => ({ queryKey: ["detail", "feature", f.source, f.key], queryFn: () => api.detail("feature", f.source, f.key), staleTime: Infinity })),
+  });
+  // Choice features (Hunter's Prey) list option names; fetch what each option does.
+  const optionRefs = details.flatMap((q) => (q.data?.choices ?? []).flatMap((ch) => ch.options)).filter((o) => o.source && !o.description);
+  const optionDetails = useQueries({
+    queries: optionRefs.map((o) => ({ queryKey: ["detail", o.type ?? "feature", o.source, o.key], queryFn: () => api.detail(o.type ?? "feature", o.source!, o.key), staleTime: Infinity })),
+  });
+  const optionText = new Map(optionRefs.map((o, i) => [o.key, optionDetails[i].data?.description]));
+  if (rules.isLoading) return <Spinner />;
+  if (!refs.length) return null;
+  // A feature that bundles several ("Gloom Stalker" → Gloom Stalker Magic, Dread Ambusher, Umbral Sight) is shown section by section.
+  const entries = refs.flatMap((f, i) => {
+    const det = details[i].data;
+    if (!det) return [{ level: f.level, name: f.name, text: details[i].isLoading ? null : "_No description._" }];
+    const [head, ...parts] = featureSections({ name: det.name, description: det.description, kind: "subclass" });
+    const own = head.text.trim();
+    const headShown = parts.length ? own && own !== intro?.trim() && !intro?.trim().startsWith(own) : true;
+    // Choice features (Hunter's Prey) list option names; spell out what each option does, in the
+    // section that lists it (or the feature itself), in place of the bare list of names.
+    const options = (det.choices ?? []).flatMap((ch) => ch.options);
+    const listed = (text: string, name: string) => new RegExp(`^(?:- )?${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "m");
+    const sections = [{ ...head, text: own }, ...parts.map((p) => ({ ...p, text: p.text.replace(FEATURE_MARK_LINE, "").trim() }))];
+    const home = (o: (typeof options)[number]) => sections.find((x) => listed(x.text, o.name).test(x.text)) ?? sections[0];
+    const filled = sections.map((x) => {
+      const mine = options.filter((o) => home(o) === x && !x.text.includes(`**${o.name}.**`));
+      const lines = mine.flatMap((o) => {
+        const t = o.description ?? optionText.get(o.key);
+        return t ? [`**${o.name}.** ${t.trim()}`] : [];
+      });
+      if (!lines.length) return x;
+      const bare = mine.reduce((t, o) => t.replace(listed(t, o.name), ""), x.text).replace(/\n{3,}/g, "\n\n").trim();
+      return { ...x, text: [bare, ...lines].filter(Boolean).join("\n\n") };
+    });
+    return [
+      ...(headShown ? [{ level: f.level, name: det.name, text: filled[0].text || "_No description._" }] : []),
+      ...filled.slice(1).map((p) => ({ level: f.level, name: p.name, text: p.text })),
+    ];
+  });
+  return (
+    <div className="space-y-2 border-t border-ink-800 pt-3">
+      <h4 className="label">Features by level</h4>
+      {entries.map((e, i) => (
+        <details key={i} open className="rounded-lg border border-ink-800 bg-ink-850/40 px-3 py-2">
+          <summary className="cursor-pointer select-none">
+            <span className="mr-2 text-xs text-ink-400">{ordinal(e.level)} level</span>
+            <span className="font-semibold text-ink-200">{e.name}</span>
+          </summary>
+          <div className="mt-1 text-sm">{e.text === null ? <Spinner /> : <Markdown text={e.text} />}</div>
+        </details>
+      ))}
+    </div>
+  );
+}
+
+/** "*3rd-level Gloom Stalker feature*" at the start of a section. */
+const FEATURE_MARK_LINE = /^\*\d+(?:st|nd|rd|th)-level [^*]+ feature\*\s*/i;
 
 export function DetailBody({ detail, rollContext }: { detail: ContentDetail; rollContext?: RollContext }) {
   const otherRolls = detail.type !== "spell" ? extractRolls(detail.description) : [];
