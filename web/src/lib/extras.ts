@@ -1,4 +1,5 @@
 import { uid } from "./defaults";
+import { takeDamage } from "./rules";
 import type { Character, Companion, ContentDetail, ContentSummary, CreatureRole } from "./types";
 
 export const ROLE_LABEL: Record<CreatureRole, string> = {
@@ -113,10 +114,6 @@ export function damageWildShape(d: Character, n: number): { reverted: boolean; c
   const carried = damageCreature(form, n);
   if (form.hp.current > 0) return { reverted: false, carried: 0 };
   revertWildShape(d);
-  if (carried) {
-    const absorbed = Math.min(d.hp.temp, carried);
-    d.hp.temp -= absorbed;
-    d.hp.current = Math.max(0, d.hp.current - (carried - absorbed));
-  }
+  if (carried) takeDamage(d, carried);
   return { reverted: true, carried };
 }

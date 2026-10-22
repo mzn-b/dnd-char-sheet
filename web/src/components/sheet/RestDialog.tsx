@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { abilityMod, hpMax, totalLevel } from "../../lib/rules";
 import { classResources, resetResources } from "../../lib/resources";
+import { featureParts } from "../../lib/featureSections";
 import type { Character } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
 import { useRoll } from "../dice";
@@ -15,6 +16,8 @@ export function applyRest(d: Character, rest: "short" | "long") {
     s.castCount = 0;
   }
   d.spellcasting.pactSlots.used = 0;
+  // Tireless (Tasha's ranger): a short rest also removes one level of exhaustion.
+  if (rest === "short" && featureParts(d).some((p) => /^tireless$/i.test(p.name))) d.exhaustion = Math.max(0, d.exhaustion - 1);
   if (rest === "long") {
     d.hp.current = hpMax(d);
     d.hp.temp = 0;
@@ -53,6 +56,9 @@ export function RestDialog({ c, update, kind, onClose }: { c: Character; update:
   const featureResets = c.features.filter((f) => f.uses && (kind === "long" || f.uses.reset === "short")).map((f) => f.name);
   const spellResets = c.spellcasting.spells.filter((s) => s.uses && (kind === "long" || /short/.test(s.uses))).map((s) => s.ref.name);
 
+  // PHB: a long rest started at 0 hit points gives no benefits.
+  const noBenefit = kind === "long" && c.hp.current <= 0;
+
   return (
     <Modal
       title={kind === "short" ? "☾ Short rest" : "☀ Long rest"}
@@ -60,13 +66,19 @@ export function RestDialog({ c, update, kind, onClose }: { c: Character; update:
       footer={
         <>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn-primary" onClick={() => { update((d) => applyRest(d, kind)); onClose(); }}>
+          <button
+            className="btn-primary"
+            disabled={noBenefit}
+            title={noBenefit ? "You need at least 1 hit point at the start of a long rest to gain its benefits" : undefined}
+            onClick={() => { update((d) => applyRest(d, kind)); onClose(); }}
+          >
             {kind === "short" ? "Finish short rest & reset" : "Take long rest & reset everything"}
           </button>
         </>
       }
     >
       <div className="space-y-4 text-sm">
+        {noBenefit && <p className="rounded border border-blood-500/50 bg-blood-500/10 px-2 py-1 text-blood-500">You're at 0 HP: a long rest gives no benefits until you have at least 1 hit point.</p>}
         {kind === "short" ? (
           <>
             <p className="text-ink-400">Spend hit dice to heal (each die + Con {con >= 0 ? `+${con}` : con}). HP {c.hp.current} / {hpMax(c)}{healed ? <span className="text-emerald-400"> (+{healed} this rest)</span> : null}.</p>

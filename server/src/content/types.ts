@@ -215,6 +215,8 @@ export interface FeatureRef {
   name: string;
   /** Optional class feature (Tasha's), offered only when the table uses them. */
   optional?: boolean;
+  /** The feature an optional one replaces ("Natural Explorer" for Deft Explorer). */
+  replaces?: string;
 }
 
 export interface LevelRules {

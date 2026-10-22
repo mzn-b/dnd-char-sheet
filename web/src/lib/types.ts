@@ -503,7 +503,7 @@ export interface LevelRules {
   level: number;
   profBonus?: number;
   abilityScoreBonuses: number;
-  features: (ContentRef & { optional?: boolean })[];
+  features: (ContentRef & { optional?: boolean; replaces?: string })[];
   spellcasting: SpellProgression | null;
   progressions: Progression[];
   classSpecific?: Record<string, unknown>;
@@ -515,5 +515,5 @@ export interface SubclassRules {
   spellcastingAbility: Ability | null;
   casterType: CasterType | null;
   spellModel: SpellModel | null;
-  levels: { level: number; features: (ContentRef & { optional?: boolean })[]; progressions: Progression[]; spellcasting: SpellProgression | null }[];
+  levels: { level: number; features: (ContentRef & { optional?: boolean; replaces?: string })[]; progressions: Progression[]; spellcasting: SpellProgression | null }[];
 }

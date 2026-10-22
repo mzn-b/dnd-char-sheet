@@ -576,6 +576,12 @@ function featureChoices(ds: Dataset, name: string, entries: any, id: string): Ch
   return choices;
 }
 
+/** "…optional feature, which replaces the Natural Explorer feature" → "Natural Explorer". */
+function replacedFeature(obj: any): string | undefined {
+  const first = typeof obj?.entries?.[0] === "string" ? renderTags(obj.entries[0]) : "";
+  return first.match(/which replaces the (.+?) feature/i)?.[1];
+}
+
 const ordinal = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? "st" : n % 10 === 2 && n !== 12 ? "nd" : n % 10 === 3 && n !== 13 ? "rd" : "th"}`;
 
 /** Renders a feature, inlining any sub-features it references (e.g. a subclass's level-3 header). */
@@ -614,7 +620,35 @@ function featureDetail(ds: Dataset, k: string): ContentDetail | undefined {
     description: featureBody(ds, obj.entries),
     meta: {},
     choices: featureChoices(ds, obj.name, obj.entries, lc(obj.name).replace(/\W+/g, "-")),
+    grantedSpells: obj.additionalSpells ? grantedSpells(ds, obj.additionalSpells) : tableSpells(ds, obj.entries),
   };
+}
+
+/**
+ * Spells a feature teaches through a "Level | Spell" table (Primal Awareness: speak with animals at 3rd,
+ * beast sense at 5th…). Spells castable once without a slot become 1/long rest innate uses.
+ */
+function tableSpells(ds: Dataset, entries: any): GrantedSpell[] {
+  const text = JSON.stringify(entries ?? []);
+  const free = /without expending a spell slot/i.test(text) && /until you finish a long rest/i.test(text);
+  const out: GrantedSpell[] = [];
+  const walk = (e: any) => {
+    if (Array.isArray(e)) return e.forEach(walk);
+    if (!e || typeof e !== "object") return;
+    if (e.type === "table" && /spells/i.test(e.caption ?? "") && /level/i.test(String(e.colLabels?.[0] ?? ""))) {
+      for (const row of e.rows ?? []) {
+        const level = Number(String(row?.[0] ?? "").replace(/\D/g, ""));
+        for (const m of String(row?.[1] ?? "").matchAll(/\{@spell ([^}]+)\}/g)) {
+          const spell = spellRef(ds, m[1]);
+          if (spell && level) out.push({ level, spell, mode: free ? "innate" : "known", uses: free ? "1/long rest" : undefined });
+        }
+      }
+      return;
+    }
+    walk(e.entries);
+  };
+  walk(entries);
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -754,7 +788,7 @@ export async function classRules5etools(k: string): Promise<ClassRules> {
         abilityScoreBonuses: refs.filter((r: any) => r.level <= level && r.name === "Ability Score Improvement").length,
         features: features.map((r: any): FeatureRef => ({
           source: SOURCE, key: key("cf", r.name, r.className, r.classSource, r.level, r.source), name: r.name,
-          ...(r.obj?.isClassFeatureVariant ? { optional: true } : {}),
+          ...(r.obj?.isClassFeatureVariant ? { optional: true, replaces: replacedFeature(r.obj) } : {}),
         })),
         spellcasting: cls.spellcastingAbility
           ? {
@@ -796,7 +830,7 @@ export async function subclassLevels5etools(k: string) {
         level,
         features: here.map((r: any) => ({
           source: SOURCE, key: key("scf", r.name, r.className, r.classSource, r.subShort, r.subSource, r.level, r.source), name: r.name,
-          ...(r.obj?.isClassFeatureVariant ? { optional: true } : {}),
+          ...(r.obj?.isClassFeatureVariant ? { optional: true, replaces: replacedFeature(r.obj) } : {}),
         })),
         progressions: progressionsAt(ds, sc.optionalfeatureProgression, level, here),
         spellcasting: casterType

@@ -1,4 +1,5 @@
 import type { Ability, CasterType, Character, ClassEntry, Companion, ProfLevel, SpellModel } from "./types";
+import { featureParts } from "./featureSections";
 import { effectiveScore, hasModifier, modifiersFor, sumFor, type Modifier } from "./modifiers";
 
 export const ABILITY_NAMES: Record<Ability, string> = {
@@ -184,6 +185,41 @@ export function speedBreakdown(c: Character): { total: number; parts: string[] }
   if (!form && modifiersFor(c, "speed").some((m) => m.id === "feature:roving")) parts.push(`Climb ${total}, swim ${total} (Roving)`);
   return { total, parts };
 }
+/**
+ * Damage to the character (PHB ch. 9): temporary HP first; damage at 0 HP is a death-save failure;
+ * damage left over after dropping to 0 that equals your hit point maximum kills outright.
+ * Returns a note for the player when one of those rules kicks in.
+ */
+export function takeDamage(d: Character, n: number): string | undefined {
+  const absorbed = Math.min(d.hp.temp, n);
+  d.hp.temp -= absorbed;
+  const rest = n - absorbed;
+  if (!rest) return undefined;
+  const max = hpMax(d);
+  if (d.hp.current <= 0) {
+    if (rest >= max) {
+      d.deathSaves = { ...d.deathSaves, failures: 3 };
+      return "Massive damage: damage at 0 HP equal to your hit point maximum kills you outright.";
+    }
+    d.deathSaves = { ...d.deathSaves, failures: Math.min(3, d.deathSaves.failures + 1) };
+    return "Damage at 0 HP: one death saving throw failure (add another if it was a critical hit).";
+  }
+  const overflow = rest - d.hp.current;
+  d.hp.current = Math.max(0, d.hp.current - rest);
+  if (overflow >= max) {
+    d.deathSaves = { ...d.deathSaves, failures: 3 };
+    return "Massive damage: the damage left after dropping to 0 HP equals your hit point maximum, so you die instantly.";
+  }
+  if (d.hp.current === 0) return "You drop to 0 HP and fall unconscious: make death saving throws at the start of your turns.";
+  return undefined;
+}
+
+/** Lowest natural d20 that crits with a weapon attack: Champion's Improved (19) and Superior (18) Critical. */
+export function critRange(c: Character): number {
+  const names = new Set(featureParts(c).map((p) => p.name.toLowerCase()));
+  return names.has("superior critical") ? 18 : names.has("improved critical") ? 19 : 20;
+}
+
 export const speed = (c: Character) => speedBreakdown(c).total;
 
 export const classSummary = (classes: ClassEntry[] | null | undefined) =>

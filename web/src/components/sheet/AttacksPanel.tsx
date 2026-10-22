@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { abilityMod, fmt, profBonus, wildShapeForm } from "../../lib/rules";
+import { abilityMod, critRange, fmt, profBonus, wildShapeForm } from "../../lib/rules";
 import { attackFromItem } from "../../lib/items";
 import { genericOptions } from "../../lib/genericItems";
 import { EntryRow } from "../StatBlock";
@@ -43,6 +43,7 @@ export function AttackRolls({ c, a, size = "text-sm", update }: { c: Character; 
         expression={d20(attackBonus(c, a)) + (extra ? `+${extra.dice}` : "")}
         label={`${a.name || "Attack"}: to hit${extra ? ` (+${extra.names.join(", ")})` : ""}`}
         kind="attack"
+        critOn={critRange(c)}
         className={`font-semibold text-accent-400 ${size}`}
         onRoll={update && (() => update((d) => void spendEconomy(d, attackKind(a), a.name || "Attack", { attack: attackKind(a) === "action" })))}
       >

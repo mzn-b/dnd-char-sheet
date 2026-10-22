@@ -30,7 +30,7 @@ const TERM = /([+-]?)\s*(\d*)d(\d+)|([+-]?)\s*(\d+)/gi;
 
 export const rollDie = (sides: number) => 1 + Math.floor(Math.random() * sides);
 
-export function roll(expression: string, opts: { label?: string; mode?: RollMode; kind?: RollKind; critical?: boolean } = {}): RollResult {
+export function roll(expression: string, opts: { label?: string; mode?: RollMode; kind?: RollKind; critical?: boolean; critOn?: number } = {}): RollResult {
   const mode = opts.mode ?? "normal";
   const dice: DieResult[] = [];
   let modifier = 0;
@@ -73,7 +73,8 @@ export function roll(expression: string, opts: { label?: string; mode?: RollMode
     modifier,
     mode,
     kind: opts.kind ?? "other",
-    crit: firstD20?.value === 20,
+    // Champion's Improved Critical: 19–20 (critOn 19).
+    crit: !!firstD20 && firstD20.value >= (opts.critOn ?? 20),
     fumble: firstD20?.value === 1,
     at: Date.now(),
   };

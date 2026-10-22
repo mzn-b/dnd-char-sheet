@@ -24,6 +24,22 @@ const STEP_LABEL: Record<StepId, string> = {
   class: "Class", proficiencies: "Proficiencies", hp: "Hit Points", features: "Features", asi: "Ability / Feat", spells: "Spells", review: "Review",
 };
 
+/**
+ * Features replaced by Tasha's optional ones: those swapped at this level plus any the character
+ * already swapped ("…optional feature, which replaces the Natural Explorer feature").
+ */
+function replacedFeatures(c: Character, now: string[]): Set<string> {
+  const before = c.features.flatMap((f) => [...(f.description ?? "").matchAll(/which replaces the (.+?) feature/gi)].map((m) => m[1]));
+  return new Set([...now, ...before].map((n) => n.toLowerCase()));
+}
+
+/** "Favored Enemy", or its later "Favored Enemy improvement" / "Favored Enemy and Natural Explorer improvements" when all are replaced. */
+function isReplaced(name: string, replaced: Set<string>) {
+  if (replaced.has(name.toLowerCase())) return true;
+  const m = name.match(/^(.+?) improvements?$/i);
+  return !!m && m[1].split(/ and /i).every((n) => replaced.has(n.trim().toLowerCase()));
+}
+
 export interface QueueInfo {
   cls: ContentRef;
   index: number;
@@ -73,15 +89,26 @@ export function LevelUpWizard({
   });
   const plan = useMemo(() => (rules ? planLevel(c, rules, subRulesQuery.data) : null), [c, rules, subRulesQuery.data]);
 
+  /** Optional (Tasha's) features the player chose not to take, keeping the feature they replace. */
+  const [keepOriginal, setKeepOriginal] = useState<Record<string, boolean>>({});
+  const optionalOn = opts.optionalClassFeatures !== false;
+  /** Optional features at this level that replace another one: offered as a swap. */
+  const swaps = useMemo(() => (optionalOn ? (plan?.current?.features ?? []).filter((f) => f.optional && f.replaces) : []), [plan, optionalOn]);
   const newFeatures = useMemo(() => {
     if (!plan) return [];
     const fromClass = (plan.current?.features ?? []).map((f) => ({ ...f, kind: "class" as const }));
     const fromSub = (subRulesQuery.data?.levels.find((l) => l.level === plan.newLevel)?.features ?? []).map((f) => ({ ...f, kind: "subclass" as const }));
+    const replaced = replacedFeatures(c, swaps.filter((f) => !keepOriginal[f.key]).map((f) => f.replaces!));
+    const owned = new Set(c.features.map((f) => f.name.toLowerCase()));
     // ASI is represented by the choice step instead of a feature entry.
     return [...fromClass, ...fromSub]
       .filter((f) => !/ability score improvement/i.test(f.name))
-      .filter((f) => opts.optionalClassFeatures !== false || !f.optional);
-  }, [plan, subRulesQuery.data, opts.optionalClassFeatures]);
+      .filter((f) => optionalOn || !f.optional)
+      .filter((f) => !(f.optional && f.replaces && keepOriginal[f.key]))
+      .filter((f) => !isReplaced(f.name, replaced))
+      // "Deft Explorer Improvement" only for those who took Deft Explorer.
+      .filter((f) => !(f.optional && /^(.+) improvement$/i.test(f.name) && !owned.has(f.name.replace(/ improvement$/i, "").toLowerCase()) && !fromClass.some((x) => x.name === f.name.replace(/ improvement$/i, ""))));
+  }, [plan, subRulesQuery.data, optionalOn, swaps, keepOriginal, c]);
 
   const featureDetails = useQueries({
     queries: newFeatures.map((f) => ({
@@ -134,7 +161,7 @@ export function LevelUpWizard({
 
   const asiPoints = Object.values(asi).reduce((s, n) => s + (n ?? 0), 0);
   const ownedSpells = new Set(c.spellcasting.spells.map((s) => contentId(s.ref)));
-  const knownForClass = c.spellcasting.spells.filter((s) => s.classKey === cls?.key && s.level > 0);
+  const knownForClass = c.spellcasting.spells.filter((s) => s.classKey === cls?.key && s.level > 0 && !s.grantedBy);
   const classFilter = rules ? (rules.source === "srd" ? rules.index : rules.name) : undefined;
 
   const idx = steps.indexOf(currentStep);
@@ -197,6 +224,12 @@ export function LevelUpWizard({
       const grantedSpells = [
         ...(await prepareGrantedSpells(race?.grantedSpells, totalLevel(c) + 1, "race")),
         ...(activeSubclass ? await prepareGrantedSpells(subRules?.grantedSpells, plan.newLevel, `subclass:${activeSubclass.key}`, rules.index) : []),
+        // Class features that teach spells by level (Primal Awareness).
+        ...(await Promise.all(
+          [...c.features.filter((f) => f.kind === "class" && f.origin.startsWith(`${rules.name} `)), ...builtFeatures]
+            .filter((f) => f.grantedSpells?.length)
+            .map((f) => prepareGrantedSpells(f.grantedSpells, plan.newLevel, `feature:${f.name}`, rules.index)),
+        )).flat(),
       ];
 
       const summary: string[] = [];
@@ -420,6 +453,17 @@ export function LevelUpWizard({
                 selected={subclass ? [subclass] : []}
                 onToggle={(s) => setSubclass(subclass && contentId(subclass) === contentId(s) ? null : s)}
               />
+            </div>
+          )}
+          {swaps.length > 0 && (
+            <div className="space-y-1 rounded-lg border border-accent-700/50 bg-accent-500/5 p-3 text-sm">
+              <div className="label">Optional class features (Tasha's)</div>
+              {swaps.map((f) => (
+                <label key={f.key} className="flex items-center gap-2">
+                  <input type="checkbox" checked={!keepOriginal[f.key]} onChange={(e) => setKeepOriginal({ ...keepOriginal, [f.key]: !e.target.checked })} />
+                  <span>Take <b>{f.name}</b> instead of {f.replaces}</span>
+                </label>
+              ))}
             </div>
           )}
           <h3 className="font-display text-lg text-accent-400">You gain</h3>

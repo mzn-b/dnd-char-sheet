@@ -36,13 +36,27 @@ export async function resolveItem(name: string, qty: number): Promise<Item> {
   return { id: uid(), name, qty, weight: 0, equipped: false, notes: "" };
 }
 
+/**
+ * Whether the proficiency text covers a weapon: "Simple weapons", "Martial weapons", or the weapon
+ * by name ("longswords", "hand crossbows"), ignoring a magic "+1" and plurals.
+ */
+export function weaponProficient(proficiencies: string, category: string, itemName: string): boolean {
+  const profs = proficiencies.toLowerCase();
+  const cat = category.toLowerCase();
+  if (/simple/.test(cat) && /simple weapons?/.test(profs)) return true;
+  if (/martial/.test(cat) && /martial weapons?/.test(profs)) return true;
+  const base = itemName.toLowerCase().replace(/[+−-]\d+\s*/g, "").replace(/,.*$/, "").replace(/\(.*?\)/g, "").trim();
+  const singular = (w: string) => w.replace(/(?<=\w)(?:es|s)$/, "");
+  const words = profs.split(/[,;\n]|\band\b/).map((x) => singular(x.trim()));
+  return !!base && words.some((x) => x && (x === singular(base) || singular(base).endsWith(` ${x}`) || singular(base).startsWith(`${x} `)));
+}
+
 /** Build an attack from a weapon: finesse/ranged pick Dex, versatile damage noted. */
 export async function attackFromItem(c: Character, item: Item, assumeProficient = false): Promise<Attack> {
   let w = item.data?.weapon;
   if (!w && item.ref) w = (await api.detail("item", item.ref.source, item.ref.key).catch(() => null))?.item?.weapon;
   const useDex = !!w && (w.ranged || (w.finesse && abilityScore(c, "dex") > abilityScore(c, "str")));
-  const profs = c.proficienciesAndLanguages.toLowerCase();
-  const proficient = assumeProficient || !w?.category || /simple/i.test(w.category) || profs.includes("martial") || profs.includes(item.name.toLowerCase());
+  const proficient = assumeProficient || !w?.category || weaponProficient(c.proficienciesAndLanguages, w.category, item.name);
   return {
     ...blankAttackFields(),
     name: item.name,

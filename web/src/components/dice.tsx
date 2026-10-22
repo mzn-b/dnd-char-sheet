@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { roll as rollDice, type RollKind, type RollMode, type RollResult } from "../lib/dice";
 
 interface RollApi {
-  roll: (expression: string, opts?: { label?: string; kind?: RollKind; mode?: RollMode; critical?: boolean }) => RollResult;
+  roll: (expression: string, opts?: { label?: string; kind?: RollKind; mode?: RollMode; critical?: boolean; critOn?: number }) => RollResult;
   mode: RollMode;
   setMode: (m: RollMode) => void;
   log: RollResult[];
@@ -55,7 +55,7 @@ export function useRoll() {
  * Ctrl/⌘-click = disadvantage.
  */
 export function RollButton({
-  expression, label, kind = "check", children, className = "", title, critical, onRoll,
+  expression, label, kind = "check", children, className = "", title, critical, critOn, onRoll,
 }: {
   expression: string;
   label: string;
@@ -64,6 +64,8 @@ export function RollButton({
   className?: string;
   title?: string;
   critical?: boolean;
+  /** Lowest natural d20 that is a critical hit (Champion: 19 or 18). */
+  critOn?: number;
   /** Called after rolling (e.g. to mark the action as used in combat). */
   onRoll?: () => void;
 }) {
@@ -76,7 +78,7 @@ export function RollButton({
         e.preventDefault();
         e.stopPropagation();
         const mode: RollMode | undefined = e.shiftKey ? "advantage" : e.ctrlKey || e.metaKey ? "disadvantage" : undefined;
-        roll(expression, { label, kind, mode, critical });
+        roll(expression, { label, kind, mode, critical, critOn });
         onRoll?.();
       }}
       className={`rounded px-1 transition hover:bg-accent-500/15 hover:text-accent-400 ${className}`}

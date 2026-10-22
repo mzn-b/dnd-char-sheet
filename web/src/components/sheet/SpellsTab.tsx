@@ -111,7 +111,8 @@ export function SpellsTab({ c, update }: { c: Character; update: Update }) {
         {casters.map((k) => {
           const a = k.spellcastingAbility!;
           const lvl = rules[k.key]?.levels.find((l) => l.level === k.level)?.spellcasting;
-          const mine = c.spellcasting.spells.filter((s) => s.classKey === k.key);
+          // Subclass and feature spells (Gloom Stalker Magic, Druidic Warrior…) don't count against known limits.
+          const mine = c.spellcasting.spells.filter((s) => s.classKey === k.key && !s.grantedBy);
           const cantrips = mine.filter((s) => s.level === 0).length;
           const leveled = mine.filter((s) => s.level > 0);
           const prepared = leveled.filter((s) => s.prepared && !s.alwaysPrepared).length;

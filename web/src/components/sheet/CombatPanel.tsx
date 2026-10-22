@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CONDITIONS, CONDITION_TEXT, EXHAUSTION_TEXT, armorClassBreakdown, fmt, hpMax, hpMaxParts, initiative, saveBonus, speedBreakdown, wildShapeForm } from "../../lib/rules";
+import { CONDITIONS, CONDITION_TEXT, EXHAUSTION_TEXT, armorClassBreakdown, fmt, hpMax, hpMaxParts, initiative, saveBonus, speedBreakdown, takeDamage, wildShapeForm } from "../../lib/rules";
 import { damageWildShape } from "../../lib/extras";
 import { describe } from "../../lib/modifiers";
 import { d20 } from "../../lib/dice";
@@ -57,19 +57,19 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
       setAmount("");
       return;
     }
+    let note: string | undefined;
     update((d) => {
       if (kind === "temp") d.hp.temp = Math.max(d.hp.temp, n);
       else if (kind === "heal") {
         d.hp.current = Math.min(hpMax(d), Math.max(0, d.hp.current) + n);
         d.deathSaves = { successes: 0, failures: 0 };
-      } else {
-        const absorbed = Math.min(d.hp.temp, n);
-        d.hp.temp -= absorbed;
-        d.hp.current = Math.max(0, d.hp.current - (n - absorbed));
-      }
+      } else note = takeDamage(d, n);
     });
     if (kind === "damage" && c.concentration) setConcentrationDc(Math.max(10, Math.floor(n / 2)));
-    if (kind === "damage" && c.combat?.active) setDamageReminders(reminders(c, spellDetails).filter((r) => r.when === "damaged" && !corrections.isReminderHidden(r.text)).map((r) => r.text));
+    if (kind === "damage" && (c.combat?.active || note)) {
+      const list = c.combat?.active ? reminders(c, spellDetails).filter((r) => r.when === "damaged" && !corrections.isReminderHidden(r.text)).map((r) => r.text) : [];
+      setDamageReminders(note ? [note, ...list] : list);
+    }
     setAmount("");
   };
 
