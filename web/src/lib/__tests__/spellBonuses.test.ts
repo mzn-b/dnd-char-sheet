@@ -27,3 +27,14 @@ describe("spell damage bonuses", () => {
     expect([1, 4, 5, 10, 11, 17, 20].map(eldritchBlastBeams)).toEqual([1, 1, 2, 2, 3, 4, 4]);
   });
 });
+
+describe("Dark One's Blessing", () => {
+  it("reminds on a hit how much temporary HP a kill gives", async () => {
+    const { reminders } = await import("../combat");
+    const c = warlock([]);
+    c.features.push({ id: "dob", name: "Dark One's Blessing", origin: "Warlock 1", kind: "subclass", description: "" });
+    const r = reminders(c, {}).find((x) => x.source === "Dark One's Blessing");
+    expect(r?.when).toBe("hit");
+    expect(r?.text).toMatch(/gain 8 temporary HP/);
+  });
+});
