@@ -6,6 +6,8 @@ metadata:
     argocd.argoproj.io/sync-wave: "1"
 spec:
   replicas: 1
+  # Don't keep superseded ReplicaSets around after a rollout; rollbacks go through Git/Argo CD instead.
+  revisionHistoryLimit: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: dnd-app

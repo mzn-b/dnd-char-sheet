@@ -188,6 +188,7 @@ The rules-content cache (`api_cache`) is also in the database. A new, empty data
 ### Troubleshooting
 
 - **A picker shows "… couldn't be loaded" or "still downloading", or 5etools content is missing.** The server fetches rules content from the internet (dnd5eapi.co, api.open5e.com, raw.githubusercontent.com) the first time it's needed, then serves it from Postgres. Check that the pod can reach those hosts (cluster egress, proxy, DNS). The Sources page shows the 5etools download state and which files failed, with a Retry button. `kubectl -n dnd logs deploy/dnd-app` prints `5etools data loaded in …s` or the error.
+- **Old ReplicaSets.** The Deployment sets `revisionHistoryLimit: 0`, so a rollout deletes the superseded ReplicaSet and Argo CD only shows the current one. Roll back by reverting the image tag in Git (Argo CD syncs it), not with `kubectl rollout undo`.
 - Tuning (environment variables on the Deployment): `FETCH_TIMEOUT_MS` (per upstream request, default 30000), `FETCH_CONCURRENCY` (parallel upstream requests, default 8), `PROVIDER_WAIT_MS` (how long a search waits for a slow source before answering without it, default 20000), `FIVETOOLS_DATA_URL` (point at your own 5etools data mirror).
 
 ### Building the image yourself
