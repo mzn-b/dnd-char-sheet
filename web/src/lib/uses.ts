@@ -18,10 +18,11 @@ const ABILITY: Record<string, Ability> = { strength: "str", dexterity: "dex", co
  */
 export function detectUses(text: string): DetectedUses | null {
   const t = text.replace(/\*/g, "").replace(/\s+/g, " ");
-  const it = "(?:this(?: feature| ability)?|it|them|that feature|the feature)";
+  const it = "(?:this(?: feature| ability| trait)?|it|them|that feature|the feature)(?: (?:in )?this way)?";
   // "a long rest", "1d4 long rests" (Necrotic Husk); "you", or third person in the DMG's Oathbreaker.
   const rest = "((?:short or long|long|short) )?rests?";
-  const until = "until (?:you|he or she|they) finish(?:es)? (?:a|your next|1d4)";
+  // "finish" or "complete" (Dragonborn Breath Weapon).
+  const until = "until (?:you|he or she|they) (?:finish|complete)(?:s|es)? (?:a|your next|1d4)";
   // The limit sentence decides the rest type; a trigger like "When you finish a short rest, …" doesn't.
   const restMatch =
     t.match(new RegExp(`(?:can't|cannot) (?:use ${it}|do so)(?: [^.]{0,30}?)? again ${until} ${rest}`, "i")) ??
@@ -30,7 +31,7 @@ export function detectUses(text: string): DetectedUses | null {
     t.match(new RegExp(`must finish a ${rest} before you can (?:use|cast) ${it} again`, "i")) ??
     t.match(new RegExp(`to use ${it} again, you must finish a ${rest}`, "i")) ??
     t.match(new RegExp(`regain (?:all )?(?:of )?(?:your )?(?:expended )?(?:uses|use|it|them)[^.]*?when you finish a ${rest}`, "i")) ??
-    t.match(new RegExp(`(?:until|before|when|must) (?:you )?finish (?:a|your next) ${rest}`, "i"));
+    t.match(new RegExp(`(?:until|before|when|must) (?:you )?(?:finish|complete) (?:a|your next) ${rest}`, "i"));
   if (!restMatch) return null;
   // "until you finish a rest" (either kind) resets on a short rest.
   const restWord = (restMatch[1] ?? "short").trim().toLowerCase();
@@ -74,7 +75,7 @@ export function applyDetectedUses(c: Character, f: Feature): boolean {
   // Tracked on the spell it grants.
   if (/^mystic arcanum/i.test(f.name)) return false;
   // Racial spellcasting is tracked on the granted spells themselves ("cast … with this trait").
-  if (f.kind === "race" && (f.grantedSpells?.length || /\bcast\b[^.]*with this trait/i.test(f.description))) return false;
+  if (f.kind === "race" && (f.grantedSpells?.length || /\bcast\b[^.]*(?:with|using) this trait/i.test(f.description))) return false;
   const d = detectUses(f.description);
   if (!d) return false;
   f.uses = { max: usesMax(c, d.formula, 1), used: 0, reset: d.reset, formula: d.formula };

@@ -30,6 +30,13 @@ export function featureSections(f: Pick<Feature, "name" | "description"> & { kin
     const intro = [text.slice(0, marks[0].at), ...sections.filter((x) => FLAVOR_TRAIT.test(x.name)).map((x) => text.slice(x.at, x.end))].join("").trim();
     return [{ name: f.name, text: intro }, ...traits.map(({ name, text: t }) => ({ name, text: t }))];
   }
+  // A background's "Feature: Shelter of the Faithful" is its feature; the rest (proficiencies, tables) stays.
+  if (f.kind === "background") {
+    const feats = sections.filter((x) => /^feature:\s*/i.test(x.name));
+    if (!feats.length) return [{ name: f.name, text }];
+    const intro = sections.filter((x) => !/^feature:\s*/i.test(x.name)).map((x) => text.slice(x.at, x.end));
+    return [{ name: f.name, text: [text.slice(0, marks[0].at), ...intro].join("").trim() }, ...feats.map((x) => ({ name: x.name.replace(/^feature:\s*/i, ""), text: x.text }))];
+  }
   // Only sections marked as features ("*3rd-level Fey Wanderer feature*"); option lists such as
   // Fighting Style's **Archery.** / **Defense.** are choices, not features you have.
   // Tasha's "Deft Explorer Improvement" holds one unmarked benefit (**Roving.**, **Tireless.**).

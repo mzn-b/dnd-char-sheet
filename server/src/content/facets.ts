@@ -150,7 +150,11 @@ function raceFacets5eRaw(race: any, sub?: any): Facets | undefined {
   const fast = (v: any) => (v === true ? true : typeof v === "number" ? v > 0 : typeof v?.number === "number");
   const skills = [...(race.skillProficiencies ?? []), ...(sub?.skillProficiencies ?? [])].flatMap((x: any) => Object.keys(x).filter((k) => k !== "choose" && k !== "any"));
   return clean({
-    abilityIncreases: race.lineage || sub?.lineage ? ["Any (choice)"] : abilityPicks5e([...(race.ability ?? []), ...(sub?.ability ?? [])]),
+    abilityIncreases: (() => {
+      // A subrace with "overwrite" replaces the race's block (Draconblood, the MTF Tieflings).
+      const own = sub?.overwrite?.ability ? sub.ability : [...(race.ability ?? []), ...(sub?.ability ?? [])];
+      return (race.lineage || sub?.lineage) && !own?.length ? ["Any (choice)"] : abilityPicks5e(own);
+    })(),
     size: (r.size ?? []).map((x: string) => SIZES[x] ?? x),
     speed: typeof speed.walk === "number" ? speed.walk : undefined,
     movement: ["fly", "swim", "climb", "burrow"].filter((k) => fast(speed[k])).map(cap),
@@ -190,13 +194,15 @@ function featFacets5eRaw(f: any): Facets | undefined {
 
 function backgroundFacets5eRaw(b: any): Facets | undefined {
   const skills = (b.skillProficiencies ?? []).flatMap((x: any) => Object.keys(x).filter((k) => k !== "choose" && k !== "any"));
-  const langs = (b.languageProficiencies ?? []).reduce((n: number, x: any) => n + Object.values(x).reduce((m: number, v: any) => m + (typeof v === "number" ? v : 1), 0), 0);
+  // Only the first alternative counts (Clan Crafter: Dwarvish, or another language if you already speak it).
+  const langs = (b.languageProficiencies ?? []).slice(0, 1).reduce((n: number, x: any) => n + Object.values(x).reduce((m: number, v: any) => m + (typeof v === "number" ? v : 1), 0), 0);
   return clean({
     skills: skills.map(cap),
     toolProficiency: !!b.toolProficiencies?.length,
     languages: langs,
     startingGold: (() => {
-      const m = json(b.startingEquipment).match(/"value":\s*(\d+)/);
+      // Coins appear as {value} or in a pouch/purse {containsValue}.
+      const m = json(b.startingEquipment).match(/"(?:value|containsValue)":\s*(\d+)/);
       return m ? Number(m[1]) / 100 : undefined;
     })(),
   });
@@ -313,7 +319,8 @@ function raceFacetsOpen5eRaw(r: any, sub?: any): Facets | undefined {
   for (const a of asi) for (const attr of a.attributes ?? []) picks.add(/other|any/i.test(attr) ? "Any (choice)" : abilityName(attr));
   const speed = r.speed ?? {};
   const vision = `${r.vision ?? ""} ${sub?.traits ?? ""} ${r.traits ?? ""}`;
-  const dv = vision.match(/darkvision[^.]*?(\d+)\s*f(ee)?t/i);
+  // "***Darkvision.*** … 60 feet": skip the heading's own period.
+  const dv = vision.replace(/\*/g, "").match(/darkvision\.?[^.]*?(\d+)\s*f(ee)?t/i);
   return clean({
     abilityIncreases: [...picks],
     size: r.size_raw ? [cap(r.size_raw)] : undefined,
@@ -326,7 +333,7 @@ function raceFacetsOpen5eRaw(r: any, sub?: any): Facets | undefined {
 
 function featFacetsOpen5eRaw(x: any): Facets | undefined {
   return clean({
-    prerequisite: x.prerequisite ? ["Has prerequisite"] : ["None"],
+    prerequisite: x.prerequisite && !/^\W*(n\/a|none)\W*$/i.test(x.prerequisite) ? ["Has prerequisite"] : ["None"],
     actions: actionsIn(`${x.desc ?? ""} ${(x.effects_desc ?? []).join(" ")}`),
   });
 }
@@ -503,7 +510,9 @@ function chooseText5e(c: any): string {
 /** 5etools race (+ subrace) ability increases: "CON +2, STR +1", "+2 and +1, or +1 to three (your choice)". */
 export function abilityText5e(race: any, sub?: any): string | undefined {
   try {
-    if (race.lineage || sub?.lineage) return "+2 and +1, or +1 to three (your choice)";
+    // Lineage races without their own ability block (Custom Lineage has one: +2 to one score).
+    const own = sub?.overwrite?.ability ? sub.ability : [...(race.ability ?? []), ...(sub?.ability ?? [])];
+    if ((race.lineage || sub?.lineage) && !own.length) return "+2 and +1, or +1 to three (your choice)";
     const describe = (b: any) =>
       Object.entries(b ?? {}).map(([k, v]) => (k === "choose" ? chooseText5e(v) : typeof v === "number" ? `${AB(k)} ${v > 0 ? "+" : ""}${v}` : "")).filter(Boolean).join(", ");
     const blocks: any[] = sub?.overwrite?.ability

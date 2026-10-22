@@ -219,21 +219,28 @@ function prerequisiteText(prereqs?: any[]): string | undefined {
     .map((p) =>
       Object.entries(p)
         .map(([k, v]: [string, any]) => {
-          if (k === "ability") return v.map((a: any) => Object.entries(a).map(([ab, n]) => `${ab.toUpperCase()} ${n}+`).join(" or ")).join(", ");
+          // [{int: 13}, {wis: 13}] (Ritual Caster) means either.
+          if (k === "ability") return v.map((a: any) => Object.entries(a).map(([ab, n]) => `${ab.toUpperCase()} ${n}+`).join(" and ")).join(" or ");
           if (k === "level") return typeof v === "number" ? `Level ${v}` : `${v.class?.name ?? ""} level ${v.level}`.trim();
           if (k === "race") return v.map((r: any) => r.displayEntry ?? `${r.name}${r.subrace ? ` (${r.subrace})` : ""}`).join(" or ");
           if (k === "spellcasting" || k === "spellcasting2020") return "The ability to cast at least one spell";
           if (k === "pact") return `Pact of the ${v}`;
           if (k === "patron") return `${v} patron`;
           if (k === "spell") return v.map((s: string) => plain(`{@spell ${s.split("#")[0]}}`)).join(", ");
-          if (k === "proficiency") return v.map((x: any) => Object.entries(x).map(([t, n]) => `${n} ${t} proficiency`).join(", ")).join(" or ");
+          if (k === "proficiency") return v.map((x: any) => Object.entries(x).map(([t, n]) => `${n} ${t === "weaponGroup" ? "weapon" : t} proficiency`).join(", ")).join(" or ");
           if (k === "feature") return v.join(", ");
+          if (k === "feat") return v.map((x: string) => `${plain(`{@feat ${x}}`)} feat`).join(", ");
+          if (k === "background") return v.map((x: any) => x.displayEntry ? plain(x.displayEntry) : `${x.name} background`).join(" or ");
+          if (k === "spellcastingFeature" || k === "spellcastingPrepared") return "Spellcasting or Pact Magic feature";
+          if (k === "campaign") return v.map((x: string) => `${x} campaign`).join(" or ");
           if (k === "other") return v;
+          if (k === "otherSummary") return v.entrySummary ?? plain(v.entry ?? "");
           return "";
         })
         .filter(Boolean)
         .join("; "),
     )
+    .filter(Boolean)
     .join(" or ");
 }
 
@@ -283,22 +290,127 @@ function lineageChoice(id: string): Choice {
   };
 }
 
-function profText(label: string, block: any[] | undefined): Effect[] {
+const STANDARD_LANGUAGES = ["Common", "Dwarvish", "Elvish", "Giant", "Gnomish", "Goblin", "Halfling", "Orc"];
+const EXOTIC_LANGUAGES = ["Abyssal", "Celestial", "Deep Speech", "Draconic", "Infernal", "Primordial", "Sylvan", "Undercommon"];
+const ARTISANS_TOOLS = [
+  "Alchemist's supplies", "Brewer's supplies", "Calligrapher's supplies", "Carpenter's tools", "Cartographer's tools", "Cobbler's tools",
+  "Cook's utensils", "Glassblower's tools", "Jeweler's tools", "Leatherworker's tools", "Mason's tools", "Painter's supplies", "Potter's tools",
+  "Smith's tools", "Tinker's tools", "Weaver's tools", "Woodcarver's tools",
+];
+const GAMING_SETS = ["Dice set", "Dragonchess set", "Playing card set", "Three-Dragon Ante set"];
+const INSTRUMENTS = ["Bagpipes", "Drum", "Dulcimer", "Flute", "Horn", "Lute", "Lyre", "Pan flute", "Shawm", "Viol"];
+const OTHER_TOOLS = ["Disguise kit", "Forgery kit", "Herbalism kit", "Navigator's tools", "Poisoner's kit", "Thieves' tools", "Vehicles (land)", "Vehicles (water)"];
+
+/** Options behind a 5etools "any…" key, and how to describe it. */
+const ANY_OPTIONS: Record<string, { label: string; options: string[] }> = {
+  anyStandard: { label: "standard language", options: STANDARD_LANGUAGES },
+  anyLanguage: { label: "language", options: [...STANDARD_LANGUAGES, ...EXOTIC_LANGUAGES] },
+  anyExotic: { label: "exotic language", options: EXOTIC_LANGUAGES },
+  anyGamingSet: { label: "gaming set", options: GAMING_SETS },
+  anyMusicalInstrument: { label: "musical instrument", options: INSTRUMENTS },
+  anyArtisansTool: { label: "artisan's tools", options: ARTISANS_TOOLS },
+  anyTool: { label: "tool", options: [...ARTISANS_TOOLS, ...GAMING_SETS, ...INSTRUMENTS, ...OTHER_TOOLS] },
+};
+
+const titleCase = (s: string) => s.replace(/(^|[\s(-])(\w)/g, (_m, pre: string, c: string) => pre + c.toUpperCase());
+const profChoice = (id: string, prefix: string, count: number, label: string, names: string[]): Choice => ({
+  id, kind: "proficiency", prefix, count, label: `${prefix}: choose ${count} ${label}${count > 1 ? "s" : ""}`,
+  options: [...new Set(names)].map((n) => ({ key: lc(n), name: n })),
+});
+
+/**
+ * 5etools language / tool / weapon / armor proficiency blocks → fixed proficiency lines plus real choices:
+ * [{common: true, anyStandard: 1}], [{"disguise kit": true, anyMusicalInstrument: 1}], [{choose: {from, count}}],
+ * [{other: true}] (the race's own language), [{light: true, medium: true}]. Only the first alternative is used.
+ */
+function profBlock(prefix: "Languages" | "Tools" | "Weapons" | "Armor", block: any[] | undefined, id: string, otherName?: string): { effects: Effect[]; choices: Choice[] } {
+  const b = block?.[0];
+  const effects: Effect[] = [];
+  const choices: Choice[] = [];
+  if (!b) return { effects, choices };
+  const fixed: string[] = [];
+  for (const [k, v] of Object.entries(b)) {
+    if (v === false || v == null) continue;
+    if (k === "choose") {
+      const c = v as any;
+      const from: string[] = (c.from ?? []).map((x: string) => (ANY_OPTIONS[x] ? ANY_OPTIONS[x].options : [titleCase(plain(`{@x ${x}}`))])).flat();
+      if (from.length) choices.push(profChoice(`${id}-${choices.length}`, prefix, c.count ?? 1, prefix === "Languages" ? "language" : prefix === "Tools" ? "tool" : "", from));
+    } else if (ANY_OPTIONS[k]) {
+      choices.push(profChoice(`${id}-${choices.length}`, prefix, Number(v) || 1, ANY_OPTIONS[k].label, ANY_OPTIONS[k].options));
+    } else if (k === "any") {
+      const all = prefix === "Languages" ? ANY_OPTIONS.anyLanguage : ANY_OPTIONS.anyTool;
+      choices.push(profChoice(`${id}-${choices.length}`, prefix, Number(v) || 1, prefix === "Languages" ? "language" : "tool", all.options));
+    } else if (k === "other") {
+      // "One other language": the race's own (Leonin, Tabaxi…) when it's named after it.
+      if (otherName) fixed.push(otherName);
+      else choices.push(profChoice(`${id}-${choices.length}`, prefix, 1, "language", ANY_OPTIONS.anyLanguage.options));
+    } else if (prefix === "Armor") fixed.push(k === "shield" ? "shields" : `${k} armor`);
+    else if (k === "firearms") fixed.push("firearms");
+    else fixed.push(titleCase(plain(`{@x ${k.split("|")[0]}}`)));
+  }
+  if (fixed.length) effects.push({ kind: "proficiency", value: `${prefix}: ${fixed.join(", ")}` });
+  return { effects, choices };
+}
+
+/** "Choose two from skills, tools or languages" (Githyanki, Skilled, Custom Background). */
+function mixedBlock(block: any[] | undefined, id: string): Choice[] {
   const b = block?.[0];
   if (!b) return [];
-  const parts = Object.entries(b).map(([k, v]) =>
-    k === "anyStandard" || k === "any" ? `${v} of your choice` : k === "choose" ? `choose ${(v as any).count ?? 1}` : plain(`{@x ${k}}`),
-  );
-  return parts.length ? [{ kind: "proficiency", value: `${label}: ${parts.join(", ")}` }] : [];
+  const out: Choice[] = [];
+  const groups = b.choose ? (Array.isArray(b.choose) ? b.choose : [b.choose]) : [b];
+  for (const c of groups) {
+    const from: string[] = c.from ?? Object.keys(c).filter((k) => k.startsWith("any"));
+    const count = c.count ?? (c.from ? 1 : from.reduce((n, k) => n + (Number(c[k]) || 0), 0)) ?? 1;
+    const options = from.flatMap((k: string) =>
+      k === "anySkill" ? SKILL_KEYS.map((s) => ({ key: `skill:${s}`, name: skillName(s) })) :
+      k === "anyTool" ? ANY_OPTIONS.anyTool.options.map((n) => ({ key: `tool:${lc(n)}`, name: n })) :
+      k === "anyLanguage" ? ANY_OPTIONS.anyLanguage.options.map((n) => ({ key: `language:${lc(n)}`, name: n })) : [],
+    );
+    if (options.length) out.push({ id: `${id}-${out.length}`, kind: "proficiency", prefix: "mixed", count, label: `Choose ${count} skill, tool or language proficiencies`, options });
+  }
+  return out;
 }
 
 function featDetail(ds: Dataset, f: any): ContentDetail {
   const effects: Effect[] = [];
   const choices: Choice[] = [];
   abilityBlock(f.ability, "ability", effects, choices);
-  skillBlock(ds, f.skillProficiencies, "skills", effects, choices);
+  // Resilient: the save proficiency is for the ability you increase, not a separate pick.
   const save = f.savingThrowProficiencies?.[0]?.choose;
-  if (save) choices.push({ id: "save", kind: "save", count: save.count ?? 1, label: "Gain saving throw proficiency", options: (save.from ?? ABILITIES).map((a: string) => ({ key: a, name: a.toUpperCase() })) });
+  const abilityChoice = choices.find((c) => c.kind === "ability");
+  if (save && abilityChoice && JSON.stringify([...(save.from ?? [])].sort()) === JSON.stringify(abilityChoice.options.map((o) => o.key).sort())) {
+    abilityChoice.grantsSave = true;
+    abilityChoice.label += " (and gain proficiency in its saving throws)";
+  } else if (save) {
+    choices.push({ id: "save", kind: "save", count: save.count ?? 1, label: "Gain saving throw proficiency", options: (save.from ?? ABILITIES).map((a: string) => ({ key: a, name: a.toUpperCase() })) });
+  }
+  skillBlock(ds, f.skillProficiencies, "skills", effects, choices);
+  for (const [prefix, prop] of [["Armor", "armorProficiencies"], ["Weapons", "weaponProficiencies"], ["Tools", "toolProficiencies"], ["Languages", "languageProficiencies"]] as const) {
+    const block = f[prop];
+    // Weapon Master: "four weapons of your choice" from a filter.
+    const filter = block?.[0]?.choose?.fromFilter;
+    if (filter) {
+      const kinds = /martial/.test(filter) && !/simple/.test(filter) ? ["martial"] : ["simple", "martial"];
+      const weapons = ds.baseitem.filter((i) => i.weaponCategory && kinds.includes(lc(i.weaponCategory)) && !i.age && i.source !== "XPHB").map((i) => titleCase(i.name));
+      choices.push(profChoice(lc(prefix), prefix, block[0].choose.count ?? 1, "weapon", weapons));
+      continue;
+    }
+    const p = profBlock(prefix, block, lc(prefix));
+    effects.push(...p.effects);
+    choices.push(...p.choices);
+  }
+  choices.push(...mixedBlock(f.skillToolLanguageProficiencies, "mixed"));
+  // Skill Expert, Prodigy: expertise in a skill you're proficient in.
+  const expertise = f.expertise?.[0]?.anyProficientSkill;
+  if (expertise) choices.push({ ...expertiseChoice("expertise", expertise), options: SKILL_KEYS.map((k) => ({ key: k, name: skillName(k) })) });
+  // Martial Adept, Metamagic Adept, Eldritch Adept, Fighting Initiate: options from a class pool.
+  for (const prog of f.optionalfeatureProgression ?? []) {
+    const count = Number(Object.values(prog.progression ?? {})[0]) || 1;
+    const options = ds.optionalfeature
+      .filter((o) => o.featureType?.some((t: string) => prog.featureType.includes(t)))
+      .map((o) => ({ key: key("of", o.name, o.source), name: o.name, source: SOURCE, type: "feature" as const, prerequisite: prerequisiteText(o.prerequisite), requires: prerequisiteReq(o.prerequisite) }));
+    if (options.length) choices.push({ id: `prog-${lc(prog.name)}`, kind: "feature", count, label: `Choose ${count} ${prog.name}`, options });
+  }
   return {
     ...summary(ds, "feat", f.name, key(f.name, f.source), f.source),
     prerequisite: prerequisiteText(f.prerequisite),
@@ -306,6 +418,9 @@ function featDetail(ds: Dataset, f: any): ContentDetail {
     meta: {},
     effects,
     choices,
+    grantedSpells: grantedSpells(ds, f.additionalSpells),
+    spellPicks: spellSet(ds, f.additionalSpells?.[0]).picks,
+    spellVariants: spellVariants(ds, f.additionalSpells),
   };
 }
 
@@ -322,8 +437,9 @@ function spellsMatching(ds: Dataset, filter: string) {
   const levels = parts.level?.split(";").map(Number);
   const cls = parts.class?.split(";").map(lc);
   const schools = parts.school?.split(";");
+  const ritual = /ritual/i.test(parts["components & miscellaneous"] ?? "");
   return ds.spell
-    .filter((x) => (!levels || levels.includes(x.level)) && (!schools || schools.includes(x.school)) && (!cls || spellClasses(ds, x).some((c) => cls.includes(c))))
+    .filter((x) => (!levels || levels.includes(x.level)) && (!schools || schools.includes(x.school)) && (!cls || spellClasses(ds, x).some((c) => cls.includes(c))) && (!ritual || x.meta?.ritual))
     .map((x) => ({ source: SOURCE, key: key(x.name, x.source), name: x.name, level: x.level as number }))
     .sort((x, y) => x.level - y.level || x.name.localeCompare(y.name));
 }
@@ -419,6 +535,8 @@ function raceDetail(ds: Dataset, r: { name: string; key: string; source: string;
   const choices: Choice[] = [];
   const race = r.race;
   const sub = r.sub ?? {};
+  // A subrace's value replaces the race's; null removes it (Mark of Detection drops Skill Versatility).
+  const pick = (k: string) => (k in sub ? sub[k] : race[k]);
   // A subrace's ability block adds to (or, with "overwrite", replaces) the base race's.
   const abilities = sub.overwrite?.ability ? sub.ability : [{ ...(race.ability?.[0] ?? {}), ...(sub.ability?.[0] ?? {}) }];
   abilityBlock(abilities, "ability", effects, choices);
@@ -426,35 +544,87 @@ function raceDetail(ds: Dataset, r: { name: string; key: string; source: string;
   if ((race.lineage || sub.lineage) && !effects.some((e) => e.kind === "ability") && !choices.some((c) => c.kind === "ability")) {
     choices.push(lineageChoice("ability"));
   }
-  skillBlock(ds, sub.skillProficiencies ?? race.skillProficiencies, "skills", effects, choices);
-  const speed = typeof race.speed === "number" ? race.speed : race.speed?.walk;
+  skillBlock(ds, pick("skillProficiencies"), "skills", effects, choices);
+  const sp = pick("speed");
+  const speed = typeof sp === "number" ? sp : sp?.walk;
   if (speed) effects.push({ kind: "speed", amount: speed });
-  effects.push(...profText("Languages", sub.languageProficiencies ?? race.languageProficiencies));
-  effects.push(...profText("Weapons", sub.weaponProficiencies ?? race.weaponProficiencies));
-  effects.push(...profText("Tools", sub.toolProficiencies ?? race.toolProficiencies));
+  // Traits: a subrace trait with data.overwrite replaces the race's trait of that name (Drow's Superior Darkvision).
+  const entries = [...(race.entries ?? [])];
+  for (const e of sub.entries ?? []) {
+    const i = e?.data?.overwrite ? entries.findIndex((x: any) => x?.name === e.data.overwrite) : -1;
+    if (i >= 0) entries[i] = e;
+    else entries.push(e);
+  }
+  // "Languages: Common and Leonin" → the "other" language is the race's own; otherwise it's a choice.
+  const baseName = String(race.name).replace(/\s*\(.*\)$/, "");
+  const langText = JSON.stringify(entries.find((e: any) => /^languages?$/i.test(e?.name ?? "")) ?? "");
+  const ownLanguage = new RegExp(`\\b${baseName}\\b`, "i").test(langText) && !/one (?:other|extra|additional) language/i.test(langText) ? baseName : undefined;
+  for (const [prefix, prop] of [["Languages", "languageProficiencies"], ["Weapons", "weaponProficiencies"], ["Tools", "toolProficiencies"], ["Armor", "armorProficiencies"]] as const) {
+    const p = profBlock(prefix, pick(prop), lc(prefix), prefix === "Languages" ? ownLanguage : undefined);
+    effects.push(...p.effects);
+    choices.push(...p.choices);
+  }
+  choices.push(...mixedBlock(pick("skillToolLanguageProficiencies"), "mixed"));
+  const additional = pick("additionalSpells");
+  const speeds = typeof sp === "object" && sp ? Object.entries(sp).filter(([k, v]) => k !== "walk" && v).map(([k, v]) => `${k} ${v === true ? speed : typeof v === "object" ? (v as any).number : v} ft`) : [];
+  const resist = [...(race.resist ?? []), ...(sub.resist ?? [])].filter((x: any) => typeof x === "string");
+  const immune = [...(race.immune ?? []), ...(sub.immune ?? [])].filter((x: any) => typeof x === "string");
+  const condImmune = [...(race.conditionImmune ?? []), ...(sub.conditionImmune ?? [])].filter((x: any) => typeof x === "string");
   return {
     ...summary(ds, "race", r.name, r.key, r.source),
-    description: renderEntries([...(race.entries ?? []), ...(sub.entries ?? [])]),
+    description: renderEntries(entries),
     meta: Object.fromEntries(
       Object.entries({
-        Speed: speed ? `${speed} ft` : undefined,
-        Size: (race.size ?? []).map((s: string) => SIZES[s] ?? s).join(" or "),
+        Speed: speed ? [`${speed} ft`, ...speeds].join(", ") : undefined,
+        Size: (race.size ?? []).map((x: string) => SIZES[x] ?? x).join(" or "),
         Darkvision: (sub.darkvision ?? race.darkvision) ? `${sub.darkvision ?? race.darkvision} ft` : undefined,
+        Resistances: resist.length ? resist.join(", ") : undefined,
+        Immunities: [...immune, ...condImmune].join(", ") || undefined,
       }).filter(([, v]) => v),
     ) as Record<string, string>,
     effects,
     choices,
-    grantedSpells: grantedSpells(ds, sub.additionalSpells ?? race.additionalSpells),
+    grantedSpells: grantedSpells(ds, additional),
+    spellPicks: spellSet(ds, additional?.[0]).picks,
+    spellVariants: spellVariants(ds, additional),
+    featChoice: featChoice(ds, pick("feats")),
   };
 }
 
-const SIZES: Record<string, string> = { T: "Tiny", S: "Small", M: "Medium", L: "Large" };
+/** Feats granted by a race or background: [{any: 1}] (Variant Human), [{"magic initiate|phb": true}], or alternatives. */
+function featChoice(ds: Dataset, feats: any[] | undefined): ContentDetail["featChoice"] {
+  if (!feats?.length) return undefined;
+  const refs = feats.flatMap((alt: any) => Object.keys(alt).filter((k) => k !== "any" && alt[k]));
+  if (feats.some((alt: any) => alt.any)) return { count: feats[0].any ?? 1 };
+  const options = refs
+    .map((ref) => {
+      const [name, source] = ref.split("|");
+      const f = ds.feat.find((x) => lc(x.name) === lc(name) && (!source || lc(x.source) === lc(source))) ?? ds.feat.find((x) => lc(x.name) === lc(name));
+      return f ? { source: SOURCE, key: key(f.name, f.source), name: f.name } : null;
+    })
+    .filter(Boolean) as { source: "5etools"; key: string; name: string }[];
+  return options.length ? { count: 1, options } : undefined;
+}
+
+const SIZES: Record<string, string> = { T: "Tiny", S: "Small", M: "Medium", L: "Large", V: "Small or Medium" };
 
 function backgroundDetail(ds: Dataset, b: any): ContentDetail {
   const effects: Effect[] = [];
   const choices: Choice[] = [];
   skillBlock(ds, b.skillProficiencies, "skills", effects, choices);
-  effects.push(...profText("Languages", b.languageProficiencies), ...profText("Tools", b.toolProficiencies));
+  for (const [prefix, prop] of [["Languages", "languageProficiencies"], ["Tools", "toolProficiencies"]] as const) {
+    // Alternative sets (House Agent: each house's tools) are a choice between the sets.
+    const alts = b[prop] ?? [];
+    if (alts.length > 1 && alts.every((a: any) => !("choose" in a))) {
+      const sets = alts.map((a: any) => Object.keys(a).map((k) => (ANY_OPTIONS[k] ? `one ${ANY_OPTIONS[k].label}` : titleCase(plain(`{@x ${k.split("|")[0]}}`)))).join(", "));
+      choices.push({ id: `${lc(prefix)}-set`, kind: "proficiency", prefix, count: 1, label: `${prefix}: choose one set`, options: sets.map((n: string) => ({ key: lc(n), name: n })) });
+      continue;
+    }
+    const p = profBlock(prefix, alts, lc(prefix));
+    effects.push(...p.effects);
+    choices.push(...p.choices);
+  }
+  choices.push(...mixedBlock(b.skillToolLanguageProficiencies, "mixed"));
   return {
     ...summary(ds, "background", b.name, key(b.name, b.source), b.source),
     description: renderEntries(b.entries),
@@ -463,6 +633,8 @@ function backgroundDetail(ds: Dataset, b: any): ContentDetail {
     choices,
     suggestions: backgroundTables(b.entries),
     startingEquipment: equipmentRows(b.startingEquipment ?? [], []),
+    featChoice: featChoice(ds, b.feats),
+    expandedSpells: expandedSpells(ds, b.additionalSpells),
   };
 }
 
@@ -473,7 +645,8 @@ function backgroundTables(entries: any): { traits: string[]; ideals: string[]; b
     if (Array.isArray(e)) return e.forEach(walk);
     if (!e || typeof e !== "object") return;
     if (e.type === "table" && Array.isArray(e.colLabels)) {
-      const label = String(e.colLabels[1] ?? "").toLowerCase();
+      // Usually the column says "Personality Trait"; some books only put it in the caption.
+      const label = `${e.caption ?? ""} ${e.colLabels[1] ?? ""}`.toLowerCase();
       const target = label.includes("personality") ? out.traits : label.includes("ideal") ? out.ideals : label.includes("bond") ? out.bonds : label.includes("flaw") ? out.flaws : null;
       if (target) for (const row of e.rows ?? []) if (Array.isArray(row) && row[1] != null) target.push(plain(typeof row[1] === "string" ? row[1] : renderEntries(row[1])));
     }
@@ -842,20 +1015,24 @@ const EQUIPMENT_TYPES: Record<string, string> = {
   weaponSimple: "Any simple weapon", weaponMartial: "Any martial weapon", weaponSimpleMelee: "Any simple melee weapon",
   weaponMartialMelee: "Any martial melee weapon", instrumentMusical: "Any musical instrument", toolArtisan: "Any artisan's tools",
   focusSpellcastingArcane: "Arcane focus", focusSpellcastingDruidic: "Druidic focus", focusSpellcastingHoly: "Holy symbol",
+  setGaming: "Any gaming set", toolArtisan2: "Any artisan's tools",
 };
 
 function startingEquipment(cls: any): EquipmentChoice[] {
   return equipmentRows(cls.startingEquipment?.defaultData ?? [], cls.startingEquipment?.default ?? []);
 }
 
+/** Copper pieces as the coins a book would list: 1500 → "15 gp", 10 → "1 sp", 5 → "5 cp". */
+const coins = (cp: number) => (cp % 100 === 0 ? `${cp / 100} gp` : cp % 10 === 0 ? `${cp / 10} sp` : `${cp} cp`);
+
 function equipmentRows(data: any[], labels: string[]): EquipmentChoice[] {
   const toItem = (x: any) => {
     if (typeof x === "string") return { name: itemName(x), qty: 1 };
     if (x.item) return { name: x.displayName ? plain(x.displayName) : itemName(x.item), qty: x.quantity ?? 1 };
-    if (x.equipmentType) return { name: EQUIPMENT_TYPES[x.equipmentType] ?? x.equipmentType, qty: x.quantity ?? 1 };
+    if (x.equipmentType) return { name: x.displayName ? plain(x.displayName) : EQUIPMENT_TYPES[x.equipmentType] ?? x.equipmentType, qty: x.quantity ?? 1 };
     if (x.special) return { name: x.special, qty: x.quantity ?? 1 };
-    if (x.value) return { name: `${x.value / 100} gp`, qty: 1 };
-    if (x.containsValue) return { name: `${x.containsValue / 100} gp`, qty: 1 };
+    if (x.value) return { name: coins(x.value), qty: 1 };
+    if (x.containsValue) return { name: coins(x.containsValue), qty: 1 };
     return { name: "?", qty: 1 };
   };
   return data.map((row, i) => ({
@@ -863,7 +1040,7 @@ function equipmentRows(data: any[], labels: string[]): EquipmentChoice[] {
     options: Object.entries(row).map(([opt, items]) => ({
       label: opt === "_" ? "Included" : `(${opt})`,
       // A pouch "containing 15 gp" yields the pouch and the coins.
-      items: (items as any[]).flatMap((x) => (x?.item && x.containsValue ? [toItem(x), { name: `${x.containsValue / 100} gp`, qty: 1 }] : [toItem(x)])),
+      items: (items as any[]).flatMap((x) => (x?.containsValue && (x.item || x.special) ? [toItem(x), { name: coins(x.containsValue), qty: 1 }] : [toItem(x)])),
     })),
   }));
 }

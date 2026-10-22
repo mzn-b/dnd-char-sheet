@@ -8,7 +8,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run",
-    "simulate": "tsx scripts/simulate-levels.mts"
+    "simulate": "tsx scripts/simulate-levels.mts",
+    "verify-content": "tsx scripts/verify-content.mts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.5",

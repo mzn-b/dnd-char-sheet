@@ -267,6 +267,7 @@ function EffectsEditor({ effects, onChange }: { effects: Effect[]; onChange: (e:
 const KIND_LABEL: Record<Choice["kind"], string> = {
   feature: "Options with their own text (like Fighting Styles)",
   text: "Simple labels (like a favored enemy type)",
+  proficiency: "Tool or language proficiencies",
   skill: "Skill proficiencies",
   expertise: "Skill expertise",
   ability: "Ability score increases",

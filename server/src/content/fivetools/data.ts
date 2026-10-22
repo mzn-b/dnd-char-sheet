@@ -1,5 +1,6 @@
 import { pool } from "../../db.js";
 import { cachedFetch } from "../http.js";
+import { resolveCopies } from "./copy.js";
 
 /**
  * 5etools has no API; its data ships as static JSON files. We load them from a mirror
@@ -146,6 +147,8 @@ async function load(): Promise<Dataset> {
   ]);
   for (const file of [...singles, ...files]) merge(ds, file, (e) => e.edition !== "one" && !modern.has(e.source) && !modern.has(e.classSource));
 
+  resolveAllCopies(ds);
+
   // "+1 Longsword", "+2 Chain Mail"…: 5etools stores these as templates applied to base items.
   const variants = await optional<{ magicvariant: any[] }>("magicvariants.json", { magicvariant: [] });
   ds.item.push(...expandBonusVariants(variants.magicvariant, ds.baseitem, modern));
@@ -158,11 +161,23 @@ async function load(): Promise<Dataset> {
         ds.brewSources.add(s.json);
       }
       merge(ds, file, () => true);
+      resolveAllCopies(ds);
     } catch (err) {
       console.warn(`Failed to load 5etools homebrew ${brew.path}:`, (err as Error).message);
     }
   }
   return ds;
+}
+
+/** Variants defined as copies of another entry (Variant Noble (Knight), Centaur (MOT)…) become full entries. */
+function resolveAllCopies(ds: Dataset) {
+  const named = (e: any) => `${e.name}|${e.source}`.toLowerCase();
+  for (const k of ["race", "background", "feat", "optionalfeature"] as const) ds[k] = resolveCopies(ds[k], named) as any[];
+  ds.subrace = resolveCopies(
+    ds.subrace,
+    (e) => `${e.name}|${e.source}|${e.raceName}|${e.raceSource}`.toLowerCase(),
+    (c) => `${c.name}|${c.source}|${c.raceName}|${c.raceSource}`.toLowerCase(),
+  ) as any[];
 }
 
 function merge(ds: Dataset, file: any, keep: (e: any) => boolean) {

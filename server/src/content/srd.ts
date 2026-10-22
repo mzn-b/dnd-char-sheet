@@ -218,6 +218,12 @@ async function raceDetail(key: string): Promise<ContentDetail> {
     ...[...(race.starting_proficiencies ?? []), ...(sub?.starting_proficiencies ?? [])]
       .map((p: any) => (p.index.startsWith("skill-") ? { kind: "skill" as const, skill: toSkillKey(p.index) } : { kind: "proficiency" as const, value: p.name })),
     { kind: "proficiency", value: `Languages: ${(race.languages ?? []).map((l: any) => l.name).join(", ")}${race.language_options ? ` + ${race.language_options.choose} of your choice` : ""}` },
+    // The API now lists proficiencies on the traits (Keen Senses: Perception; Dwarven Combat Training: axes…).
+    ...traits.flatMap((t: any) => (t.proficiencies ?? []).map((p: any) =>
+      p.index.startsWith("skill-")
+        ? { kind: "skill" as const, skill: toSkillKey(p.index) }
+        : { kind: "proficiency" as const, value: `${/armor|shield/i.test(p.name) ? "Armor" : /tools|kit|supplies|set/i.test(p.name) ? "Tools" : "Weapons"}: ${p.name.replace(/^\w+:\s*/, "")}` },
+    )),
   ];
   const choices: Choice[] = [];
   if (race.ability_bonus_options) {
@@ -235,6 +241,12 @@ async function raceDetail(key: string): Promise<ContentDetail> {
         id: t.index, kind: "skill", count: pc.choose, label: `${t.name}: choose ${pc.choose} skill${pc.choose > 1 ? "s" : ""}`,
         options: optionsOf(pc).filter((o: any) => o.item?.index?.startsWith("skill-")).map((o: any) => ({ key: toSkillKey(o.item.index), name: skillName(toSkillKey(o.item.index)) })),
       });
+    } else if (pc && optionsOf(pc).length) {
+      // Dwarf Tool Proficiency: smith's tools, brewer's supplies or mason's tools.
+      choices.push({
+        id: t.index, kind: "proficiency", prefix: "Tools", count: pc.choose, label: `${t.name}: choose ${pc.choose}`,
+        options: optionsOf(pc).filter((o: any) => o.item?.name).map((o: any) => ({ key: o.item.index, name: o.item.name })),
+      });
     }
   }
   return {
@@ -243,11 +255,12 @@ async function raceDetail(key: string): Promise<ContentDetail> {
     type: "race",
     name: sub?.name ?? race.name,
     sourceLabel: LABEL,
+    // Flavor first, under headings, so it stays with the race when traits become features.
     description: [
-      ...traits.map((t) => `**${t.name}.** ${join(t.desc)}`),
       sub && join([sub.desc]),
-      race.age,
-      race.size_description,
+      race.age && `**Age.** ${race.age}`,
+      race.size_description && `**Size.** ${race.size_description}`,
+      ...traits.map((t) => `**${t.name}.** ${join(t.desc)}`),
     ].filter(Boolean).join("\n\n"),
     meta: compact({ Speed: `${race.speed} ft`, Size: race.size }),
     effects,

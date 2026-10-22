@@ -4,6 +4,7 @@ import {
   addGrantedSpells, addProficiencyLine, applyEffects, applySubfeatureMechanics, attachProgression, buildFeature, grantFeature, grantProgression, prepareGrantedSpells,
 } from "../../lib/apply";
 import { uid } from "../../lib/defaults";
+import { applyGrants, resolveGrants } from "../../lib/grants";
 import { applyDetectedUses } from "../../lib/uses";
 import { mod, skillName, totalLevel } from "../../lib/rules";
 import type {
@@ -98,6 +99,7 @@ export interface PreparedLevelUp {
   builtFeatures: Feature[];
   subclassDetail: ContentDetail | null;
   builtFeat: Feature | null;
+  featGrants?: Awaited<ReturnType<typeof resolveGrants>>;
   builtProgressions: { p: Progression; choice: Choice; subs: SubFeature[] }[];
   builtSwaps: { p: Progression; out: string; choice: Choice; subs: SubFeature[] }[];
   subRules?: SubclassRules;
@@ -120,6 +122,8 @@ export async function prepareLevelUp(
   ).then((fs) => fs.flatMap(splitFeature));
   const subclassDetail = picks.subclass ? await fetchDetail("subclass", picks.subclass).catch(() => null) : null;
   const builtFeat = plan.grantsAsi && picks.asiMode === "feat" && picks.featDetail ? await buildFeature(picks.featDetail, picks.featSel, "Feat", "feat") : null;
+  // The feat's spells (Magic Initiate, Fey Touched…) and any feat it grants.
+  const featGrants = builtFeat && picks.featDetail ? await resolveGrants(picks.featDetail, picks.featSel, 1, `feat:${picks.featDetail.name}`) : undefined;
   const builtProgressions = await Promise.all(plan.progressions.map(async (p) => ({ p, ...(await grantProgression(p, picks.progressionSel[p.name] ?? [])) })));
   const builtSwaps = await Promise.all(
     plan.progressions
@@ -151,7 +155,7 @@ export async function prepareLevelUp(
         .map((f) => prepareGrantedSpells(f.spells, plan.newLevel, `feature:${f.name}`, rules.index)),
     )).flat(),
   ];
-  return { builtFeatures, subclassDetail, builtFeat, builtProgressions, builtSwaps, subRules, grantedSpells };
+  return { builtFeatures, subclassDetail, builtFeat, featGrants, builtProgressions, builtSwaps, subRules, grantedSpells };
 }
 
 /** Apply a prepared level to a draft character. Returns the history summary lines. */
@@ -201,6 +205,7 @@ export function applyLevelUp(d: Character, rules: ClassRules, plan: LevelPlan, p
   }
   if (builtFeat && picks.featDetail) {
     grantFeature(d, builtFeat, { ...picks.featDetail, effects: picks.featDetail.effects?.filter((e) => e.kind !== "speed") });
+    if (prep.featGrants) applyGrants(d, prep.featGrants, "Feat");
     summary.push(`Took feat: ${builtFeat.name}${builtFeat.subfeatures?.length ? ` (${builtFeat.subfeatures.map((s) => s.name).join(", ")})` : ""}`);
   }
 

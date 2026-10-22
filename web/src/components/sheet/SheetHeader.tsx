@@ -1,3 +1,4 @@
+import { applyGrants, keepHpInStepWithCon, resolveGrants } from "../../lib/grants";
 import { useState } from "react";
 import { addGrantedSpells, buildFeature, grantFeature, prepareGrantedSpells, replaceOrigin, sensesFromRace } from "../../lib/apply";
 import { ALIGNMENTS, classSummary, totalLevel, xpForNextLevel, XP_THRESHOLDS } from "../../lib/rules";
@@ -23,15 +24,18 @@ export function SheetHeader({
 
   const applyOrigin = async (det: ContentDetail, selections: Selections) => {
     const kind = picking!;
-    const feature = await buildFeature(det, selections, kind === "race" ? "Race" : "Background", kind);
-    const spells = await prepareGrantedSpells(det.grantedSpells, Math.max(1, level), kind);
+    const label = kind === "race" ? "Race" : "Background";
+    const feature = await buildFeature(det, selections, label, kind);
+    const grants = await resolveGrants(det, selections, Math.max(1, level), kind);
     update((d) => {
+      const con = d.abilities.con;
       replaceOrigin(d, kind);
       const ref = { source: det.source, key: det.key, name: det.name };
       if (kind === "race") Object.assign(d, { race: det.name, raceRef: ref, senses: sensesFromRace(det) || d.senses });
       else Object.assign(d, { background: det.name, backgroundRef: ref });
       grantFeature(d, feature, det);
-      addGrantedSpells(d, spells);
+      applyGrants(d, grants, label);
+      keepHpInStepWithCon(d, con);
     });
   };
 

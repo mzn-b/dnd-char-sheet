@@ -64,6 +64,14 @@ export interface ContentDetail extends ContentSummary {
   startingEquipment?: EquipmentChoice[];
   /** Spells granted automatically (racial magic, domain/oath/circle spells…). */
   grantedSpells?: GrantedSpell[];
+  /** Spells to choose (High Elf's wizard cantrip, Magic Initiate's spells). */
+  spellPicks?: SpellPick[];
+  /** Alternative spell sets (Astral Elf's cantrip, Magic Initiate's class). */
+  spellVariants?: SpellVariant[];
+  /** Feats a race or background grants: any feat (Variant Human) or one of these. */
+  featChoice?: { count: number; options?: { source: ContentSource; key: string; name: string }[] };
+  /** Spells added to your class list (Strixhaven and Ravnica backgrounds). */
+  expandedSpells?: ExpandedSpell[];
 }
 
 /** What to roll for a spell, so players rolling physical dice can see it at a glance. */
@@ -178,11 +186,15 @@ export type Effect =
 export interface Choice {
   id: string;
   label: string;
-  kind: "feature" | "expertise" | "skill" | "ability" | "save" | "text";
+  kind: "feature" | "expertise" | "skill" | "ability" | "save" | "text" | "proficiency";
+  /** "proficiency" choices: the line the pick goes on ("Tools", "Languages"…; "mixed" keys say "skill:…", "tool:…"). */
+  prefix?: string;
   count: number;
   options: ChoiceOption[];
   /** For "ability" choices: how much each pick adds. */
   amount?: number;
+  /** Ability choices that also grant the chosen ability's saving throw (Resilient). */
+  grantsSave?: boolean;
   /** Option keys that are always part of the picks (Elemental Attunement). */
   required?: string[];
   /** The same option may be picked up to this many times (e.g. +2 to one ability as two +1 picks). */

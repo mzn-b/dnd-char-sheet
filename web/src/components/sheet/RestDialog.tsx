@@ -48,7 +48,9 @@ export function RestDialog({ c, update, kind, onClose }: { c: Character; update:
 
   const spend = (die: string) => {
     const r = roll(`1d${die}${con >= 0 ? "+" : ""}${con}`, { label: `Hit die (d${die})`, kind: "heal" });
-    const gain = Math.max(0, r.total);
+    // Durable: each hit die regains at least twice your Constitution modifier (minimum 2).
+    const durable = c.features.some((f) => f.kind === "feat" && /^durable$/i.test(f.name));
+    const gain = durable ? Math.max(r.total, Math.max(2, 2 * con)) : Math.max(0, r.total);
     setHealed((h) => h + gain);
     update((d) => {
       d.hitDiceUsed[die] = (d.hitDiceUsed[die] ?? 0) + 1;

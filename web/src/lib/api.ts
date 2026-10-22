@@ -4,6 +4,7 @@ import type {
 import { normalizeCharacter } from "./defaults";
 import { textEffects, withTextChoices } from "./textChoices";
 import { migrateCharacter } from "./migrate";
+import { withGrantChoices } from "./grants";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -51,6 +52,12 @@ export const api = {
     if (["feature", "feat", "race", "background", "subclass"].includes(type)) {
       const choices = withTextChoices(d.choices, d.description ?? "");
       if (choices.length) d.choices = choices;
+    }
+    // Spell sets, spells and feats that come with a race, background or feat.
+    if (["race", "background", "feat"].includes(type)) {
+      const allFeats = d.featChoice && !d.featChoice.options ? await api.search("feat").catch(() => []) : undefined;
+      const extra = withGrantChoices(d, allFeats);
+      if (extra.length) d.choices = [...(d.choices ?? []), ...extra];
     }
     // Class and subclass features state their proficiencies only in prose (Bonus Proficiencies, Slippery Mind).
     if (type === "feature" && !d.effects?.length) {

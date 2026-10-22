@@ -1,3 +1,4 @@
+import { applyGrants, resolveGrants } from "../lib/grants";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueries, useQuery } from "@tanstack/react-query";
@@ -160,13 +161,14 @@ export default function CharacterCreator() {
           }
           if (moved.length) f.description += `\n\n*Customizing Your Origin:* ${moved.join(", ")}.`;
         }
-        addGrantedSpells(c, await prepareGrantedSpells(raceDetail.grantedSpells, 1, "race"));
+        applyGrants(c, await resolveGrants(raceDetail, raceSel, 1, "race"), "Race");
       }
       if (bgDetail) {
         const f = await buildFeature(bgDetail, bgSel, "Background", "background");
         c.background = bgDetail.name;
         c.backgroundRef = { source: bgDetail.source, key: bgDetail.key, name: bgDetail.name };
         grantFeature(c, f, bgDetail);
+        applyGrants(c, await resolveGrants(bgDetail, bgSel, 1, "background"), "Background");
       }
       if (!skipEquipment) {
         // Generic entries become the items picked for them (unpicked ones stay as placeholders to fix later).
@@ -180,10 +182,12 @@ export default function CharacterCreator() {
             return [...merged, ...(rest > 0 ? [{ name: it.name, qty: rest }] : [])];
           });
         });
-        const items = await Promise.all(wanted.map((it) => (/^\d+(\.\d+)? gp$/.test(it.name) ? null : resolveItem(it.name, it.qty))));
+        // Coins ("15 gp", "1 sp") go to the purse, not the inventory.
+        const coin = (n: string) => n.match(/^(\d+(?:\.\d+)?) (gp|sp|cp)$/);
+        const items = await Promise.all(wanted.map((it) => (coin(it.name) ? null : resolveItem(it.name, it.qty))));
         for (const it of wanted) {
-          const gp = it.name.match(/^(\d+(?:\.\d+)?) gp$/);
-          if (gp) c.currency.gp += Number(gp[1]);
+          const m = coin(it.name);
+          if (m) c.currency[m[2] as "gp" | "sp" | "cp"] += Number(m[1]);
         }
         // Wear the first armor and shield found so AC is right from the start.
         for (const item of items) {

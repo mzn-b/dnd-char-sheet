@@ -22,7 +22,7 @@ const PATTERNS: [ActionKind, RegExp][] = [
   // Not "uses its reaction": that's another creature's (Infectious Fury's target).
   ["reaction", /\b(?:use|uses|using|take|spend) (?:your|a) reaction\b|\bas a reaction\b|\byour reaction to\b/i],
   // "use your Action Surge" is not the action.
-  ["action", /\b(?:as an|use an|using an|use your|using your|take an|spend an|uses its) action\b(?! surge)|\baction to (?:magically|activate|use|channel|present|expend)\b|\btake the (?:dash|disengage|dodge|help|hide|search) action\b(?! as a bonus action)/i],
+  ["action", /\b(?:as an|use an|using an|use your|using your|take an|spend an|uses its) action\b(?! surge)|\baction to (?:magically|activate|use|channel|present|expend)\b|\btake the (?:dash|disengage|dodge|help|hide|search) action\b(?![^.]*as a bonus action)/i],
 ];
 
 /** Reads "as a bonus action", "use your reaction", "use your action to…" from a feature's text (earliest mention wins). */
@@ -57,6 +57,9 @@ const KNOWN: { match: RegExp; kind: ActionKind | ((c: Character) => ActionKind) 
   // War Magic: a weapon attack as a bonus action after casting a cantrip / spell.
   { match: /^(improved )?war magic$/i, kind: "bonus" },
   { match: /^(arcane charge|inspiring surge)$/i, kind: "free" },
+  // Sentinel's attack is a reaction (the text mentions the enemy's Disengage action); Charger's is a bonus action.
+  { match: /^sentinel$/i, kind: "reaction" },
+  { match: /^charger$/i, kind: "bonus" },
   // Rolled after casting a spell, not something you do.
   { match: /^wild magic surge$/i, kind: "other" },
   // Special attacks made as part of the Attack action.

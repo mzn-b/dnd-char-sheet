@@ -1,3 +1,4 @@
+import { applyGrants, keepHpInStepWithCon, resolveGrants } from "../../lib/grants";
 import { featureDuration } from "../../lib/featureDuration";
 import { withTextChoices } from "../../lib/textChoices";
 import { ActionBadge } from "../ActionBadge";
@@ -31,7 +32,14 @@ export function FeaturesTab({ c, update }: { c: Character; update: Update }) {
 
   const addFeat = async (det: ContentDetail, selections: Selections) => {
     const feature = await buildFeature(det, selections, "Feat", "feat");
-    update((d) => grantFeature(d, feature, det));
+    const grants = await resolveGrants(det, selections, 1, `feat:${det.name}`);
+    update((d) => {
+      const con = d.abilities.con;
+      grantFeature(d, feature, det);
+      applyGrants(d, grants, "Feat");
+      // Durable, Resilient (Con)…: HP follows the new Constitution modifier for every level.
+      keepHpInStepWithCon(d, con);
+    });
   };
 
   return (

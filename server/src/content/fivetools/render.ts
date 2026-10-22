@@ -97,7 +97,9 @@ export function renderEntries(entries: unknown, depth = 0): string {
 
 function renderListItem(it: any): string {
   const body = renderEntries(it.entry ?? it.entries ?? "");
-  return it.name ? `**${renderTags(it.name)}** ${body}` : body;
+  // "**Chromatic Infusion.** As a bonus action…", as the books print it.
+  const name = it.name ? renderTags(it.name) : "";
+  return name ? `**${/[.!?:]$/.test(name) ? name : `${name}.`}** ${body}` : body;
 }
 
 function renderTable(t: any): string {

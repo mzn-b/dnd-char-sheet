@@ -115,6 +115,9 @@ function featureModifiers(c: Character, chaMod: number, wisMod: number): Modifie
   if (classLevel(c, "ranger") >= 6 && has(names, "roving")) add("roving", "Roving", "speed", 5);
   if (has(names, "archery")) add("archery", "Archery", "attack:ranged", 2);
   if (has(names, "defense", "defence")) add("defense", "Defense", "ac:armored", 1);
+  // Dual Wielder: +1 AC while wielding a separate melee weapon in each hand (two equipped melee weapons).
+  const meleeWeapons = c.equipment.filter((i) => i.equipped && i.data?.weapon && !i.data.weapon.ranged);
+  if (has(names, "dual wielder") && meleeWeapons.length >= 2) add("dual-wielder", "Dual Wielder", "ac", 1, "a melee weapon in each hand");
   if (has(names, "dueling", "duelling")) add("dueling", "Dueling", "damage:melee", 2, "one-handed melee weapon, no other weapon");
   if (has(names, "medium armor master")) add("medium-armor-master", "Medium Armor Master", "medArmorDex", 1);
   if (classLevel(c, "bard") >= 2 && has(names, "jack of all trades")) add("jack", "Jack of All Trades", "halfProf", 1);

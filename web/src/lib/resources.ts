@@ -105,6 +105,15 @@ export function classResources(c: Character): Resource[] {
       if (r) out.push({ ...r, id: `${name}:sub`, source: k.subclass!.name });
     }
   }
+  // Feats. Martial Adept: one more superiority die if you have them, else one d6 (short rest).
+  const feats = new Set(c.features.filter((f) => f.kind === "feat").map((f) => f.name.toLowerCase()));
+  if (feats.has("martial adept")) {
+    const dice = out.find((r) => r.name === "Superiority Dice");
+    if (dice) dice.max += 1;
+    else out.push({ id: "feat:martialadept", name: "Superiority Dice", max: 1, reset: "short", die: "d6", source: "Martial Adept" });
+  }
+  // Metamagic Adept: 2 sorcery points just for its Metamagic options (long rest).
+  if (feats.has("metamagic adept")) out.push({ id: "feat:metamagicadept", name: "Metamagic Adept Points", max: 2, reset: "long", source: "Metamagic Adept", aliases: ["Metamagic Adept"] });
   return out;
 }
 

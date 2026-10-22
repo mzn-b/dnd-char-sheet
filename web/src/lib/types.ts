@@ -39,6 +39,14 @@ export interface ContentDetail extends ContentSummary {
   suggestions?: { traits: string[]; ideals: string[]; bonds: string[]; flaws: string[] };
   startingEquipment?: EquipmentChoice[];
   grantedSpells?: GrantedSpell[];
+  /** Spells to choose (High Elf's wizard cantrip, Magic Initiate's spells). */
+  spellPicks?: SpellPick[];
+  /** Alternative spell sets (Astral Elf's cantrip, Magic Initiate's class). */
+  spellVariants?: SpellVariant[];
+  /** Feats a race or background grants: any feat (Variant Human) or one of these. */
+  featChoice?: { count: number; options?: ContentRef[] };
+  /** Spells added to your class list (Strixhaven and Ravnica backgrounds). */
+  expandedSpells?: ExpandedSpell[];
   monster?: MonsterData;
   // Homebrew-only extras (class/subclass definitions)
   hitDie?: number;
@@ -62,12 +70,18 @@ export type Effect =
 export interface Choice {
   id: string;
   label: string;
-  kind: "feature" | "expertise" | "skill" | "ability" | "save" | "text";
+  kind: "feature" | "expertise" | "skill" | "ability" | "save" | "text" | "proficiency";
+  /** "proficiency" choices: the line the pick goes on ("Tools", "Languages"…; "mixed" keys say "skill:…", "tool:…"). */
+  prefix?: string;
   count: number;
   options: ChoiceOption[];
   amount?: number;
+  /** Ability choices that also grant the chosen ability's saving throw (Resilient). */
+  grantsSave?: boolean;
   /** Expertise choices that also grant the proficiency (Knowledge Domain's Blessings of Knowledge). */
   grantsProficiency?: boolean;
+  /** Only shown (and needed) when another choice has this pick. */
+  when?: { id: string; key: string };
   /** Option keys that are always part of the picks (Elemental Attunement). */
   required?: string[];
   /** The same option may be picked up to this many times (+2 to one ability = two +1 picks). */

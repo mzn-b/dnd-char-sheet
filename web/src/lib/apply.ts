@@ -49,9 +49,13 @@ function subfeatureName(ch: Choice, opt: ChoiceOption) {
     case "skill": return `Proficiency: ${opt.name}`;
     case "ability": return `${opt.name} +${ch.amount ?? 1}`;
     case "save": return `Saving throw: ${opt.name}`;
+    // "Tools: Dice set", "Languages: Elvish"; mixed picks say which kind by their key ("tool:dice set").
+    case "proficiency": return `${ch.prefix === "mixed" ? MIXED_LABEL[opt.key.split(":")[0]] ?? "Proficiency" : ch.prefix}: ${opt.name}`;
     default: return opt.name;
   }
 }
+
+const MIXED_LABEL: Record<string, string> = { skill: "Proficiency", tool: "Tools", language: "Languages" };
 
 /** Apply the mechanical side of sub-features (skills, expertise, abilities, saves). */
 export function applySubfeatureMechanics(d: Character, choices: Choice[], subs: SubFeature[], direction: 1 | -1 = 1) {
@@ -66,6 +70,16 @@ export function applySubfeatureMechanics(d: Character, choices: Choice[], subs: 
     if (ch.kind === "ability") {
       const a = sub.key as Ability;
       d.abilities[a] = Math.min(direction > 0 ? 20 : 30, d.abilities[a] + direction * (ch.amount ?? 1));
+      // Resilient: proficiency in the chosen ability's saving throws.
+      if (ch.grantsSave) d.saveProficiencies = direction > 0 ? [...new Set([...d.saveProficiencies, a])] : d.saveProficiencies.filter((x) => x !== a);
+    }
+    if (ch.kind === "proficiency") {
+      // A skill from a mixed pick works like any skill proficiency; tools and languages go on the proficiency lines.
+      if (sub.key.startsWith("skill:")) {
+        const k = sub.key.slice(6);
+        if (d.skills[k] != null) d.skills[k] = direction > 0 ? Math.max(1, d.skills[k]) as 1 | 2 : 0;
+      } else if (direction > 0) addProficiencyLine(d, sub.name);
+      else removeProficiencyLine(d, sub.name);
     }
     if (ch.kind === "save") {
       const a = sub.key as Ability;
@@ -77,13 +91,18 @@ export function applySubfeatureMechanics(d: Character, choices: Choice[], subs: 
 /** Fixed effects: ability bonuses, speed, skill and saving-throw proficiencies, other proficiencies. */
 export function applyEffects(d: Character, detail: Pick<ContentDetail, "effects" | "name">) {
   for (const e of detail.effects ?? []) {
-    if (e.kind === "ability") d.abilities[e.ability] += e.amount;
+    // Increases stop at 20 (Heavy Armor Master taken at STR 20 leaves it at 20).
+    if (e.kind === "ability") d.abilities[e.ability] = e.amount > 0 ? Math.max(d.abilities[e.ability], Math.min(20, d.abilities[e.ability] + e.amount)) : d.abilities[e.ability] + e.amount;
     if (e.kind === "speed") d.speed = e.amount;
     if (e.kind === "skill" && d.skills[e.skill] != null) d.skills[e.skill] = Math.max(1, d.skills[e.skill]) as 1 | 2;
     if (e.kind === "expertise" && d.skills[e.skill] != null) d.skills[e.skill] = 2;
     if (e.kind === "save" && !d.saveProficiencies.includes(e.ability)) d.saveProficiencies.push(e.ability);
     if (e.kind === "proficiency") addProficiencyLine(d, e.value);
   }
+}
+
+export function removeProficiencyLine(d: Character, line: string) {
+  d.proficienciesAndLanguages = d.proficienciesAndLanguages.split("\n").filter((l) => l && l !== line).join("\n");
 }
 
 export function addProficiencyLine(d: Character, line: string) {
@@ -102,7 +121,10 @@ export async function buildFeature(
   origin: string,
   kind?: Feature["kind"],
 ): Promise<Feature> {
-  const subfeatures = await resolveSubfeatures(detail.choices ?? [], selections);
+  // Spell, spell-set and feat picks (ids "__…") are applied as spells and feats, not sub-features.
+  const choices = (detail.choices ?? []).filter((c) => !c.id.startsWith("__"));
+  detail = { ...detail, choices };
+  const subfeatures = await resolveSubfeatures(choices, selections);
   return {
     id: uid(),
     name: detail.name,
@@ -135,7 +157,8 @@ export async function prepareGrantedSpells(granted: GrantedSpell[] | undefined, 
         alwaysPrepared: g.mode === "prepared",
         notes: "",
         grantedBy,
-        uses: g.mode === "innate" ? g.uses : undefined,
+        // Known spells can carry a limit too (Firbolg's detect magic, 1/short rest).
+        uses: g.uses,
       };
     }),
   );
@@ -166,12 +189,15 @@ export function grantFeature(d: Character, feature: Feature, detail?: Pick<Conte
 
 /** Replace a race or background, undoing the previous one's ability bonuses and choices. */
 export function replaceOrigin(d: Character, kind: "race" | "background") {
-  for (const old of d.features.filter((f) => f.kind === kind)) {
+  // The race's or background's own features, and feats it granted (origin "Race" / "Background").
+  const label = kind === "race" ? "Race" : "Background";
+  const from = (f: Feature) => f.kind === kind || (f.kind === "feat" && f.origin === label);
+  for (const old of d.features.filter(from)) {
     applySubfeatureMechanics(d, old.choices ?? [], old.subfeatures ?? [], -1);
     for (const e of old.effects ?? []) if (e.kind === "ability") d.abilities[e.ability] -= e.amount;
   }
   d.spellcasting.spells = d.spellcasting.spells.filter((s) => s.grantedBy !== kind);
-  d.features = d.features.filter((f) => f.kind !== kind);
+  d.features = d.features.filter((f) => !from(f));
 }
 
 /** Progression picks (Invocations, Maneuvers) are added to the matching feature as sub-features. */

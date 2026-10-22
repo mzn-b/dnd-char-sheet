@@ -5,7 +5,7 @@ import {
   armorFacetsOpen5e, backgroundFacetsOpen5e, featFacetsOpen5e, magicItemFacetsOpen5e, raceFacetsOpen5e, spellFacetsOpen5e, abilityTextOpen5e, weaponFacetsOpen5e,
 } from "./facets.js";
 import {
-  ABILITIES, SKILL_KEYS, toSkillKey,
+  ABILITIES, SKILL_KEYS, skillName, toSkillKey,
   type Ability, type Choice, type ContentDetail, type ContentSummary, type ContentType, type Effect, type ExpandedSpell, type ItemData,
 } from "./types.js";
 
@@ -158,6 +158,24 @@ export async function listOpen5e(type: ContentType, opts: { cls?: string }): Pro
   }
 }
 
+/** "*Wisdom 13 or higher*" → "Wisdom 13 or higher"; "N/A" → none. */
+export const openPrerequisite = (p?: string) => {
+  const t = (p ?? "").replace(/^Prerequisite:\s*/i, "").replace(/\*/g, "").trim();
+  return t && !/^(n\/a|none)$/i.test(t) ? t : undefined;
+};
+
+const ABILITY_KEYS: Record<string, Ability> = { strength: "str", dexterity: "dex", constitution: "con", intelligence: "int", wisdom: "wis", charisma: "cha" };
+
+/** "Increase your Constitution score by 1" (fixed) or "your Strength or Dexterity score by 1" (a choice). */
+function featAbility(text: string): Pick<ContentDetail, "effects" | "choices"> {
+  const m = text.match(/increase your ((?:strength|dexterity|constitution|intelligence|wisdom|charisma)(?:,? (?:or )?(?:strength|dexterity|constitution|intelligence|wisdom|charisma))*) score by (\d)/i);
+  if (!m) return {};
+  const abilities = [...m[1].matchAll(/strength|dexterity|constitution|intelligence|wisdom|charisma/gi)].map((x) => ABILITY_KEYS[x[0].toLowerCase()]);
+  const amount = Number(m[2]);
+  if (abilities.length === 1) return { effects: [{ kind: "ability", ability: abilities[0], amount }] };
+  return { choices: [{ id: "ability", kind: "ability", count: 1, amount, label: `Increase one ability score by ${amount}`, options: abilities.map((a) => ({ key: a, name: a.toUpperCase() })) }] };
+}
+
 // ---------------------------------------------------------------------------
 // Detail
 
@@ -169,11 +187,14 @@ export async function getOpen5e(type: ContentType, key: string): Promise<Content
     }
     case "feat": {
       const f = (await all("feats")).find((x) => x.slug === key);
-      return f && {
+      if (!f) return undefined;
+      const lines: string[] = (f.effects_desc ?? []).map((e: string) => md(e).replace(/^\s*[*-]\s*/, ""));
+      return {
         ...summary(type, f, f.slug),
-        prerequisite: f.prerequisite?.replace(/^Prerequisite:\s*/i, "") || undefined,
-        description: [md(f.desc), ...(f.effects_desc ?? []).map((e: string) => `- ${md(e)}`)].filter(Boolean).join("\n\n"),
+        prerequisite: openPrerequisite(f.prerequisite),
+        description: [md(f.desc), ...lines.map((e) => `- ${e}`)].filter(Boolean).join("\n\n"),
         meta: {},
+        ...featAbility(lines.join(" ")),
       };
     }
     case "background": {
@@ -232,35 +253,46 @@ function spellDetail(x: any): ContentDetail {
   };
 }
 
-function asiEffects(asi: any[] | undefined, effects: Effect[], choices: Choice[]) {
+function asiEffects(asi: any[] | undefined, effects: Effect[], choices: Choice[], desc = "") {
+  const plainDesc = desc.replace(/\*/g, "");
+  // "Your Strength or Dexterity score increases by 1" is one pick, though the data lists both.
+  const either = plainDesc.match(/(strength|dexterity|constitution|intelligence|wisdom|charisma) or (strength|dexterity|constitution|intelligence|wisdom|charisma) score increases by (\d)/i);
+  const eitherAbilities = either ? [either[1], either[2]].map((n) => ABILITY_BY_NAME[n.toLowerCase()]) : [];
+  if (either) choices.push({ id: "asi-either", kind: "ability", count: 1, amount: Number(either[3]), label: `Increase ${either[1]} or ${either[2]} by ${either[3]}`, options: eitherAbilities.map((k) => ({ key: k, name: k.toUpperCase() })) });
+  const anyByValue = new Map<number, number>();
   for (const a of asi ?? []) {
     const known = (a.attributes ?? []).map((n: string) => ABILITY_BY_NAME[n.toLowerCase()]).filter(Boolean) as Ability[];
+    if (known.length === 1 && eitherAbilities.includes(known[0]) && a.value === Number(either?.[3])) continue;
     if (known.length === 1 && (a.attributes ?? []).length === 1) effects.push({ kind: "ability", ability: known[0], amount: a.value });
-    else if ((a.attributes ?? []).length) {
-      // "Other" / "Any" style bonuses become a choice.
-      choices.push({
-        id: `asi-${choices.length}`, kind: "ability", count: 1, amount: a.value,
-        label: `Increase one ability score by ${a.value}`,
-        options: (known.length ? known : ABILITIES).map((k) => ({ key: k, name: k.toUpperCase() })),
-      });
-    }
+    else if ((a.attributes ?? []).length) anyByValue.set(a.value, (anyByValue.get(a.value) ?? 0) + 1);
+  }
+  // "Two different ability scores of your choice increase by 1": one choice of two different scores.
+  for (const [value, count] of anyByValue) {
+    choices.push({
+      id: `asi-${choices.length}`, kind: "ability", count, amount: value,
+      label: `Increase ${count > 1 ? `${count} different ability scores` : "one ability score"} by ${value}`,
+      options: ABILITIES.map((k) => ({ key: k, name: k.toUpperCase() })),
+    });
   }
 }
 
 function raceDetail(r: any, sub: any | undefined, key: string): ContentDetail {
   const effects: Effect[] = [];
   const choices: Choice[] = [];
-  asiEffects([...(r.asi ?? []), ...(sub?.asi ?? [])], effects, choices);
+  asiEffects([...(r.asi ?? []), ...(sub?.asi ?? [])], effects, choices, `${r.asi_desc ?? ""} ${sub?.asi_desc ?? ""}`);
   if (r.speed?.walk) effects.push({ kind: "speed", amount: r.speed.walk });
   const traits = `${md(r.traits)}\n\n${md(sub?.traits)}`;
-  for (const m of traits.matchAll(/proficiency in the (\w+(?: \w+)?) skill/gi)) {
-    const k = toSkillKey(m[1]);
-    if (SKILL_KEYS.includes(k)) effects.push({ kind: "skill", skill: k });
+  // "proficiency in the Perception skill", "in the Perception and Stealth skills".
+  for (const m of traits.matchAll(/proficiency in the (\w+(?: \w+)?)(?: and (?:the )?(\w+(?: \w+)?))? skills?/gi)) {
+    for (const n of [m[1], m[2]].filter(Boolean)) {
+      const k = toSkillKey(n);
+      if (SKILL_KEYS.includes(k)) effects.push({ kind: "skill", skill: k });
+    }
   }
-  const darkvision = `${r.vision ?? ""} ${traits}`.match(/darkvision[\s\S]{0,300}?(\d+) feet/i);
+  const darkvision = `${md(r.vision)} ${traits}`.replace(/\*/g, "").match(/darkvision[\s\S]{0,300}?(\d+) feet/i);
   return {
     source: "open5e", key, type: "race", name: sub ? `${r.name} (${sub.name})` : r.name, sourceLabel: r.document__title,
-    description: [md(r.desc), traits, md(sub?.desc)].filter((s) => s.trim()).join("\n\n"),
+    description: [md(r.desc), md(r.vision), traits, md(sub?.desc)].filter((s) => s?.trim()).join("\n\n"),
     meta: Object.fromEntries(Object.entries({
       Speed: r.speed?.walk ? `${r.speed.walk} ft` : undefined,
       Size: r.size_raw ?? undefined,
@@ -285,29 +317,83 @@ function tableRows(markdown: string, label: RegExp): string[] {
   return out;
 }
 
-function backgroundDetail(b: any): ContentDetail {
+const NUM_WORD: Record<string, number> = { one: 1, two: 2, three: 3, four: 4 };
+
+/**
+ * Skill text from Open5e: "History, Insight", "Deception, and either Culture, Insight, or Sleight of Hand",
+ * "Insight plus one of your choice from among …", "choice of two from among Arcana, History, and Persuasion",
+ * "Two of your choice." → fixed skills and a choice.
+ */
+export function skillsFromText(raw: string, id = "skills"): { effects: Effect[]; choices: Choice[] } {
+  const text = raw.replace(/[.*]+\s*$/g, "").trim();
   const effects: Effect[] = [];
-  for (const s of (b.skill_proficiencies ?? "").split(/,| and /)) {
-    const k = toSkillKey(s.trim());
-    if (SKILL_KEYS.includes(k)) effects.push({ kind: "skill", skill: k });
+  const choices: Choice[] = [];
+  const keysIn = (t: string) => SKILL_KEYS.filter((k) => new RegExp(`\\b${k.replace(/-/g, "[ -]")}\\b`, "i").test(t));
+  const m =
+    text.match(/^(.*?)(?:,?\s*(?:and|plus)\s+)?(?:either|(one|two|three) (?:other )?(?:skill )?of your choice(?: from among| from)?|(?:a )?choice of (one|two|three)(?: from among| from)?)\s*:?\s*(.*)$/i);
+  if (m) {
+    const fixed = keysIn(m[1]);
+    for (const k of fixed) effects.push({ kind: "skill", skill: k });
+    const count = NUM_WORD[(m[2] ?? m[3] ?? "one").toLowerCase()] ?? 1;
+    const from = keysIn(m[4]).filter((k) => !fixed.includes(k));
+    choices.push({ id, kind: "skill", count, label: `Choose ${count} skill proficienc${count > 1 ? "ies" : "y"}`, options: (from.length ? from : SKILL_KEYS).map((k) => ({ key: k, name: skillName(k) })) });
+  } else {
+    for (const k of keysIn(text)) effects.push({ kind: "skill", skill: k });
   }
-  if (b.tool_proficiencies) effects.push({ kind: "proficiency", value: `Tools: ${b.tool_proficiencies}` });
-  if (b.languages) effects.push({ kind: "proficiency", value: `Languages: ${b.languages}` });
+  return { effects, choices };
+}
+
+const isNone = (v?: string) => !v || /^\W*(none|no additional|n\/a)/i.test(v.trim());
+
+/** Split an equipment sentence on commas outside parentheses and numbers ("1,000 ball bearings"); pull out coins. */
+export function equipmentFromText(text: string): { name: string; qty: number }[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let cur = "";
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "(") depth++;
+    if (ch === ")") depth = Math.max(0, depth - 1);
+    if (ch === "," && depth === 0 && !(/\d/.test(text[i - 1] ?? "") && /\d/.test(text[i + 1] ?? ""))) {
+      parts.push(cur);
+      cur = "";
+    } else cur += ch;
+  }
+  parts.push(cur);
+  const out: { name: string; qty: number }[] = [];
+  for (let p of parts.flatMap((x) => x.split(/^\s*and\s+|\s+and\s+(?![^(]*\))/))) {
+    p = p.replace(/^\s*(?:and\s+)?/, "").replace(/[.\s]+$/, "").trim();
+    if (!p) continue;
+    const coins = p.match(/(\d+)\s*(gp|sp|cp)\b/i);
+    if (coins) {
+      out.push({ name: `${coins[1]} ${coins[2].toLowerCase()}`, qty: 1 });
+      p = p.replace(/\s*(?:containing|with)\s*\d+\s*(?:gp|sp|cp)\b/i, "").replace(/^\d+\s*(?:gp|sp|cp)$/i, "").trim();
+      if (!p) continue;
+    }
+    const qty = p.match(/^(\d+)\s+(.*)$/);
+    out.push(qty ? { name: qty[2], qty: Number(qty[1]) } : { name: p.replace(/^(a|an|one)\s+/i, ""), qty: 1 });
+  }
+  return out;
+}
+
+function backgroundDetail(b: any): ContentDetail {
+  const { effects, choices } = skillsFromText(b.skill_proficiencies ?? "");
+  if (!isNone(b.tool_proficiencies)) effects.push({ kind: "proficiency", value: `Tools: ${b.tool_proficiencies.replace(/\.$/, "")}` });
+  if (!isNone(b.languages)) effects.push({ kind: "proficiency", value: `Languages: ${b.languages.replace(/\.$/, "")}` });
   const sc = b.suggested_characteristics ?? "";
   return {
     source: "open5e", key: b.slug, type: "background", name: b.name, sourceLabel: b.document__title,
     description: [md(b.desc), b.feature && `**${b.feature}.** ${md(b.feature_desc)}`].filter(Boolean).join("\n\n"),
     meta: Object.fromEntries(Object.entries({ "Skill Proficiencies": b.skill_proficiencies, Equipment: b.equipment }).filter(([, v]) => v)),
     effects,
+    choices,
     suggestions: {
       traits: tableRows(sc, /personality/i),
       ideals: tableRows(sc, /ideal/i),
       bonds: tableRows(sc, /bond/i),
       flaws: tableRows(sc, /flaw/i),
     },
-    startingEquipment: b.equipment
-      ? [{ label: "Included", options: [{ label: "Included", items: b.equipment.split(/,\s*(?:and\s+)?|\s+and\s+/).map((n: string) => ({ name: n.replace(/^(a|an|one)\s+/i, "").trim(), qty: 1 })).filter((i: any) => i.name) }] }]
-      : [],
+    startingEquipment: b.equipment ? [{ label: "Included", options: [{ label: "Included", items: equipmentFromText(b.equipment) }] }] : [],
   };
 }
 

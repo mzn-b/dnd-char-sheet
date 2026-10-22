@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { withRequired } from "../lib/apply";
+import { FEAT_ID, FEAT_PREFIX, choiceShown, featSelections } from "../lib/grants";
 import type { Character, Choice, ChoiceOption, ContentDetail, ContentSummary, ContentType, Selections } from "../lib/types";
 import { ContentBrowser, ContentDetailView, contentId } from "./ContentBrowser";
 import { Markdown, Modal, Spinner } from "./ui";
@@ -157,15 +158,43 @@ export function ChoiceList({
 }: { choices: Choice[]; selections: Selections; onChange: (s: Selections) => void; character?: Character; blocked?: (o: ChoiceOption) => string | undefined }) {
   return (
     <div className="space-y-4">
-      {choices.map((ch) => (
-        <ChoicePicker key={ch.id} choice={ch} character={character} blocked={blocked} selected={selections[ch.id] ?? []} onChange={(keys) => onChange({ ...selections, [ch.id]: keys })} />
+      {choices.filter((ch) => choiceShown(ch, selections)).map((ch) => (
+        <div key={ch.id}>
+          <ChoicePicker choice={ch} character={character} blocked={blocked} selected={selections[ch.id] ?? []} onChange={(keys) => onChange({ ...selections, [ch.id]: keys })} />
+          {ch.id === FEAT_ID && withRequired(ch, selections[ch.id] ?? []).map((key) => (
+            <GrantedFeatChoices key={key} option={ch.options.find((o) => o.key === key)} selections={selections} onChange={onChange} character={character} />
+          ))}
+        </div>
       ))}
     </div>
   );
 }
 
+/** The choices of a feat granted by a race or background (Variant Human's feat), stored with a prefix. */
+function GrantedFeatChoices({ option, selections, onChange, character }: { option?: ChoiceOption; selections: Selections; onChange: (s: Selections) => void; character?: Character }) {
+  const { data } = useQuery({
+    queryKey: ["detail", "feat", option?.source, option?.key],
+    queryFn: () => api.detail("feat", option!.source!, option!.key),
+    enabled: !!option?.source,
+    staleTime: Infinity,
+  });
+  if (!data?.choices?.length) return null;
+  const nested = featSelections(selections);
+  return (
+    <div className="ml-4 mt-3 border-l border-ink-800 pl-3">
+      <div className="label mb-2">{data.name}</div>
+      <ChoiceList
+        choices={data.choices}
+        selections={nested}
+        character={character}
+        onChange={(s) => onChange({ ...Object.fromEntries(Object.entries(selections).filter(([k]) => !k.startsWith(FEAT_PREFIX))), ...Object.fromEntries(Object.entries(s).map(([k, v]) => [FEAT_PREFIX + k, v])) })}
+      />
+    </div>
+  );
+}
+
 export const unfinishedChoices = (choices: Choice[] | undefined, selections: Selections) =>
-  (choices ?? []).filter((ch) => withRequired(ch, selections[ch.id] ?? []).length < (ch.maxPerOption ? ch.count : Math.min(ch.count, ch.options.length)));
+  (choices ?? []).filter((ch) => choiceShown(ch, selections) && withRequired(ch, selections[ch.id] ?? []).length < (ch.maxPerOption ? ch.count : Math.min(ch.count, ch.options.length)));
 
 /**
  * Two-step modal: browse content (race, background, feat…), then make its choices, then apply.
