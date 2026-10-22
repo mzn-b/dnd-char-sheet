@@ -20,6 +20,10 @@ import { useCorrections } from "../../lib/corrections";
 const ORDER: ReminderWhen[] = ["turnStart", "attack", "hit", "damaged", "turnEnd", "always"];
 
 /** Compact, sticky round tracker shown on every tab during combat. */
+/** Rounds as the shortest readable time: 3r, 1 min, 8 h (10 rounds = 1 minute). */
+const shortDuration = (rounds: number) =>
+  rounds >= 600 ? `${Math.round(rounds / 600)} h` : rounds >= 10 ? `${Math.round(rounds / 10)} min` : `${rounds}r`;
+
 export function CombatBar({ c, update, onEnded }: { c: Character; update: Update; onEnded?: (names: string[]) => void }) {
   const s = c.combat;
   if (!s?.active) return null;
@@ -72,7 +76,7 @@ export function CombatBar({ c, update, onEnded }: { c: Character; update: Update
             const left = roundsLeft(c, e);
             return (
               <span key={e.id} className="chip border-arcane-500/60 text-arcane-400" title={e.reminders.map((r) => r.text).join("\n")}>
-                {e.concentration ? "◎ " : ""}{e.name}{e.untilNextTurn ? " (until your turn)" : left != null ? ` · ${left}r` : ""}
+                {e.concentration ? "◎ " : ""}{e.name}{e.untilNextTurn ? " (until your turn)" : left != null ? ` · ${shortDuration(left)}` : ""}
               </span>
             );
           })}
@@ -182,7 +186,7 @@ export function CombatPanel({ c, update, endedNotice }: { c: Character; update: 
                     {e.concentration && <span className="text-arcane-400" title="Concentration">◎ </span>}
                     {e.name}
                     <span className="ml-1 text-xs text-ink-400">
-                      {e.untilNextTurn ? "until your next turn" : left == null ? "until ended" : `${left} round${left === 1 ? "" : "s"} left`}
+                      {e.untilNextTurn ? "until your next turn" : left == null ? "until ended" : left >= 10 ? `${shortDuration(left)} left` : `${left} round${left === 1 ? "" : "s"} left`}
                     </span>
                   </span>
                   <button className="btn-ghost px-1.5 py-0 text-xs hover:text-blood-500" onClick={() => update((d) => endEffect(d, e.id))}>End</button>

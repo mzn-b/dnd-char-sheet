@@ -19,6 +19,8 @@ export function applyRest(d: Character, rest: "short" | "long") {
   // Tireless (Tasha's ranger): a short rest also removes one level of exhaustion.
   if (rest === "short" && featureParts(d).some((p) => /^tireless$/i.test(p.name))) d.exhaustion = Math.max(0, d.exhaustion - 1);
   if (rest === "long") {
+    // Eight hours pass: Mage Armor and the like have run out.
+    d.lastingEffects = [];
     d.hp.current = hpMax(d);
     d.hp.temp = 0;
     d.deathSaves = { successes: 0, failures: 0 };

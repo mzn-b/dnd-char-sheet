@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { api } from "../lib/api";
-import { abilityMod, canCastInWildShape, fmt, ordinal, spellAttack, spellSaveDC, totalLevel } from "../lib/rules";
+import { uid } from "../lib/defaults";
+import { LASTING_SPELLS, abilityMod, canCastInWildShape, fmt, ordinal, spellAttack, spellSaveDC, totalLevel } from "../lib/rules";
 import { describeDice, diceAt, scalingNote } from "../lib/spellDice";
 import { eldritchBlastBeams, spellDamageBonuses } from "../lib/spellBonuses";
 import { describeRoll, extractRolls, resolveRoll } from "../lib/rollText";
@@ -97,6 +98,10 @@ export function CastButton({
     // In combat, the casting time uses the action, bonus action or reaction.
     // A ritual takes 10 minutes longer: no action in combat.
     spendEconomy(d, ritual ? "other" : kindFromCastingTime(detail?.meta["Casting Time"]), `Cast ${spell.ref.name}`, { spellLevel: spell.level });
+    // Spells that change the sheet for hours (Mage Armor) stay on until a long rest or you end them.
+    if (LASTING_SPELLS.test(spell.ref.name)) {
+      d.lastingEffects = [...(d.lastingEffects ?? []).filter((e) => e.name !== spell.ref.name), { id: uid(), name: spell.ref.name }];
+    }
     // In combat, lasting spells become active effects with reminders and a countdown.
     if (d.combat?.active) {
       const effect = effectForSpell(d, spell, detail);

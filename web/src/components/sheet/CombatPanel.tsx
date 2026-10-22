@@ -5,6 +5,7 @@ import { describe } from "../../lib/modifiers";
 import { d20 } from "../../lib/dice";
 import { RollButton, useRoll } from "../dice";
 import { ResourcesPanel } from "./ResourcesPanel";
+import { LastingEffects } from "./LastingEffects";
 import { endEffect, reminders } from "../../lib/combat";
 import { useSpellDetails } from "../spells";
 import { useCorrections } from "../../lib/corrections";
@@ -119,6 +120,7 @@ export function CombatPanel({ c, update }: { c: Character; update: Update }) {
           )}
         </Stat>
       </div>
+      <LastingEffects c={c} update={update} />
 
       <Section title={form ? `Hit Points · 🐾 ${form.name}` : "Hit Points"}>
         {form ? (

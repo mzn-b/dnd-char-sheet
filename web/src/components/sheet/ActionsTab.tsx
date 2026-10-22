@@ -18,6 +18,7 @@ import { featureDuration } from "../../lib/featureDuration";
 import { useDecision } from "../decisions";
 import type { Feature } from "../../lib/types";
 import { ResourcesPanel } from "./ResourcesPanel";
+import { LastingEffects } from "./LastingEffects";
 import { CombatPanel } from "./CombatTracker";
 import { FeatureDetail, FeatureRolls } from "./FeaturesTab";
 import { EFFECTS, activateEffect, activeRollBonus, roundsLeft } from "../../lib/combat";
@@ -67,6 +68,7 @@ export function ActionsTab({ c, update, endedEffects }: { c: Character; update: 
           </div>
           <Vital label="Speed" value={`${speed(c)} ft`} />
         </div>
+        <LastingEffects c={c} update={update} />
         {(c.concentration || c.conditions.length > 0 || c.exhaustion > 0) && (
           <div className="flex flex-wrap gap-2 text-xs">
             {c.concentration && <span className="chip border-arcane-500 text-arcane-400">◎ {c.concentration.name}</span>}

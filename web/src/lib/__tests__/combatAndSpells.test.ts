@@ -69,3 +69,49 @@ describe("creature initiative reminders", () => {
     expect(reminders(c).find((r) => r.source === "Drake")?.text).toMatch(/shares your initiative/);
   });
 });
+
+describe("Mage Armor and AC effects", () => {
+  const leather = { id: "la", name: "Leather Armor", qty: 1, weight: 10, equipped: true, notes: "", data: { armor: { base: 11, type: "light" as const } } };
+  const base = () => {
+    const c = warlock([]);
+    c.acMode = "auto";
+    c.abilities.dex = 14;
+    return c;
+  };
+  it("sets AC to 13 + Dex while unarmored", async () => {
+    const { armorClassBreakdown } = await import("../rules");
+    const c = base();
+    expect(armorClassBreakdown(c).total).toBe(12);
+    c.lastingEffects = [{ id: "m", name: "Mage Armor" }];
+    expect(armorClassBreakdown(c).total).toBe(15);
+  });
+  it("does nothing over worn armor", async () => {
+    const { armorClassBreakdown } = await import("../rules");
+    const c = base();
+    c.equipment = [leather];
+    c.lastingEffects = [{ id: "m", name: "Mage Armor" }];
+    expect(armorClassBreakdown(c).total).toBe(13);
+  });
+  it("adds Shield's +5 while it lasts", async () => {
+    const { armorClassBreakdown } = await import("../rules");
+    const { startCombat } = await import("../combat");
+    const c = base();
+    startCombat(c);
+    c.combat!.effects.push({ id: "s", name: "Shield", source: "spell", startedRound: 1, rounds: null, untilNextTurn: true, reminders: [] });
+    expect(armorClassBreakdown(c).total).toBe(17);
+  });
+  it("a long rest ends it", async () => {
+    const { applyRest } = await import("../../components/sheet/RestDialog");
+    const c = base();
+    c.lastingEffects = [{ id: "m", name: "Mage Armor" }];
+    applyRest(c, "long");
+    expect(c.lastingEffects).toEqual([]);
+  });
+  it("calls a familiar a familiar, whatever its form", async () => {
+    const { reminders, startCombat } = await import("../combat");
+    const c = base();
+    c.companions = [{ id: "o", name: "Owl", kind: "", ac: 11, hp: { max: 1, current: 1 }, speed: "5 ft", notes: "", role: "familiar" }];
+    startCombat(c);
+    expect(reminders(c).find((r) => r.source === "Owl")?.text).toMatch(/^Your familiar \(Owl\): roll its initiative/);
+  });
+});

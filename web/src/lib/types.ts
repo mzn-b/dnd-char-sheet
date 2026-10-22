@@ -471,6 +471,8 @@ export interface Character {
   resourcesUsed?: Record<string, number>;
   /** The spell currently being concentrated on. */
   concentration?: { name: string; spellId?: string } | null;
+  /** Spells still in effect outside combat that change the sheet (Mage Armor); a long rest ends them. */
+  lastingEffects?: { id: string; name: string }[];
   senses?: string;
   journal?: JournalEntry[];
   companions?: Companion[];

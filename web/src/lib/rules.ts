@@ -335,6 +335,16 @@ export interface AcBreakdown {
 }
 
 /** AC from equipped armor and shield, Unarmored Defense, the Defense style and misc bonuses. */
+/** Spells cast on yourself that change the sheet while they last (Mage Armor, 8 hours). */
+export const LASTING_SPELLS = /^mage armor$/i;
+
+/** Whether a spell or feature effect is active, in or out of combat. */
+export const effectActive = (c: Character, name: string) =>
+  [...(c.lastingEffects ?? []), ...(c.combat?.effects ?? [])].some((e) => e.name.toLowerCase() === name.toLowerCase());
+
+/** In-combat effects that raise AC while active (PHB). */
+const AC_EFFECTS: [string, number][] = [["Shield", 5], ["Shield of Faith", 2], ["Haste", 2]];
+
 export function armorClassBreakdown(c: Character): AcBreakdown {
   const form = wildShapeForm(c);
   if (form) {
@@ -360,6 +370,8 @@ export function armorClassBreakdown(c: Character): AcBreakdown {
     if (unarmored === "barbarian") options.push([10 + dex + abilityMod(c, "con"), ["Unarmored Defense 10", `Dex ${fmt(dex)}`, `Con ${fmt(abilityMod(c, "con"))}`]]);
     if (unarmored === "monk" && !shield) options.push([10 + dex + abilityMod(c, "wis"), ["Unarmored Defense 10", `Dex ${fmt(dex)}`, `Wis ${fmt(abilityMod(c, "wis"))}`]]);
     if (c.classes.some((k) => /draconic/i.test(k.subclass?.name ?? ""))) options.push([13 + dex, ["Draconic Resilience 13", `Dex ${fmt(dex)}`]]);
+    // Mage Armor: 13 + Dex while you aren't wearing armor (a shield is fine).
+    if (effectActive(c, "Mage Armor")) options.push([13 + dex, ["Mage Armor 13", `Dex ${fmt(dex)}`]]);
     const best = options.sort((a, b) => b[0] - a[0])[0];
     total = best[0];
     parts.push(...best[1]);
@@ -371,6 +383,11 @@ export function armorClassBreakdown(c: Character): AcBreakdown {
   for (const m of modifiersFor(c, "ac", ...(armor ? ["ac:armored"] : []))) {
     total += m.value;
     parts.push(`${m.source} ${fmt(m.value)}`);
+  }
+  for (const [name, bonus] of AC_EFFECTS) {
+    if (!c.combat?.effects.some((e) => e.name.toLowerCase() === name.toLowerCase())) continue;
+    total += bonus;
+    parts.push(`${name} +${bonus}`);
   }
   if (c.acBonus) {
     total += c.acBonus;

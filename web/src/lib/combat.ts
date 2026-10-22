@@ -390,15 +390,17 @@ export function addCompanion(d: Character, p: Companion) {
  */
 function initiativeNote(c: Character, p: Companion): string {
   const has = (re: RegExp) => featureParts(c).some((x) => re.test(x.name));
+  // "Your familiar (Owl)": the form is whatever was chosen; the role is what matters.
+  const named = (role: string) => (p.name && p.name.toLowerCase() !== role ? ` (${p.name})` : "");
   switch (p.role) {
     case "familiar":
-      return `${p.name}: roll its initiative (a familiar acts on its own turn)`;
+      return `Your familiar${named("familiar")}: roll its initiative (a familiar acts on its own turn)`;
     case "steed":
-      return `${p.name}: acts on your initiative while you ride and control it; if it acts independently, roll its initiative`;
+      return `Your steed${named("steed")}: acts on your initiative while you ride and control it; if it acts independently, roll its initiative`;
     case "companion":
-      if (has(/^(drake companion|drakewarden|primal companion)$/i)) return `${p.name}: shares your initiative and takes its turn right after yours`;
-      if (has(/^ranger'?s companion$/i)) return `${p.name}: acts on your turn when you command it (no initiative of its own)`;
-      return `${p.name}: roll its initiative, unless its feature says it shares yours`;
+      if (has(/^(drake companion|drakewarden|primal companion)$/i)) return `Your companion${named("companion")}: shares your initiative and takes its turn right after yours`;
+      if (has(/^ranger'?s companion$/i)) return `Your companion${named("companion")}: acts on your turn when you command it (no initiative of its own)`;
+      return `Your companion${named("companion")}: roll its initiative, unless its feature says it shares yours`;
     default:
       return `${p.name}: roll its initiative (Summon spells instead share yours and act right after you; Conjure spells roll once for the group)`;
   }
