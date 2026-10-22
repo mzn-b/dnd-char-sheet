@@ -382,6 +382,8 @@ export interface BuildSnapshot {
 export interface Character {
   id?: string;
   updatedAt?: string;
+  /** Which version of the rules the sheet was last synced to (see lib/resync.ts). */
+  rulesVersion?: number;
 
   // Page 1 header
   name: string;

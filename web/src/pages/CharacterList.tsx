@@ -1,11 +1,12 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { newCharacter, normalizeCharacter } from "../lib/defaults";
 import { classSummary } from "../lib/rules";
 import type { Character } from "../lib/types";
-import { Spinner } from "../components/ui";
+import { Modal, Spinner } from "../components/ui";
+import { planResync } from "../lib/resync";
 
 export default function CharacterList() {
   const qc = useQueryClient();
@@ -30,6 +31,28 @@ export default function CharacterList() {
     create.mutate({ ...c, name: `${c.name} (copy)` });
   };
 
+  // Resync every character with the current rules data, one at a time, and report what changed.
+  const [resync, setResync] = useState<{ done: number; total: number; results: { name: string; changes: string[]; error?: string }[] } | null>(null);
+  const resyncAll = async () => {
+    if (!data?.length || !confirm(`Resync all ${data.length} characters with the current rules? Choices, spells, items and notes are kept.`)) return;
+    const results: { name: string; changes: string[]; error?: string }[] = [];
+    setResync({ done: 0, total: data.length, results });
+    for (const [i, s] of data.entries()) {
+      try {
+        const c = await api.getCharacter(s.id);
+        const plan = await planResync(c);
+        const next = structuredClone(c);
+        plan.apply(next);
+        await api.saveCharacter(next);
+        results.push({ name: c.name, changes: plan.changes });
+      } catch (e) {
+        results.push({ name: s.name, changes: [], error: (e as Error).message });
+      }
+      setResync({ done: i + 1, total: data.length, results: [...results] });
+    }
+    qc.invalidateQueries({ queryKey: ["characters"] });
+  };
+
   const importFile = async (file: File) => {
     try {
       const { id: _id, updatedAt: _u, ...raw } = JSON.parse(await file.text());
@@ -48,12 +71,39 @@ export default function CharacterList() {
         </div>
         <div className="flex gap-2">
           <input ref={fileInput} type="file" accept="application/json" hidden onChange={(e) => e.target.files?.[0] && importFile(e.target.files[0])} />
+          {!!data?.length && (
+            <button className="btn" onClick={resyncAll} disabled={!!resync && resync.done < resync.total} title="Re-read every character's features and class tables from the current rules data">
+              ⟳ Resync all
+            </button>
+          )}
           <button className="btn" onClick={() => fileInput.current?.click()}>Import JSON</button>
           <button className="btn" onClick={() => create.mutate(newCharacter())} disabled={create.isPending} title="Blank sheet: fill everything in yourself">Blank sheet</button>
           <button className="btn-primary" onClick={() => navigate("/new")}>+ Create character</button>
         </div>
       </div>
 
+      {resync && (
+        <Modal
+          title={resync.done < resync.total ? `Resyncing… ${resync.done}/${resync.total}` : "Resync complete"}
+          onClose={() => resync.done >= resync.total && setResync(null)}
+          footer={<button className="btn-primary" disabled={resync.done < resync.total} onClick={() => setResync(null)}>Done</button>}
+        >
+          <div className="space-y-3 text-sm">
+            {resync.results.map((r, i) => (
+              <div key={i}>
+                <p className="font-display text-ink-200">{r.name}</p>
+                {r.error ? (
+                  <p className="text-blood-500">Failed: {r.error}</p>
+                ) : r.changes.length ? (
+                  <ul className="list-disc pl-5 text-ink-400">{r.changes.map((ch, j) => <li key={j}>{ch}</li>)}</ul>
+                ) : (
+                  <p className="text-ink-600">Already up to date.</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
       {isLoading && <Spinner />}
       {error && <p className="text-blood-500">Couldn't reach the server: {(error as Error).message}</p>}
       {data?.length === 0 && (

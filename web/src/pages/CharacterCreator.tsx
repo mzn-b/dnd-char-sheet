@@ -16,6 +16,7 @@ import { BookPicker } from "../components/BookPicker";
 import { BooksContext, useBookFilter } from "../lib/books";
 import { ChoiceList, unfinishedChoices } from "../components/ChoicePicker";
 import { ContentBrowser, contentId } from "../components/ContentBrowser";
+import { RULES_VERSION } from "../lib/resync";
 import { NumberField, Section, Spinner, TextArea, TextField } from "../components/ui";
 
 type Step = "start" | "race" | "background" | "abilities" | "classes" | "equipment" | "details" | "review";
@@ -201,6 +202,7 @@ export default function CharacterCreator() {
       }
       // Each planned class level becomes a queued level-up, first class first.
       c.pendingLevelUps = rows.flatMap((r) => (r.cls ? Array.from({ length: r.levels }, () => ({ source: r.cls!.source, key: r.cls!.key, name: r.cls!.name })) : []));
+      c.rulesVersion = RULES_VERSION;
       const saved = await api.createCharacter(c);
       navigate(`/characters/${saved.id}`);
     } catch (e) {

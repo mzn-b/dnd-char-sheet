@@ -4,7 +4,7 @@ import { api } from "../lib/api";
 import { withRequired } from "../lib/apply";
 import { FEAT_ID, FEAT_PREFIX, choiceShown, featSelections } from "../lib/grants";
 import { featPrereqProblem } from "../lib/prereqs";
-import { totalLevel } from "../lib/rules";
+import { SKILLS, totalLevel } from "../lib/rules";
 import type { Character, Choice, ChoiceOption, ContentDetail, ContentSummary, ContentType, Selections } from "../lib/types";
 import { ContentBrowser, ContentDetailView, contentId } from "./ContentBrowser";
 import { Markdown, Modal, Spinner } from "./ui";
@@ -89,7 +89,7 @@ export function ChoicePicker({
                 onClick={() => toggle(o.key)}
                 className={`rounded-lg border px-2.5 py-1 text-sm transition disabled:opacity-40 ${on ? "border-accent-500 bg-accent-500/15 text-accent-400" : "border-ink-700 hover:border-ink-600"}`}
               >
-                {o.name}<span className="text-xs text-ink-600">{hint}</span>
+                {o.name}{skillAbility(choice, o.key) && <span className="ml-1 text-xs text-ink-400">({skillAbility(choice, o.key)})</span>}<span className="text-xs text-ink-600">{hint}</span>
               </button>
             );
           })}
@@ -154,6 +154,13 @@ function OptionDetail({ option }: { option: ChoiceOption }) {
       <Markdown text={option.description || data?.description || (fetchable ? "" : "_No description._")} />
     </div>
   );
+}
+
+/** "WIS" for a skill option (Perception), so the player sees which ability it uses. */
+function skillAbility(choice: Choice, key: string): string | undefined {
+  const skill = choice.kind === "skill" || choice.kind === "expertise" ? key : key.startsWith("skill:") ? key.slice(6) : undefined;
+  const ability = skill && SKILLS.find((s) => s.key === skill)?.ability;
+  return ability ? ability.toUpperCase() : undefined;
 }
 
 /** All choices of one piece of content, with a shared selections object. */

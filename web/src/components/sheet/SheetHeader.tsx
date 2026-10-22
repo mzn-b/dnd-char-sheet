@@ -9,6 +9,8 @@ import { Modal, NumberField, TextField } from "../ui";
 import { RuleOptionsEditor } from "../RuleOptions";
 import { BookPicker } from "../BookPicker";
 import { LevelDownDialog } from "../levelup/LevelDownDialog";
+import { needsResync } from "../../lib/resync";
+import { ResyncDialog } from "./ResyncDialog";
 
 export function SheetHeader({
   c, update, saveState, onLevelUp, restButtons,
@@ -17,6 +19,7 @@ export function SheetHeader({
   const [editingClasses, setEditingClasses] = useState(false);
   const [editingRules, setEditingRules] = useState(false);
   const [levelingDown, setLevelingDown] = useState(false);
+  const [resyncing, setResyncing] = useState(false);
   const level = totalLevel(c);
   const milestone = c.progression === "milestone";
   const [xpGain, setXpGain] = useState("");
@@ -96,6 +99,15 @@ export function SheetHeader({
         <div className="flex flex-wrap justify-end gap-2">
           {restButtons}
           <button className="btn" title="Optional rules for this character" onClick={() => setEditingRules(true)}>⚙ Rules</button>
+          {level > 0 && (
+            <button
+              className={needsResync(c) ? "btn border-accent-500 text-accent-400" : "btn"}
+              title={needsResync(c) ? "The rules data has been updated since this sheet was last synced" : "Re-read features and class tables from the current rules data"}
+              onClick={() => setResyncing(true)}
+            >
+              ⟳ Resync{needsResync(c) && <span className="ml-1 inline-block h-2 w-2 rounded-full bg-accent-400 align-middle" />}
+            </button>
+          )}
           {level > 1 && (
             <button className="btn" title="Undo the most recent level-up" onClick={() => setLevelingDown(true)}>▼ Level down</button>
           )}
@@ -108,6 +120,7 @@ export function SheetHeader({
         </span>
       </div>
 
+      {resyncing && <ResyncDialog c={c} update={update} onClose={() => setResyncing(false)} />}
       {levelingDown && <LevelDownDialog c={c} update={update} onClose={() => setLevelingDown(false)} />}
       {editingRules && (
         <Modal title="Optional rules" onClose={() => setEditingRules(false)} footer={<button className="btn-primary" onClick={() => setEditingRules(false)}>Done</button>}>
