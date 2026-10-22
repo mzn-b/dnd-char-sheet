@@ -34,12 +34,15 @@ spec:
             exec:
               command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
             periodSeconds: 5
+          # Only the pod template changes here; the data lives on the "data" volume claim, which survives the
+          # pod being recreated. (Don't edit volumeClaimTemplates: they can't be changed on an existing StatefulSet.)
           resources:
             requests:
-              cpu: 50m
-              memory: 128Mi
+              cpu: 250m
+              memory: 256Mi
             limits:
-              memory: 512Mi
+              cpu: "1"
+              memory: 2Gi
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
