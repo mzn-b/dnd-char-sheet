@@ -733,7 +733,8 @@ function itemDetail(ds: Dataset, it: any): ContentDetail {
     Weight: it.weight != null ? `${it.weight} lb` : undefined,
     Damage: it.dmg1 ? `${it.dmg1} ${DMG[it.dmgType] ?? ""}`.trim() : undefined,
     AC: it.ac ? `${it.ac}${type === "LA" ? " + Dex" : type === "MA" ? " + Dex (max 2)" : ""}` : undefined,
-    Properties: [...(it.property ?? []).map((p: any) => PROPS[String(p.uid ?? p).split("|")[0]] ?? p), it.dmg2 && `versatile (${it.dmg2})`]
+    // "Versatile (1d10)" rather than "Versatile, versatile (1d10)".
+    Properties: [...(it.property ?? []).map((p: any) => PROPS[String(p.uid ?? p).split("|")[0]] ?? p).map((p: string) => (p === "Versatile" && it.dmg2 ? `Versatile (${it.dmg2})` : p))]
       .filter(Boolean)
       .join(", ") || undefined,
   };

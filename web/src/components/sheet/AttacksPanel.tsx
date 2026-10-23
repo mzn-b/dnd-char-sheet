@@ -11,6 +11,7 @@ import type { Update } from "../../lib/useCharacter";
 import { NumberField, Section, TextField } from "../ui";
 import { d20, withBonus } from "../../lib/dice";
 import { attackAbility, blankAttackFields } from "../../lib/attacks";
+import { ItemDescription } from "../ItemDescription";
 import { activeRollBonus } from "../../lib/combat";
 import { RollButton, useRoll } from "../dice";
 
@@ -211,6 +212,11 @@ export function AttacksPanel({ c, update }: { c: Character; update: Update }) {
                   </select>
                 </label>
                 {attackHint(c, a) && <p className="col-span-full whitespace-pre-line text-xs text-emerald-400">Automatic: {attackHint(c, a)}</p>}
+                {weaponItem(c, a) && (
+                  <div className="col-span-full rounded-lg border border-ink-800 bg-ink-900/60 px-3 py-2">
+                    <ItemDescription item={weaponItem(c, a)!} />
+                  </div>
+                )}
                 <label className="col-span-full space-y-0.5"><span className="label">Notes</span><TextField className="field-boxed" value={a.notes} placeholder="Versatile (1d10), finesse…" onChange={(v) => edit(a.id, { notes: v })} /></label>
                 <button className="btn-danger col-span-full justify-self-end py-0.5 text-xs" onClick={() => update((d) => void (d.attacks = d.attacks.filter((x) => x.id !== a.id)))}>Remove</button>
               </div>

@@ -9,6 +9,8 @@ import { infuse, infusedCount, infusionBonuses, infusionRule, isArtificerFocusTo
 import type { Character, ContentSummary, Item, PackItem } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
 import { ContentDetailView, ContentPicker } from "../ContentBrowser";
+import { ItemDescription } from "../ItemDescription";
+import { ancestors, contentsWeight, inventoryTree, isContainer, isWeightless, moveItem } from "../../lib/containers";
 import { Modal, NumberField, Pips, Section, TextField } from "../ui";
 
 const COINS = ["cp", "sp", "ep", "gp", "pp"] as const;
@@ -24,6 +26,24 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
   const [picking, setPicking] = useState(false);
   const [viewing, setViewing] = useState<Item | null>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
+  // Containers whose contents are hidden, the item being dragged and where it would land.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [drop, setDrop] = useState<{ id: string | null; where: "before" | "after" | "into" } | null>(null);
+  const rows = inventoryTree(c.equipment, collapsed);
+  const toggleCollapsed = (id: string) => setCollapsed((o) => { const n = new Set(o); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  /** Top quarter: before; bottom quarter: after; the middle of a container: into it. */
+  const dropZone = (e: React.DragEvent, item: Item): "before" | "after" | "into" => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const y = (e.clientY - r.top) / r.height;
+    if (isContainer(item)) return y < 0.25 ? "before" : y > 0.75 ? "after" : "into";
+    return y < 0.5 ? "before" : "after";
+  };
+  const finishDrop = (targetId: string | null, where: "before" | "after" | "into") => {
+    if (dragId) update((d) => moveItem(d, dragId, targetId, where));
+    setDragId(null);
+    setDrop(null);
+  };
   const toggleOpen = (id: string) => setOpen((o) => { const n = new Set(o); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const load = carrying(c);
   const totalWeight = load.weight;
@@ -74,14 +94,20 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
         return det ? { ...itemFromDetail(det, e.qty), name: e.name } : { id: uid(), name: e.name, qty: e.qty, weight: 0, equipped: false, notes: "" };
       }),
     );
+    // The pack's own backpack (if it has one) holds the rest; it stays a separate bag even if you have one.
+    const bag = items.find((it) => isContainer(it));
     update((d) => {
       const p = d.equipment.find((x) => x.id === pack.id);
       if (!p) return;
       let at = d.equipment.indexOf(p);
       for (const it of items) {
-        const same = d.equipment.find((x) => x.name.toLowerCase() === it.name.toLowerCase() && !x.data?.contents);
+        const same = !isContainer(it) && !bag && d.equipment.find((x) => x.name.toLowerCase() === it.name.toLowerCase() && !x.data?.contents);
         if (same) same.qty += it.qty;
-        else d.equipment.splice(++at, 0, it);
+        else {
+          if (bag && it !== bag) it.containerId = bag.id;
+          else it.containerId = p.containerId;
+          d.equipment.splice(++at, 0, it);
+        }
       }
       if (p.qty > 1) p.qty -= 1;
       else d.equipment = d.equipment.filter((x) => x.id !== p.id);
@@ -132,15 +158,42 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
           <span title="Equipped / worn">Eq</span><span>Item</span><span className="text-center">Qty</span><span className="text-center">Wt</span><span>Notes</span><span />
         </div>
         {c.equipment.length === 0 && <p className="p-2 text-sm text-ink-600">Your pack is empty.</p>}
-        {c.equipment.map((i) => (
-          <div key={i.id} className={`grid ${ROW_COLS} items-center gap-1 rounded px-1 py-0.5 hover:bg-ink-850`}>
+        {rows.map(({ item: i, depth, contents }) => (
+          <div
+            key={i.id}
+            className={`grid ${ROW_COLS} items-center gap-1 rounded px-1 py-0.5 hover:bg-ink-850 ${dragId === i.id ? "opacity-40" : ""} ${
+              drop?.id === i.id ? (drop.where === "into" ? "ring-1 ring-accent-500 bg-accent-500/10" : drop.where === "before" ? "shadow-[inset_0_2px_0_0_var(--color-accent-500)]" : "shadow-[inset_0_-2px_0_0_var(--color-accent-500)]") : ""
+            }`}
+            onDragOver={(e) => {
+              if (!dragId) return;
+              e.preventDefault();
+              const where = dropZone(e, i);
+              if (drop?.id !== i.id || drop.where !== where) setDrop({ id: i.id, where });
+            }}
+            onDrop={(e) => { e.preventDefault(); finishDrop(i.id, dropZone(e, i)); }}
+          >
             <input type="checkbox" className="accent-accent-500" checked={i.equipped} onChange={(e) => toggleEquip(i, e.target.checked)} />
-            <div className="min-w-0">
+            <div className="min-w-0" style={{ paddingLeft: `${depth * 1.25}rem` }}>
               <div className="flex items-center">
-                {isPack(i) && (
+                <span
+                  draggable
+                  className="shrink-0 cursor-grab select-none px-0.5 text-ink-600 hover:text-ink-200 active:cursor-grabbing"
+                  title="Drag to reorder, or drop onto a backpack or pouch to put it inside"
+                  onDragStart={(e) => {
+                    setDragId(i.id);
+                    e.dataTransfer.effectAllowed = "move";
+                    e.dataTransfer.setData("text/plain", i.name);
+                    const row = (e.currentTarget as HTMLElement).closest("[class*='grid-cols']");
+                    if (row) e.dataTransfer.setDragImage(row, 20, 12);
+                  }}
+                  onDragEnd={() => { setDragId(null); setDrop(null); }}
+                >
+                  ⠿
+                </span>
+                {!!i.name && (
                   <button
                     className="btn-ghost shrink-0 px-1 py-0 text-xs text-ink-400"
-                    title={open.has(i.id) ? "Hide contents" : "Show what's inside"}
+                    title={open.has(i.id) ? "Hide details" : isPack(i) ? "Show what's inside" : "Show description"}
                     aria-expanded={open.has(i.id)}
                     onClick={() => toggleOpen(i.id)}
                   >
@@ -148,6 +201,15 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
                   </button>
                 )}
                 <TextField value={i.name} placeholder="Item name" onChange={(v) => edit(i.id, { name: v })} />
+                {isContainer(i) && (
+                  <button
+                    className="chip shrink-0 px-1.5 py-0 text-[10px]"
+                    title={contents ? (collapsed.has(i.id) ? "Show what's inside" : "Hide what's inside") : "Empty: drop items onto this row to put them inside"}
+                    onClick={() => contents && toggleCollapsed(i.id)}
+                  >
+                    {contents ? `${collapsed.has(i.id) ? "▸" : "▾"} ${contents} inside · ${contentsWeight(c.equipment, i.id).toFixed(1)} lb${isWeightless(i) ? " (weightless)" : ""}` : "empty"}
+                  </button>
+                )}
               </div>
               {genericOptions(i.name) && !i.ref && (
                 <select
@@ -205,9 +267,23 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
               <button className="btn-ghost px-1.5 py-0.5 text-[11px]" title="Create an attack from this item" onClick={() => makeAttack(i)}>+Atk</button>
               <button className="btn-ghost px-1.5 py-0.5 text-xs hover:text-blood-500" title="Remove" onClick={() => update((d) => void (d.equipment = d.equipment.filter((x) => x.id !== i.id)))}>✕</button>
             </div>
+            {open.has(i.id) && (
+              <div className="col-span-full mb-1 ml-10 rounded-lg border border-ink-800 bg-ink-900/60 px-3 py-2">
+                <ItemDescription item={i} />
+              </div>
+            )}
             {isPack(i) && open.has(i.id) && <PackContents item={i} edit={edit} onUnpack={unpack} />}
           </div>
         ))}
+        {dragId && (
+          <div
+            className={`mt-1 rounded border border-dashed px-2 py-1 text-center text-xs ${drop?.id === null ? "border-accent-500 text-accent-400" : "border-ink-700 text-ink-600"}`}
+            onDragOver={(e) => { e.preventDefault(); if (drop?.id !== null) setDrop({ id: null, where: "after" }); }}
+            onDrop={(e) => { e.preventDefault(); finishDrop(null, "after"); }}
+          >
+            Drop here to move it to the end (out of any container)
+          </div>
+        )}
         <div className="mt-3 flex flex-wrap justify-end gap-x-4 text-xs text-ink-400">
           {load.mode === "variant" && (
             <span className={load.encumbered ? "text-blood-500" : ""} title={`Encumbered over ${load.light} lb (−10 ft), heavily over ${load.heavy} lb (−20 ft, disadvantage on Str/Dex/Con rolls)`}>
@@ -255,6 +331,30 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
                 Charges
                 <NumberField className="field-boxed w-16" value={viewing.charges?.max ?? 0} min={0} onChange={(n) => { const charges = n ? { max: n, used: Math.min(viewing.charges?.used ?? 0, n) } : undefined; edit(viewing.id, { charges }); setViewing({ ...viewing, charges }); }} />
               </label>
+              {(() => {
+                const now = c.equipment.find((i) => i.id === viewing.id) ?? viewing;
+                // Containers it could go in: not itself or anything inside it.
+                const homes = c.equipment.filter((x) => isContainer(x) && x.id !== now.id && !ancestors(c.equipment, x).some((a) => a.id === now.id));
+                return (
+                  <>
+                    <label className="flex items-center gap-2">
+                      Stored in
+                      <select
+                        className="field-boxed w-auto py-1"
+                        value={now.containerId && homes.some((h) => h.id === now.containerId) ? now.containerId : ""}
+                        onChange={(e) => update((d) => (e.target.value ? moveItem(d, now.id, e.target.value, "into") : moveItem(d, now.id, null, "after")))}
+                      >
+                        <option value="">Not in a container</option>
+                        {homes.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+                      </select>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input type="checkbox" className="accent-accent-500" checked={isContainer(now)} onChange={(e) => edit(now.id, { container: e.target.checked })} />
+                      Holds other items (container)
+                    </label>
+                  </>
+                );
+              })()}
             </div>
           </div>
         </Modal>

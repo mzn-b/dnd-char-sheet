@@ -1,5 +1,6 @@
 import type { Ability, CasterType, Character, ClassEntry, Companion, ProfLevel, SpellModel } from "./types";
 import { featureParts } from "./featureSections";
+import { carriedWeight } from "./containers";
 import { effectiveScore, hasModifier, modifiersFor, sumFor, type Modifier } from "./modifiers";
 
 export const ABILITY_NAMES: Record<Ability, string> = {
@@ -130,7 +131,8 @@ export const hpMaxParts = (c: Character): Modifier[] => {
 /** PHB carrying capacity and the variant encumbrance thresholds. */
 export function carrying(c: Character) {
   const str = abilityScore(c, "str");
-  const weight = c.equipment.reduce((s, i) => s + i.weight * i.qty, 0) + Object.values(c.currency).reduce((s, n) => s + n, 0) / 50;
+  // Contents of a Bag of Holding (and the like) don't count.
+  const weight = carriedWeight(c.equipment) + Object.values(c.currency).reduce((s, n) => s + n, 0) / 50;
   const capacity = str * 15;
   const mode = c.options?.encumbrance ?? "standard";
   const level = mode !== "variant" ? (weight > capacity ? 3 : 0) : weight > str * 10 ? 2 : weight > str * 5 ? 1 : 0;

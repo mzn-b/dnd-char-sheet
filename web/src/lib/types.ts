@@ -251,6 +251,10 @@ export interface Item {
   charges?: { max: number; used: number };
   /** Rules data (armor, weapon stats) captured when the item was added. */
   data?: ItemData;
+  /** The container (another item, e.g. a backpack) this one is in. */
+  containerId?: string;
+  /** Holds other items (set by the player; otherwise guessed from the name). */
+  container?: boolean;
   /** Artificer infusion in this item (Enhanced Weapon…); attunement and charges it added are undone with it. */
   infusion?: { name: string; addedAttunement?: boolean; addedCharges?: boolean };
 }
