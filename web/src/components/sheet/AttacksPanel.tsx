@@ -10,22 +10,27 @@ import { ABILITIES, type Attack, type Character, type Item } from "../../lib/typ
 import type { Update } from "../../lib/useCharacter";
 import { NumberField, Section, TextField } from "../ui";
 import { d20, withBonus } from "../../lib/dice";
-import { blankAttackFields } from "../../lib/attacks";
+import { attackAbility, blankAttackFields } from "../../lib/attacks";
 import { activeRollBonus } from "../../lib/combat";
 import { RollButton, useRoll } from "../dice";
 
 const sum = (mods: { value: number }[]) => mods.reduce((s, m) => s + m.value, 0);
 
 /** To-hit: ability + proficiency + typed bonus + magic weapon, Archery and other modifiers. */
-export const attackBonus = (c: Character, a: Attack) =>
-  (a.ability === "none" ? 0 : abilityMod(c, a.ability)) + (a.proficient ? profBonus(c) : 0) + a.bonus + sum(attackModifiers(c, a).attack);
+const abilityPart = (c: Character, a: Attack) => {
+  const ab = attackAbility(c, a).ability;
+  return ab === "none" ? 0 : abilityMod(c, ab);
+};
 
-export const damageBonus = (c: Character, a: Attack) => (a.ability === "none" ? 0 : abilityMod(c, a.ability)) + sum(attackModifiers(c, a).damage);
+export const attackBonus = (c: Character, a: Attack) =>
+  abilityPart(c, a) + (a.proficient ? profBonus(c) : 0) + a.bonus + sum(attackModifiers(c, a).attack);
+
+export const damageBonus = (c: Character, a: Attack) => abilityPart(c, a) + sum(attackModifiers(c, a).damage);
 
 /** Tooltip text naming the automatic bonuses on an attack. */
 export const attackHint = (c: Character, a: Attack) => {
   const m = attackModifiers(c, a);
-  return [m.attack.length ? `To hit: ${describe(m.attack)}` : "", m.damage.length ? `Damage: ${describe(m.damage)}` : ""].filter(Boolean).join("\n") || undefined;
+  return [attackAbility(c, a).reason ?? "", m.attack.length ? `To hit: ${describe(m.attack)}` : "", m.damage.length ? `Damage: ${describe(m.damage)}` : ""].filter(Boolean).join("\n") || undefined;
 };
 
 /** To-hit and damage roll buttons. Damage doubles its dice if the last roll was a crit with this attack. */
@@ -160,8 +165,9 @@ export function AttacksPanel({ c, update }: { c: Character; update: Update }) {
                   <TextField value={a.name} placeholder="Longsword" onChange={(v) => edit(a.id, { name: v })} onClick={(e) => e.preventDefault()} />
                 </span>
                 <select
-                  className="field bg-ink-850 text-xs uppercase"
-                  value={a.ability}
+                  className={`field bg-ink-850 text-xs uppercase ${attackAbility(c, a).reason ? "text-arcane-400" : ""}`}
+                  title={attackAbility(c, a).reason}
+                  value={attackAbility(c, a).ability}
                   onClick={(e) => e.preventDefault()}
                   onChange={(e) => edit(a.id, { ability: e.target.value as Attack["ability"] })}
                 >

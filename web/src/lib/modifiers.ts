@@ -214,6 +214,13 @@ export function weaponItem(c: Character, a: Attack): Item | undefined {
   return (a.itemId && c.equipment.find((i) => i.id === a.itemId)) || c.equipment.find((i) => !!i.data?.weapon && i.name.toLowerCase() === a.name.toLowerCase().trim());
 }
 
+/** A magic weapon: infused, a rarity above mundane, or a magic bonus of its own (+1 Longsword). */
+export function isMagicWeapon(i: Item | undefined) {
+  if (!i) return false;
+  const rarity = (i.data?.rarity ?? "").toLowerCase();
+  return !!i.infusion || (!!rarity && !/^(none|mundane|unknown)$/.test(rarity)) || !!i.data?.bonuses?.weaponAttack || /^\+\d/.test(i.name.trim());
+}
+
 export function isRangedAttack(c: Character, a: Attack) {
   return a.ranged ?? weaponItem(c, a)?.data?.weapon?.ranged ?? false;
 }
