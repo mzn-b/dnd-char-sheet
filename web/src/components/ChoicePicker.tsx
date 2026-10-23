@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { withRequired } from "../lib/apply";
 import { FEAT_ID, FEAT_PREFIX, choiceShown, featSelections } from "../lib/grants";
+import { alreadyOwned, mergeOwned, ownedFrom, ownedFromSelections, type Owned } from "../lib/proficiencies";
 import { featPrereqProblem } from "../lib/prereqs";
 import { SKILLS, totalLevel } from "../lib/rules";
 import type { Character, Choice, ChoiceOption, ContentDetail, ContentSummary, ContentType, Selections } from "../lib/types";
@@ -11,7 +12,7 @@ import { Markdown, Modal, Spinner } from "./ui";
 
 /** Pick option(s) for one choice. Feature options get a list + detail pane; simple ones are chips. */
 export function ChoicePicker({
-  choice, selected: selectedIn, onChange, character, taken = [], blocked,
+  choice: choiceIn, selected: selectedIn, onChange, character, taken = [], blocked, owned: ownedIn,
 }: {
   choice: Choice;
   selected: string[];
@@ -21,7 +22,14 @@ export function ChoicePicker({
   character?: Character;
   /** Keys already owned elsewhere (e.g. invocations known), shown but not selectable. */
   taken?: string[];
+  /** Skills and proficiencies already had (defaults to the character's): not offered again. */
+  owned?: Owned;
 }) {
+  // Languages, tools, weapons and armor already had aren't offered again (a race's Common in its language
+  // pick); skills already had are shown but can't be taken twice.
+  const owned = ownedIn ?? (character ? ownedFrom(character) : undefined);
+  const has = (o: ChoiceOption) => !selectedIn.includes(o.key) && alreadyOwned(owned, choiceIn, o);
+  const choice = choiceIn.kind === "proficiency" ? { ...choiceIn, options: choiceIn.options.filter((o) => !has(o)) } : choiceIn;
   const [focused, setFocused] = useState<ChoiceOption | null>(null);
   const required = choice.required ?? [];
   // Point-style choices repeat keys (+2 = the same score twice), so only merge when there are required options.
@@ -76,16 +84,17 @@ export function ChoicePicker({
         <div className="flex flex-wrap gap-1.5">
           {choice.options.map((o) => {
             const on = selected.includes(o.key);
+            const known = has(o);
             const hint =
               character && choice.kind === "expertise" && character.skills[o.key] != null && character.skills[o.key] < 1 ? " (not proficient)"
-              : character && choice.kind === "skill" && (character.skills[o.key] ?? 0) >= 1 ? " (already proficient)"
+              : known ? " (already proficient)"
               : "";
             return (
               <button
                 key={o.key}
                 type="button"
                 // Expertise needs proficiency in the skill first.
-                disabled={taken.includes(o.key) || (!on && full && choice.count > 1) || (!on && choice.kind === "expertise" && !choice.grantsProficiency && !!character && character.skills[o.key] != null && character.skills[o.key] < 1)}
+                disabled={taken.includes(o.key) || known || (!on && full && choice.count > 1) || (!on && choice.kind === "expertise" && !choice.grantsProficiency && !!character && character.skills[o.key] != null && character.skills[o.key] < 1)}
                 onClick={() => toggle(o.key)}
                 className={`rounded-lg border px-2.5 py-1 text-sm transition disabled:opacity-40 ${on ? "border-accent-500 bg-accent-500/15 text-accent-400" : "border-ink-700 hover:border-ink-600"}`}
               >
@@ -165,15 +174,21 @@ function skillAbility(choice: Choice, key: string): string | undefined {
 
 /** All choices of one piece of content, with a shared selections object. */
 export function ChoiceList({
-  choices, selections, onChange, character, blocked,
-}: { choices: Choice[]; selections: Selections; onChange: (s: Selections) => void; character?: Character; blocked?: (o: ChoiceOption) => string | undefined }) {
+  choices, selections, onChange, character, blocked, owned,
+}: {
+  choices: Choice[]; selections: Selections; onChange: (s: Selections) => void; character?: Character; blocked?: (o: ChoiceOption) => string | undefined;
+  /** What's already had besides the character's own (the other origin step's grants and picks). */
+  owned?: Owned;
+}) {
+  const base = mergeOwned(ownedFrom(character), ...(owned ? [owned] : []));
   return (
     <div className="space-y-4">
       {choices.filter((ch) => choiceShown(ch, selections)).map((ch) => (
         <div key={ch.id}>
-          <ChoicePicker choice={ch} character={character} blocked={blocked} selected={selections[ch.id] ?? []} onChange={(keys) => onChange({ ...selections, [ch.id]: keys })} />
+          {/* What the other choices here picked counts as had too, so the same language isn't taken twice. */}
+          <ChoicePicker choice={ch} character={character} owned={mergeOwned(base, ownedFromSelections(choices, selections, ch.id))} blocked={blocked} selected={selections[ch.id] ?? []} onChange={(keys) => onChange({ ...selections, [ch.id]: keys })} />
           {ch.id === FEAT_ID && withRequired(ch, selections[ch.id] ?? []).map((key) => (
-            <GrantedFeatChoices key={key} option={ch.options.find((o) => o.key === key)} selections={selections} onChange={onChange} character={character} />
+            <GrantedFeatChoices key={key} option={ch.options.find((o) => o.key === key)} selections={selections} onChange={onChange} character={character} owned={mergeOwned(base, ownedFromSelections(choices, selections))} />
           ))}
         </div>
       ))}
@@ -182,7 +197,7 @@ export function ChoiceList({
 }
 
 /** The choices of a feat granted by a race or background (Variant Human's feat), stored with a prefix. */
-function GrantedFeatChoices({ option, selections, onChange, character }: { option?: ChoiceOption; selections: Selections; onChange: (s: Selections) => void; character?: Character }) {
+function GrantedFeatChoices({ option, selections, onChange, character, owned }: { option?: ChoiceOption; selections: Selections; onChange: (s: Selections) => void; character?: Character; owned?: Owned }) {
   const { data } = useQuery({
     queryKey: ["detail", "feat", option?.source, option?.key],
     queryFn: () => api.detail("feat", option!.source!, option!.key),
@@ -198,6 +213,7 @@ function GrantedFeatChoices({ option, selections, onChange, character }: { optio
         choices={data.choices}
         selections={nested}
         character={character}
+        owned={owned}
         onChange={(s) => onChange({ ...Object.fromEntries(Object.entries(selections).filter(([k]) => !k.startsWith(FEAT_PREFIX))), ...Object.fromEntries(Object.entries(s).map(([k, v]) => [FEAT_PREFIX + k, v])) })}
       />
     </div>

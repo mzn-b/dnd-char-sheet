@@ -1,3 +1,4 @@
+import { ProficienciesPanel } from "./ProficienciesPanel";
 import { ABILITY_NAMES, SKILLS, abilityCheckBonus, abilityScore, fmt, passiveScore, profBonus, saveBonus, skillBonus } from "../../lib/rules";
 import { d20 } from "../../lib/dice";
 import { abilityNotes } from "../../lib/abilityNotes";
@@ -125,14 +126,7 @@ export function AbilitiesPanel({ c, update }: { c: Character; update: Update }) 
         <TextArea rows={2} className="field mt-2 resize-y text-sm" placeholder="Darkvision 60 ft, tremorsense…" value={c.senses ?? ""} onChange={(v) => update((d) => void (d.senses = v))} />
       </Section>
 
-      <Section title="Other Proficiencies & Languages">
-        <TextArea
-          rows={5}
-          placeholder="Armor, weapons, tools, languages…"
-          value={c.proficienciesAndLanguages}
-          onChange={(v) => update((d) => void (d.proficienciesAndLanguages = v))}
-        />
-      </Section>
+      <ProficienciesPanel c={c} update={update} />
     </div>
   );
 }

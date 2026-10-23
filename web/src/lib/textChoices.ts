@@ -1,4 +1,5 @@
 import { SKILLS } from "./rules";
+import { ARTISANS_TOOLS, parseProficiencies, profKey } from "./proficiencies";
 import type { Ability, Choice, Effect } from "./types";
 
 /**
@@ -77,13 +78,8 @@ export function textChoices(description: string): Choice[] {
 
 /** Whether a character has a tool proficiency (in its proficiency lines). */
 export const hasToolProficiency = (proficiencies: string, tool: string) =>
-  proficiencies.toLowerCase().split(/\n|[,;:]/).some((x) => x.trim() === tool.toLowerCase());
+  parseProficiencies(proficiencies).byCategory.Tools.some((x) => profKey(x) === profKey(tool));
 
-const ARTISANS_TOOLS = [
-  "Alchemist's supplies", "Brewer's supplies", "Calligrapher's supplies", "Carpenter's tools", "Cartographer's tools", "Cobbler's tools",
-  "Cook's utensils", "Glassblower's tools", "Jeweler's tools", "Leatherworker's tools", "Mason's tools", "Painter's supplies", "Potter's tools",
-  "Smith's tools", "Tinker's tools", "Weaver's tools", "Woodcarver's tools",
-];
 
 /** A feature's choices plus any found in its text, without duplicating a kind the data already offers. */
 export function withTextChoices(choices: Choice[] | undefined, description: string): Choice[] {

@@ -15,6 +15,7 @@ import { RuleOptionsEditor } from "../components/RuleOptions";
 import { BookPicker, CORE_BOOKS } from "../components/BookPicker";
 import { BooksContext, useBookFilter } from "../lib/books";
 import { ChoiceList, unfinishedChoices } from "../components/ChoicePicker";
+import { mergeOwned, ownedFromEffects, ownedFromSelections, type Owned } from "../lib/proficiencies";
 import { ContentBrowser, contentId } from "../components/ContentBrowser";
 import { RULES_VERSION } from "../lib/resync";
 import { NumberField, Section, Spinner, TextArea, TextField } from "../components/ui";
@@ -262,10 +263,10 @@ export default function CharacterCreator() {
         )}
 
         {step === "race" && (
-          <OriginStep type="race" picked={race} detail={raceDetail} selections={raceSel} onPick={(r) => { setRace(r); setRaceSel({}); setOriginMap({}); }} onSelections={setRaceSel} />
+          <OriginStep type="race" picked={race} detail={raceDetail} selections={raceSel} owned={originOwned(raceDetail, bgDetail, bgSel)} onPick={(r) => { setRace(r); setRaceSel({}); setOriginMap({}); }} onSelections={setRaceSel} />
         )}
         {step === "background" && (
-          <OriginStep type="background" picked={background} detail={bgDetail} selections={bgSel} onPick={(b) => { setBackground(b); setBgSel({}); }} onSelections={setBgSel} />
+          <OriginStep type="background" picked={background} detail={bgDetail} selections={bgSel} owned={originOwned(bgDetail, raceDetail, raceSel)} onPick={(b) => { setBackground(b); setBgSel({}); }} onSelections={setBgSel} />
         )}
 
         {step === "abilities" && (
@@ -530,13 +531,22 @@ function racialBonuses(detail: ContentDetail | undefined, sel: Selections): Part
   return out;
 }
 
+/**
+ * What an origin step's choices shouldn't offer again: its own fixed grants (a race's Common), and the other
+ * step's grants and picks (a background's skills when picking the race's, and the other way round).
+ */
+function originOwned(self: ContentDetail | undefined, other: ContentDetail | undefined, otherSel: Selections): Owned {
+  return mergeOwned(ownedFromEffects(self?.effects), ownedFromEffects(other?.effects), ownedFromSelections(other?.choices, otherSel));
+}
+
 function OriginStep({
-  type, picked, detail, selections, onPick, onSelections,
+  type, picked, detail, selections, owned, onPick, onSelections,
 }: {
   type: "race" | "background";
   picked: ContentSummary | null;
   detail: ContentDetail | undefined;
   selections: Selections;
+  owned: Owned;
   onPick: (c: ContentSummary | null) => void;
   onSelections: (s: Selections) => void;
 }) {
@@ -546,7 +556,7 @@ function OriginStep({
       {picked && !detail && <Spinner />}
       {detail?.choices?.length ? (
         <Section title={`${detail.name}: your choices`}>
-          <ChoiceList choices={detail.choices} selections={selections} onChange={onSelections} />
+          <ChoiceList choices={detail.choices} selections={selections} owned={owned} onChange={onSelections} />
         </Section>
       ) : null}
     </div>
