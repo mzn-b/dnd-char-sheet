@@ -36,8 +36,11 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
   const setInfusion = (id: string, name: string) =>
     update((d) => {
       const it = d.equipment.find((x) => x.id === id)!;
-      if (name) infuse(it, name);
-      else uninfuse(it);
+      if (name) {
+        infuse(it, name);
+        // An infusion that needs attunement does nothing until attuned: attune it now if a slot is free.
+        if (it.attunement && !it.attuned && attunedCount(d) < attunementMax(d)) it.attuned = true;
+      } else uninfuse(it);
     });
   const edit = (id: string, patch: Partial<Item>) => update((d) => void Object.assign(d.equipment.find((i) => i.id === id)!, patch));
 
@@ -165,6 +168,11 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
                   <span className="chip border-arcane-500/60 px-1.5 py-0 text-arcane-400" title={infusionNote(c, i)}>
                     ✧ {i.infusion.name}{/^enhanced arcane focus$/i.test(i.infusion.name) && isArtificerFocusTool(i) ? " (homebrew)" : ""}
                   </span>
+                )}
+                {i.infusion && i.attunement && !i.attuned && (
+                  <button className="chip border-accent-600/60 px-1.5 py-0 text-accent-400" title="This infusion requires attunement and does nothing until you attune to it" onClick={() => edit(i.id, { attuned: true })}>
+                    attune ✦ to activate
+                  </button>
                 )}
                 {i.charges && (
                   <span className="flex items-center gap-1">charges <Pips max={i.charges.max} used={i.charges.used} onChange={(u) => edit(i.id, { charges: { ...i.charges!, used: u } })} /></span>

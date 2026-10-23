@@ -1,6 +1,6 @@
 import { uid } from "./defaults";
 import { featureParts } from "./featureSections";
-import { abilityMod, fmt, profBonus, spellAttack } from "./rules";
+import { abilityMod, fmt, profBonus } from "./rules";
 import type { Character, Companion, MonsterData } from "./types";
 
 /**
@@ -40,7 +40,8 @@ export function steelDefenderBlock(c: Character): MonsterData {
       { name: "Restoring it", text: "If the mending spell is cast on it within an hour of its death, it returns to life after 1 minute with all its hit points. At the end of a long rest you can create a new one; if you already have one, the first one perishes. You can also create one with an action and a spell slot of 1st level or higher." },
     ],
     actions: [
-      { name: "Force-Empowered Rend", text: `Melee Weapon Attack: ${fmt(spellAttack(c, "int"))} to hit, reach 5 ft., one target you can see. Hit: 1d8 + ${pb} force damage.` },
+      // "Your spell attack modifier": proficiency + Intelligence (a focus's bonus is for your own spell attack rolls).
+      { name: "Force-Empowered Rend", text: `Melee Weapon Attack: ${fmt(pb + int)} to hit, reach 5 ft., one target you can see. Hit: 1d8 + ${pb} force damage.` },
       { name: "Repair (3/Day)", text: `The magical mechanisms inside the defender restore 2d8 + ${pb} hit points to itself or to one construct or object within 5 feet of it.` },
     ],
     bonusActions: [],
