@@ -5,7 +5,7 @@ import { attackFromItem, itemFromDetail, resolveItem } from "../../lib/items";
 import { genericOptions } from "../../lib/genericItems";
 import { attunedCount, attunementMax, carrying } from "../../lib/rules";
 import { itemActive, targetLabel } from "../../lib/modifiers";
-import { infuse, infusedCount, infusionRule, knownInfusions, maxInfusedItems, uninfuse } from "../../lib/infusions";
+import { infuse, infusedCount, infusionBonuses, infusionRule, isArtificerFocusTool, knownInfusions, maxInfusedItems, uninfuse } from "../../lib/infusions";
 import type { Character, ContentSummary, Item, PackItem } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
 import { ContentDetailView, ContentPicker } from "../ContentBrowser";
@@ -161,7 +161,11 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
                 {i.data?.armor && <span className="chip px-1.5 py-0">{i.data.armor.type === "shield" ? `+${i.data.armor.base} AC` : `AC ${i.data.armor.base} ${i.data.armor.type}`}</span>}
                 {i.data?.weapon && <span className="chip px-1.5 py-0">{i.data.weapon.damage} {i.data.weapon.damageType}</span>}
                 {i.data?.rarity && <span className="chip px-1.5 py-0 capitalize">{i.data.rarity}</span>}
-                {i.infusion && <span className="chip border-arcane-500/60 px-1.5 py-0 text-arcane-400" title="Artificer infusion">✧ {i.infusion.name}</span>}
+                {i.infusion && (
+                  <span className="chip border-arcane-500/60 px-1.5 py-0 text-arcane-400" title={infusionNote(c, i)}>
+                    ✧ {i.infusion.name}{/^enhanced arcane focus$/i.test(i.infusion.name) && isArtificerFocusTool(i) ? " (homebrew)" : ""}
+                  </span>
+                )}
                 {i.charges && (
                   <span className="flex items-center gap-1">charges <Pips max={i.charges.max} used={i.charges.used} onChange={(u) => edit(i.id, { charges: { ...i.charges!, used: u } })} /></span>
                 )}
@@ -172,7 +176,7 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
             <TextField value={i.notes} placeholder="—" onChange={(v) => edit(i.id, { notes: v })} />
             <div className="flex justify-end gap-0.5">
               {infusions.length > 0 && (
-                <InfuseMenu item={i} known={infusions.map((x) => x.name)} full={infused >= infusedMax} onPick={(name) => setInfusion(i.id, name)} />
+                <InfuseMenu c={c} item={i} known={infusions.map((x) => x.name)} full={infused >= infusedMax} onPick={(name) => setInfusion(i.id, name)} />
               )}
               {i.attunement && (
                 <button
@@ -251,8 +255,16 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
   );
 }
 
+/** What an infusion is doing for its item right now, for the chip's tooltip. */
+function infusionNote(c: Character, i: Item) {
+  const b = infusionBonuses(c, i);
+  const what = [b?.spellAttack && `+${b.spellAttack} to spell attack rolls, ignoring half cover`, b?.weaponAttack && `+${b.weaponAttack} to attack and damage`, b?.ac && `+${b.ac} AC`].filter(Boolean).join("; ");
+  const waiting = i.attunement && !i.attuned ? " — attune (✦) for it to work" : "";
+  return `Artificer infusion${what ? `: ${what}` : ""}${waiting}`;
+}
+
 /** Put a known infusion into an item (only ones it can hold), or take it out. */
-function InfuseMenu({ item, known, full, onPick }: { item: Item; known: string[]; full: boolean; onPick: (name: string) => void }) {
+function InfuseMenu({ c, item, known, full, onPick }: { c: Character; item: Item; known: string[]; full: boolean; onPick: (name: string) => void }) {
   const [open, setOpen] = useState(false);
   const pick = (name: string) => {
     onPick(name);
@@ -272,7 +284,7 @@ function InfuseMenu({ item, known, full, onPick }: { item: Item; known: string[]
           <div className="px-2 py-1 text-ink-400">Infuse {item.name || "this item"}</div>
           {known.map((name) => {
             const rule = infusionRule(name);
-            const fits = !rule || rule.fits(item);
+            const fits = !rule || rule.fits(item, c);
             const current = item.infusion?.name === name;
             const blocked = !fits || (full && !item.infusion);
             return (

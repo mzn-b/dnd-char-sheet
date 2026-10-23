@@ -70,7 +70,9 @@ function itemModifiers(c: Character): Modifier[] {
     const inf = infusionBonuses(c, i);
     const own = i.data?.bonuses;
     const b: ItemBonuses | undefined = own || inf ? sumBonuses(own, inf) : undefined;
-    if (!b || !itemActive(i)) continue;
+    // A spellcasting focus is held when you cast, not worn: an Enhanced Arcane Focus counts once attuned.
+    const focus = !!i.infusion && /^enhanced arcane focus$/i.test(i.infusion.name) && (!i.attunement || !!i.attuned);
+    if (!b || (!itemActive(i) && !focus)) continue;
     const add = (target: string, value: number | undefined, extra: Partial<Modifier> = {}) => {
       if (value) out.push({ id: `item:${i.id}:${target}`, target, value, source: i.infusion ? `${i.name} (${i.infusion.name})` : i.name, kind: "item", ...extra });
     };
@@ -87,6 +89,7 @@ function itemModifiers(c: Character): Modifier[] {
         add(`abilitySet:${a}`, b.abilitySet?.[a]);
       }
     }
+    if (!i.equipped && focus) add("spellAttack", b.spellAttack, { note: "ignores half cover" });
     add("weaponAttack", b.weaponAttack, { itemId: i.id });
     add("weaponDamage", b.weaponDamage, { itemId: i.id });
   }

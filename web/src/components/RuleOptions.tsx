@@ -34,6 +34,14 @@ export function RuleOptionsEditor({ value, onChange }: { value: RuleOptions; onC
           <option value="off">Don't track</option>
         </select>
       </label>
+      <div className="space-y-2 rounded-lg border border-accent-700/40 p-2">
+        <div className="label text-accent-400">Homebrew (not in the rules as written)</div>
+        <Toggle
+          checked={!!value.toolArcaneFocus}
+          onChange={(b) => set({ toolArcaneFocus: b })}
+          label={<span><b>Tools as an Enhanced Arcane Focus</b> <span className="text-ink-400">— an artificer can infuse the thieves' tools or artisan's tools they cast through (RAW: rod, staff or wand only)</span></span>}
+        />
+      </div>
       <label className="flex flex-wrap items-center gap-2">
         <b>Hit points at level-up</b>
         <select className="field-boxed w-auto" value={value.hpMethod ?? "choose"} onChange={(e) => set({ hpMethod: e.target.value as RuleOptions["hpMethod"] })}>

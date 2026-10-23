@@ -57,3 +57,33 @@ describe("artificer infusions", () => {
     expect(s.charges).toBeUndefined();
   });
 });
+
+describe("Enhanced Arcane Focus", () => {
+  const tools = (): Item => ({ id: "tt", name: "Thieves' Tools", qty: 1, weight: 1, equipped: false, notes: "" });
+  const wand = (): Item => ({ id: "w", name: "Wand", qty: 1, weight: 1, equipped: false, notes: "" });
+  it("goes into a rod, staff or wand; tools only with the homebrew rule", async () => {
+    const { infusionRule } = await import("../infusions");
+    const rule = infusionRule("Enhanced Arcane Focus")!;
+    const c = artificer(2);
+    expect(rule.fits(wand(), c)).toBe(true);
+    expect(rule.fits(tools(), c)).toBe(false);
+    c.options = { toolArcaneFocus: true };
+    expect(rule.fits(tools(), c)).toBe(true);
+    expect(rule.fits({ ...tools(), name: "Smith's tools" }, c)).toBe(true);
+    expect(rule.fits({ ...tools(), name: "Dice set" }, c)).toBe(false);
+  });
+  it("adds to spell attacks once attuned, without being equipped", async () => {
+    const { spellAttack } = await import("../rules");
+    const c = artificer(2);
+    c.options = { toolArcaneFocus: true };
+    const t = tools();
+    c.equipment = [t];
+    const base = spellAttack(fresh(c), "int");
+    infuse(t, "Enhanced Arcane Focus");
+    expect(spellAttack(fresh(c), "int")).toBe(base);
+    t.attuned = true;
+    expect(spellAttack(fresh(c), "int")).toBe(base + 1);
+    c.classes[0].level = 10;
+    expect(spellAttack(fresh(c), "int") - spellAttack(fresh({ ...c, equipment: [] }), "int")).toBe(2);
+  });
+});

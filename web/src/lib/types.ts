@@ -511,6 +511,8 @@ export interface RuleOptions {
   hpMethod?: "choose" | "average" | "roll";
   /** Books (source labels) character options may come from; empty or missing = all enabled books. */
   books?: string[];
+  /** Homebrew: an artificer's tools (their spellcasting focus) can take Enhanced Arcane Focus. Off = RAW (rod, staff or wand). */
+  toolArcaneFocus?: boolean;
 }
 
 export interface CharacterSummary {

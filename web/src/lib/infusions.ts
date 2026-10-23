@@ -1,3 +1,4 @@
+import { ARTISANS_TOOLS, profKey } from "./proficiencies";
 import type { Character, Item, ItemBonuses } from "./types";
 
 /**
@@ -8,7 +9,7 @@ interface InfusionRule {
   match: RegExp;
   /** What it can be put into, for the menu. */
   target: string;
-  fits: (i: Item) => boolean;
+  fits: (i: Item, c?: Character) => boolean;
   attunement?: boolean;
   charges?: number;
   bonuses?: (artificerLevel: number) => ItemBonuses;
@@ -21,10 +22,19 @@ const isShield = (i: Item) => i.data?.armor?.type === "shield";
 const named = (re: RegExp) => (i: Item) => re.test(i.name);
 const plus = (lvl: number) => (lvl >= 10 ? 2 : 1);
 
+/** The tools an artificer can cast through (Tools Required): thieves' tools, tinker's tools or artisan's tools. */
+const ARTIFICER_FOCUS_TOOLS = new Set(["thieves' tools", ...ARTISANS_TOOLS].map(profKey));
+export const isArtificerFocusTool = (i: Item) => ARTIFICER_FOCUS_TOOLS.has(profKey(i.name));
+/** Homebrew rule (character options): Enhanced Arcane Focus in those tools. */
+export const toolFocusHomebrew = (i: Item, c?: Character) => !!c?.options?.toolArcaneFocus && isArtificerFocusTool(i);
+
 export const INFUSIONS: InfusionRule[] = [
   { match: /^enhanced weapon$/i, target: "a simple or martial weapon", fits: isWeapon, bonuses: (l) => ({ weaponAttack: plus(l), weaponDamage: plus(l) }) },
   { match: /^enhanced defense$/i, target: "armor or a shield", fits: (i) => isArmor(i) || isShield(i), bonuses: (l) => ({ ac: plus(l) }) },
-  { match: /^enhanced arcane focus$/i, target: "a rod, staff or wand", fits: named(/\b(rod|staff|wand)\b/i), attunement: true, bonuses: (l) => ({ spellAttack: plus(l) }) },
+  {
+    match: /^enhanced arcane focus$/i, target: "a rod, staff or wand (or your tools, with the homebrew rule on)",
+    fits: (i, c) => /\b(rod|staff|wand)\b/i.test(i.name) || toolFocusHomebrew(i, c), attunement: true, bonuses: (l) => ({ spellAttack: plus(l) }),
+  },
   { match: /^repeating shot$/i, target: "a weapon with the ammunition property", fits: (i) => isWeapon(i) && /ammunition/.test(props(i)), attunement: true, bonuses: () => ({ weaponAttack: 1, weaponDamage: 1 }) },
   { match: /^returning weapon$/i, target: "a weapon with the thrown property", fits: (i) => isWeapon(i) && /thrown/.test(props(i)), bonuses: () => ({ weaponAttack: 1, weaponDamage: 1 }) },
   { match: /^radiant weapon$/i, target: "a simple or martial weapon", fits: isWeapon, attunement: true, charges: 4, bonuses: () => ({ weaponAttack: 1, weaponDamage: 1 }) },
