@@ -41,6 +41,9 @@ export function withGrantChoices(d: ContentDetail, allFeats?: ContentSummary[]):
   return out;
 }
 
+/** Choices that can be made by this character level (race options picked later, like Celestial Revelation). */
+export const choicesUpTo = (choices: Choice[] | undefined, level: number) => (choices ?? []).filter((ch) => !ch.level || ch.level <= level);
+
 /** Whether a choice applies given the other picks (a Magic Initiate class's spells only once that class is picked). */
 export const choiceShown = (ch: Choice, selections: Selections) => !ch.when || (selections[ch.when.id] ?? []).includes(ch.when.key);
 

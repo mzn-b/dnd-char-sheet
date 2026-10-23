@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { withRequired } from "../lib/apply";
-import { FEAT_ID, FEAT_PREFIX, choiceShown, featSelections } from "../lib/grants";
+import { FEAT_ID, FEAT_PREFIX, choiceShown, choicesUpTo, featSelections } from "../lib/grants";
 import { alreadyOwned, mergeOwned, ownedFrom, ownedFromSelections, type Owned } from "../lib/proficiencies";
 import { featPrereqProblem } from "../lib/prereqs";
 import { SKILLS, totalLevel } from "../lib/rules";
@@ -248,7 +248,9 @@ export function ContentApplyDialog({
     enabled: !!picked,
     staleTime: Infinity,
   });
-  const hasChoices = !!detail?.choices?.length;
+  // Choices made at a later level (Celestial Revelation at 3rd) only once the character is that level.
+  const shownChoices = choicesUpTo(detail?.choices, character ? Math.max(1, totalLevel(character)) : 1);
+  const hasChoices = shownChoices.length > 0;
   const apply = async () => {
     if (!detail) return;
     setBusy(true);
@@ -293,7 +295,7 @@ export function ContentApplyDialog({
               <summary className="cursor-pointer text-sm text-ink-400">Show {detail.name} description</summary>
               <div className="mt-2"><ContentDetailView type={type} item={detail} /></div>
             </details>
-            <ChoiceList choices={detail.choices ?? []} selections={selections} onChange={setSelections} character={character} />
+            <ChoiceList choices={shownChoices} selections={selections} onChange={setSelections} character={character} />
           </div>
         )
       )}

@@ -101,6 +101,8 @@ export interface Choice {
   when?: { id: string; key: string };
   /** Only offered when the character already has this proficiency (artificer specialists' second tool). */
   ifProficient?: string;
+  /** Character level the choice is made at, when later than 1st (Aasimar's Celestial Revelation at 3rd). */
+  level?: number;
   /** Option keys that are always part of the picks (Elemental Attunement). */
   required?: string[];
   /** The same option may be picked up to this many times (+2 to one ability = two +1 picks). */

@@ -480,7 +480,8 @@ const describeFilter = (filter: string, count = 1) => {
   const lv = cantrips ? "" : levels.map((l) => (l === "0" ? "cantrip" : `level ${l}`)).join("/");
   const ritual = /ritual/i.test(parts["components & miscellaneous"] ?? "") ? "ritual" : "";
   const noun = cantrips ? "cantrip" : "spell";
-  return [parts.class, lv, parts.school && `school ${parts.school}`, ritual, count > 1 ? `${noun}s` : noun].filter(Boolean).join(" ");
+  const schools = parts.school?.split(";").map((x) => SCHOOLS[x] ?? x).join(" or ");
+  return [parts.class, lv, schools, ritual, count > 1 ? `${noun}s` : noun].filter(Boolean).join(" ");
 };
 
 /**
@@ -563,6 +564,43 @@ function expandedSpells(ds: Dataset, additional: any[] | undefined): ExpandedSpe
   return out;
 }
 
+/**
+ * Trait options picked at a given level: Aasimar's Celestial Revelation ("When you reach 3rd level, choose one of
+ * the revelation options below"), Simic Hybrid's Animal Enhancement (one at 1st level, another at 5th: a new one
+ * or one of the 1st-level options not taken).
+ */
+function traitOptionChoices(entries: any[]): Choice[] {
+  const out: Choice[] = [];
+  for (const trait of entries) {
+    if (!trait || typeof trait !== "object" || !Array.isArray(trait.entries)) continue;
+    let prompt = "";
+    const earlier: ChoiceOption[] = [];
+    for (const e of trait.entries) {
+      if (typeof e === "string") {
+        prompt = e;
+        continue;
+      }
+      const at = /\bchoose\b/i.test(prompt) ? prompt.match(/(?:when you reach|at) (\d+)(?:st|nd|rd|th) level\b/i) : null;
+      if (e?.type !== "list" || !at) continue;
+      const options: ChoiceOption[] = (e.items ?? []).filter((it: any) => it?.name).map((it: any) => ({
+        key: lc(it.name).replace(/\W+/g, "-"), name: it.name, description: renderEntries(it.entry ?? it.entries ?? ""),
+      }));
+      if (!options.length) continue;
+      const level = Number(at[1]);
+      // "Choose one of the options you didn't take at 1st level, or one of the following" (picks already had are taken).
+      const withEarlier = /didn't take|did not take/i.test(prompt) ? [...earlier, ...options] : options;
+      out.push({
+        id: `trait-${lc(trait.name ?? "option").replace(/\W+/g, "-")}-${level}`,
+        label: `${trait.name}: choose one${level > 1 ? ` (at ${level}${level === 2 ? "nd" : level === 3 ? "rd" : "th"} level)` : ""}`,
+        kind: "feature", count: 1, options: withEarlier, ...(level > 1 ? { level } : {}),
+      });
+      earlier.push(...options);
+      prompt = "";
+    }
+  }
+  return out;
+}
+
 function raceDetail(ds: Dataset, r: { name: string; key: string; source: string; race: any; sub?: any }): ContentDetail {
   const effects: Effect[] = [];
   const choices: Choice[] = [];
@@ -598,6 +636,7 @@ function raceDetail(ds: Dataset, r: { name: string; key: string; source: string;
     choices.push(...p.choices);
   }
   choices.push(...mixedBlock(pick("skillToolLanguageProficiencies"), "mixed"));
+  choices.push(...traitOptionChoices(entries));
   const additional = pick("additionalSpells");
   const speeds = typeof sp === "object" && sp ? Object.entries(sp).filter(([k, v]) => k !== "walk" && v).map(([k, v]) => `${k} ${v === true ? speed : typeof v === "object" ? (v as any).number : v} ft`) : [];
   const resist = [...(race.resist ?? []), ...(sub.resist ?? [])].filter((x: any) => typeof x === "string");

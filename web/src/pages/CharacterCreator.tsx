@@ -15,6 +15,7 @@ import { RuleOptionsEditor } from "../components/RuleOptions";
 import { BookPicker, CORE_BOOKS } from "../components/BookPicker";
 import { BooksContext, useBookFilter } from "../lib/books";
 import { ChoiceList, unfinishedChoices } from "../components/ChoicePicker";
+import { choicesUpTo } from "../lib/grants";
 import { ItemStats } from "../components/ItemStats";
 import { mergeOwned, ownedFromEffects, ownedFromSelections, type Owned } from "../lib/proficiencies";
 import { ContentBrowser, contentId } from "../components/ContentBrowser";
@@ -116,8 +117,9 @@ export default function CharacterCreator() {
 
   const problems: Partial<Record<Step, string[]>> = {
     start: name.trim() ? [] : ["Give your character a name"],
-    race: [!race && "Choose a race", ...unfinishedChoices(raceDetail?.choices, raceSel).map((c) => c.label)].filter(Boolean) as string[],
-    background: [!background && "Choose a background", ...unfinishedChoices(bgDetail?.choices, bgSel).map((c) => c.label)].filter(Boolean) as string[],
+    // Choices made at a later level (Celestial Revelation) come with that level-up.
+    race: [!race && "Choose a race", ...unfinishedChoices(choicesUpTo(raceDetail?.choices, 1), raceSel).map((c) => c.label)].filter(Boolean) as string[],
+    background: [!background && "Choose a background", ...unfinishedChoices(choicesUpTo(bgDetail?.choices, 1), bgSel).map((c) => c.label)].filter(Boolean) as string[],
     abilities: [
       method === "pointbuy" && pointsSpent > POINT_BUY_BUDGET && "Point buy is over budget",
       (method === "standard" || method === "roll") && Object.keys(assigned).length < 6 && "Assign all six scores",
@@ -563,7 +565,7 @@ function OriginStep({
       {picked && !detail && <Spinner />}
       {detail?.choices?.length ? (
         <Section title={`${detail.name}: your choices`}>
-          <ChoiceList choices={detail.choices} selections={selections} owned={owned} onChange={onSelections} />
+          <ChoiceList choices={choicesUpTo(detail.choices, 1)} selections={selections} owned={owned} onChange={onSelections} />
         </Section>
       ) : null}
     </div>

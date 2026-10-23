@@ -1,3 +1,4 @@
+import { choicesUpTo } from "../../lib/grants";
 import { applyGrants, keepHpInStepWithCon, resolveGrants } from "../../lib/grants";
 import { featureDuration } from "../../lib/featureDuration";
 import { withTextChoices } from "../../lib/textChoices";
@@ -96,7 +97,8 @@ function FeatureCard({ f, c, update }: { f: Feature; c: Character; update: Updat
   const [rechoosing, setRechoosing] = useState(false);
   const edit = (patch: Partial<Feature>) => update((d) => void Object.assign(d.features.find((x) => x.id === f.id)!, patch));
   // Includes choices only described in the text (Canny), so features added earlier can still be chosen.
-  const choices = withTextChoices(f.choices, f.description);
+  // Choices made at a later level (Celestial Revelation at 3rd) once the character gets there.
+  const choices = choicesUpTo(withTextChoices(f.choices, f.description), totalLevel(c));
   const pending = choices.filter((ch) => (f.subfeatures ?? []).filter((s) => s.choiceId === ch.id).length < Math.min(ch.count, ch.options.length));
   return (
     <details className="group rounded-lg border border-ink-800 bg-ink-850/40" open={pending.length > 0 || undefined}>

@@ -225,6 +225,8 @@ export interface Choice {
   required?: string[];
   /** The same option may be picked up to this many times (e.g. +2 to one ability as two +1 picks). */
   maxPerOption?: number;
+  /** Character level the choice is made at, when later than 1st (Aasimar's Celestial Revelation at 3rd). */
+  level?: number;
 }
 
 export interface ChoiceOption {

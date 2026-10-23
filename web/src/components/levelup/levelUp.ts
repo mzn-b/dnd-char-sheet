@@ -2,7 +2,7 @@ import { takeSnapshot } from "../../lib/levelDown";
 import { splitFeature } from "../../lib/featureSections";
 import {
   addGrantedSpells, addOptionSpellPicks, addProficiencyLine, applyEffects, applySubfeatureMechanics, attachProgression, buildFeature, grantFeature, grantProgression, prepareGrantedSpells,
-  type OptionSpellSelections,
+  resolveSubfeatures, type OptionSpellSelections,
 } from "../../lib/apply";
 import { uid } from "../../lib/defaults";
 import { syncSteelDefender } from "../../lib/steelDefender";
@@ -86,6 +86,9 @@ export interface LevelUpPicks {
   swapSel: Record<string, { out: string; in: string[] }>;
   spellPicks: SpellPick[];
   spellPickSel: Record<number, string[]>;
+  /** Race options picked at this character level (Aasimar's Celestial Revelation at 3rd), by race feature. */
+  raceChoices?: { featureId: string; choices: Choice[] }[];
+  raceSel?: Selections;
   /** Spells chosen for picked options that grant a choice of spells (Pact of the Tome, Book of Ancient Secrets). */
   optionSpellSel?: OptionSpellSelections;
   cantrips: ContentSummary[];
@@ -108,6 +111,7 @@ export interface PreparedLevelUp {
   builtSwaps: { p: Progression; out: string; choice: Choice; subs: SubFeature[] }[];
   subRules?: SubclassRules;
   grantedSpells: SpellEntry[];
+  builtRace?: { featureId: string; subs: SubFeature[] }[];
 }
 
 /** Resolve everything that needs fetching (feature texts, picked options, granted spells) before applying. */
@@ -163,7 +167,8 @@ export async function prepareLevelUp(
         .map((f) => prepareGrantedSpells(f.spells, plan.newLevel, `feature:${f.name}`, rules.index)),
     )).flat(),
   ];
-  return { builtFeatures, subclassDetail, builtFeat, featGrants, builtProgressions, builtSwaps, subRules, grantedSpells };
+  const builtRace = await Promise.all((picks.raceChoices ?? []).map(async (g) => ({ featureId: g.featureId, subs: await resolveSubfeatures(g.choices, picks.raceSel ?? {}) })));
+  return { builtFeatures, subclassDetail, builtFeat, featGrants, builtProgressions, builtSwaps, subRules, grantedSpells, builtRace };
 }
 
 /** Apply a prepared level to a draft character. Returns the history summary lines. */
@@ -274,6 +279,15 @@ export function applyLevelUp(d: Character, rules: ClassRules, plan: LevelPlan, p
   if (added.length) summary.push(`Spells granted: ${added.join(", ")}`);
 
   Object.assign(d.spellcasting, recomputeSlots(d.classes, entry, plan.spellcasting, d.spellcasting));
+
+  // Race options that come at this character level (Celestial Revelation).
+  for (const { featureId, subs } of prep.builtRace ?? []) {
+    const feat = d.features.find((f) => f.id === featureId);
+    if (!feat || !subs.length) continue;
+    feat.subfeatures = [...(feat.subfeatures ?? []), ...subs];
+    applySubfeatureMechanics(d, feat.choices ?? [], subs, 1);
+    summary.push(`${feat.name}: ${subs.map((s) => s.name).join(", ")}`);
+  }
 
   // The Steel Defender's HP and attacks grow with the level (and appear at Battle Smith 3).
   syncSteelDefender(d);

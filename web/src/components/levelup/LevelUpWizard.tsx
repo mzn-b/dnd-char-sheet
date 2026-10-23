@@ -66,6 +66,7 @@ export function LevelUpWizard({
   const [spellPickSel, setSpellPickSel] = useState<Record<number, string[]>>({});
   const [arcanum, setArcanum] = useState<ContentSummary | null>(null);
   const [optionSpellSel, setOptionSpellSel] = useState<OptionSpellSelections>({});
+  const [raceSel, setRaceSel] = useState<Selections>({});
 
   const rulesQuery = useQuery({
     queryKey: ["classRules", cls?.source, cls?.key],
@@ -205,6 +206,19 @@ export function LevelUpWizard({
   const ownedFeats = new Set(c.features.filter((f) => f.kind === "feat" && f.ref).map((f) => contentId(f.ref!)));
   const progressionTaken = (name: string) => c.features.find((f) => f.name === name)?.subfeatures?.map((s) => s.key) ?? [];
 
+  // Race options made at the new character level and not made yet (Aasimar's Celestial Revelation at 3rd).
+  // Options already taken from the same trait are left out (Simic Hybrid's 5th-level enhancement).
+  const newTotal = totalLevel(c) + 1;
+  const raceChoices = c.features
+    .filter((f) => f.kind === "race")
+    .map((f) => ({
+      featureId: f.id,
+      choices: (f.choices ?? [])
+        .filter((ch) => ch.level && ch.level <= newTotal && !(f.subfeatures ?? []).some((s) => s.choiceId === ch.id))
+        .map((ch) => ({ ...ch, options: ch.options.filter((o) => !(f.subfeatures ?? []).some((s) => s.key === o.key)) })),
+    }))
+    .filter((g) => g.choices.length);
+
   // Options picked now that come with spells to choose (Pact of the Tome, Book of Ancient Secrets).
   const pickedOptions = [
     ...newFeatures.flatMap((f, i) => (detailOf(i)?.choices ?? []).flatMap((ch) => withRequired(ch, featureSel[f.key]?.[ch.id] ?? []).flatMap((k) => ch.options.filter((o) => o.key === k)))),
@@ -224,6 +238,7 @@ export function LevelUpWizard({
     variants?.length && !variant && `No ${activeSubclass?.name ?? "subclass"} option chosen (${variants.map((v) => v.name).join(", ")})`,
     ...spellPicks.filter((p, i) => (spellPickSel[i]?.length ?? 0) < p.count).map((p) => `${p.label}: not chosen`),
     ...unfinishedOptionSpellPicks(optionSpellPicks, optionSpellSel).map((p) => `${p.option.name}: ${p.pick.label}`),
+    ...raceChoices.flatMap((g) => unfinishedChoices(g.choices, raceSel)).map((ch) => ch.label),
     plan?.grantsAsi && asiMode === "asi" && asiPoints < 2 && `Only ${asiPoints}/2 ability points assigned`,
     plan?.grantsAsi && asiMode === "feat" && !feat && "No feat chosen",
     plan?.grantsAsi && asiMode === "feat" && featDetail && unfinishedChoices(featDetail.choices, featSel).length > 0 && `${featDetail.name}: choices incomplete`,
@@ -238,7 +253,7 @@ export function LevelUpWizard({
     try {
       const picks: LevelUpPicks = {
         subclass, activeSubclass, variant, newFeatures, featureDetails: newFeatures.map((_, i) => detailOf(i)), featureSel,
-        asiMode, asi, featDetail, featSel, progressionSel, swapSel, spellPicks, spellPickSel, optionSpellSel, cantrips, spells, swapOut, swapIn,
+        asiMode, asi, featDetail, featSel, progressionSel, swapSel, spellPicks, spellPickSel, optionSpellSel, raceChoices, raceSel, cantrips, spells, swapOut, swapIn,
         arcanum, arcanumLevel, skillPicks, profLines, hpGain,
       };
       const fetchDetail = (type: "feature" | "subclass", ref: ContentRef) =>
@@ -437,6 +452,12 @@ export function LevelUpWizard({
               />
             </div>
           ))}
+          {raceChoices.length > 0 && (
+            <div className="rounded-lg border border-accent-700/50 bg-accent-500/5 p-3">
+              <div className="label mb-2">{c.race || "Your race"}: reaching character level {newTotal}</div>
+              <ChoiceList choices={raceChoices.flatMap((g) => g.choices)} character={preview} selections={raceSel} onChange={setRaceSel} />
+            </div>
+          )}
           <h3 className="font-display text-lg text-accent-400">You gain</h3>
           {newFeatures.length === 0 && plan.progressions.length === 0 && <p className="text-sm text-ink-400">No new class features at this level.</p>}
           <div className="space-y-3">

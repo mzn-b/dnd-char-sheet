@@ -46,3 +46,15 @@ describe("containers", () => {
     expect(carriedWeight(c.equipment)).toBe(24);
   });
 });
+
+describe("choices made at a later level", () => {
+  it("are held back until the character reaches that level", async () => {
+    const { choicesUpTo } = await import("../grants");
+    const choices = [
+      { id: "a", label: "now", kind: "feature" as const, count: 1, options: [] },
+      { id: "b", label: "at 3rd", kind: "feature" as const, count: 1, options: [], level: 3 },
+    ];
+    expect(choicesUpTo(choices, 1).map((c) => c.id)).toEqual(["a"]);
+    expect(choicesUpTo(choices, 3).map((c) => c.id)).toEqual(["a", "b"]);
+  });
+});
