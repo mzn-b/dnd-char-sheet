@@ -99,6 +99,8 @@ export interface Choice {
   grantsProficiency?: boolean;
   /** Only shown (and needed) when another choice has this pick. */
   when?: { id: string; key: string };
+  /** Only offered when the character already has this proficiency (artificer specialists' second tool). */
+  ifProficient?: string;
   /** Option keys that are always part of the picks (Elemental Attunement). */
   required?: string[];
   /** The same option may be picked up to this many times (+2 to one ability = two +1 picks). */
@@ -326,6 +328,8 @@ export interface Companion {
   ref?: ContentRef;
   /** Stat block captured when added, so it works offline and can be edited. */
   monster?: MonsterData;
+  /** Kept in step with the character by the app (the Battle Smith's Steel Defender). */
+  derived?: "steel-defender";
   /** Combat round it appeared in, when added during combat (it needs its initiative then). */
   joinedRound?: number;
 }
@@ -535,10 +539,13 @@ export interface ClassRules {
   subclasses: ContentRef[];
   proficiencies: string[];
   skillChoices: { count: number; from: string[] } | null;
+  /** Tools you pick (artificer's artisan's tools, bard's instruments). */
+  toolChoices?: Choice[];
   multiclass: {
     requirements: { any: boolean; scores: Partial<Record<Ability, number>> } | null;
     proficiencies: string[];
     skillChoices: { count: number; from: string[] } | null;
+    toolChoices?: Choice[];
   };
   startingEquipment: EquipmentChoice[];
   levels: LevelRules[];

@@ -258,10 +258,13 @@ export interface ClassRules {
   subclasses: { source: ContentSource; key: string; name: string; sourceLabel?: string }[];
   proficiencies: string[];
   skillChoices: { count: number; from: string[] } | null;
+  /** Tools you pick (artificer's artisan's tools, bard's instruments). */
+  toolChoices?: Choice[];
   multiclass: {
     requirements: { any: boolean; scores: Partial<Record<Ability, number>> } | null;
     proficiencies: string[];
     skillChoices: { count: number; from: string[] } | null;
+    toolChoices?: Choice[];
   };
   startingEquipment: EquipmentChoice[];
   levels: LevelRules[];

@@ -63,8 +63,27 @@ export function textChoices(description: string): Choice[] {
     const options = [save[1], save[2], save[3]].map((n) => ({ key: n.slice(0, 3).toLowerCase(), name: n }));
     out.push({ id: "text-save", label: `Saving throw proficiency: ${save[1]} (or ${save[2]}/${save[3]} if you already have it)`, kind: "save", count: 1, options });
   }
+  // Artificer specialists: "proficiency with smith's tools. If you already have this proficiency, you gain
+  // proficiency with one other type of artisan's tools of your choice."
+  const tool = text.match(/proficiency with ([^.]+?)\. If you already have this proficiency, you gain proficiency with one other type of artisan's tools of your choice/i);
+  if (tool) {
+    out.push({
+      id: "text-tool", label: `Tools: you already have ${tool[1]}, so choose another type of artisan's tools`, kind: "proficiency", prefix: "Tools", count: 1,
+      ifProficient: tool[1], options: ARTISANS_TOOLS.filter((t) => t.toLowerCase() !== tool[1].toLowerCase()).map((t) => ({ key: t.toLowerCase(), name: t })),
+    });
+  }
   return out;
 }
+
+/** Whether a character has a tool proficiency (in its proficiency lines). */
+export const hasToolProficiency = (proficiencies: string, tool: string) =>
+  proficiencies.toLowerCase().split(/\n|[,;:]/).some((x) => x.trim() === tool.toLowerCase());
+
+const ARTISANS_TOOLS = [
+  "Alchemist's supplies", "Brewer's supplies", "Calligrapher's supplies", "Carpenter's tools", "Cartographer's tools", "Cobbler's tools",
+  "Cook's utensils", "Glassblower's tools", "Jeweler's tools", "Leatherworker's tools", "Mason's tools", "Painter's supplies", "Potter's tools",
+  "Smith's tools", "Tinker's tools", "Weaver's tools", "Woodcarver's tools",
+];
 
 /** A feature's choices plus any found in its text, without duplicating a kind the data already offers. */
 export function withTextChoices(choices: Choice[] | undefined, description: string): Choice[] {

@@ -1,3 +1,4 @@
+import { syncSteelDefender } from "./steelDefender";
 import { recomputeSlots } from "../components/levelup/plan";
 import { applySubfeatureMechanics } from "./apply";
 import { SKILLS, XP_THRESHOLDS, hpMax, totalLevel } from "./rules";
@@ -78,6 +79,7 @@ export function levelDown(d: Character, opts: { rules?: ClassRules; lowerXp?: bo
   }
   d.levelHistory = d.levelHistory.slice(0, -1);
   d.hp.current = Math.min(d.hp.current, hpMax(d));
+  syncSteelDefender(d);
   if (opts.lowerXp) d.xp = Math.min(d.xp, XP_THRESHOLDS[Math.max(0, totalLevel(d) - 1)]);
 }
 

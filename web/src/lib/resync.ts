@@ -3,6 +3,7 @@ import { addGrantedSpells, applyEffects, buildFeature, prepareGrantedSpells } fr
 import { recomputeSlots } from "../components/levelup/plan";
 import { splitFeature } from "./featureSections";
 import { migrateCharacter } from "./migrate";
+import { syncSteelDefender } from "./steelDefender";
 import { abilityScore, SKILLS, skillName, totalLevel } from "./rules";
 import { applyDetectedUses, detectUses, usesMax } from "./uses";
 import type { Character, ClassRules, ContentDetail, Effect, Feature, SpellEntry, SubclassRules } from "./types";
@@ -181,6 +182,7 @@ export async function planResync(c: Character): Promise<ResyncPlan> {
       if (have) Object.assign(have, { uses: g.uses ?? have.uses, alwaysPrepared: have.alwaysPrepared || g.alwaysPrepared });
     }
     addGrantedSpells(d, grants);
+    syncSteelDefender(d);
     d.rulesVersion = RULES_VERSION;
   };
 

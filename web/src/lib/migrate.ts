@@ -1,3 +1,4 @@
+import { syncSteelDefender } from "./steelDefender";
 import { splitFeature } from "./featureSections";
 import { applyDetectedUses } from "./uses";
 import type { Character } from "./types";
@@ -12,5 +13,7 @@ export function migrateCharacter(c: Character): Character {
       return parts;
     });
   }
+  // Companions a feature gives you (Steel Defender) follow your level and scores.
+  syncSteelDefender(c);
   return c;
 }

@@ -1056,14 +1056,31 @@ function progressionsAt(ds: Dataset, progs: any[] | undefined, level: number, fe
   });
 }
 
+/**
+ * Tools a class lets you pick. Alternatives of "any…" (Monk: artisan's tools or a musical instrument) are one
+ * pick from all of them.
+ */
+function classToolChoices(block: any[] | undefined, id: string): Choice[] {
+  if (block && block.length > 1 && block.every((alt: any) => Object.keys(alt).every((k) => ANY_OPTIONS[k]))) {
+    const kinds = [...new Set(block.flatMap((alt: any) => Object.keys(alt)))] as string[];
+    const count = Math.max(...block.map((alt: any) => Number(Object.values(alt)[0]) || 1));
+    const choice = profChoice(id, "Tools", count, kinds.map((k) => ANY_OPTIONS[k].label).join(" or "), kinds.flatMap((k) => ANY_OPTIONS[k].options));
+    return [{ ...choice, label: `Tools: choose ${count} (${kinds.map((k) => ANY_OPTIONS[k].label).join(" or ")})` }];
+  }
+  return profBlock("Tools", block, id).choices;
+}
+
 function profStrings(block: any): string[] {
   if (!block) return [];
   // Optional entries (artificer firearms, at the DM's discretion) aren't granted.
   const fmt = (xs: any[]) => xs.map((x) => (typeof x === "string" ? plain(x) : x.proficiency && !x.optional ? plain(x.proficiency) : "")).filter(Boolean).join(", ");
+  // Tools you pick ("one type of artisan's tools of your choice") are asked for as a choice (toolChoices).
+  const picked = block.toolProficiencies?.[0] && Object.keys(block.toolProficiencies[0]).some((k) => k === "choose" || k.startsWith("any"));
+  const tools = (block.tools ?? []).filter((t: any) => !(picked && typeof t === "string" && /your choice|^(one|two|three) /i.test(plain(t))));
   return [
     block.armor?.length && `Armor: ${fmt(block.armor)}`,
     block.weapons?.length && `Weapons: ${fmt(block.weapons)}`,
-    block.tools?.length && `Tools: ${fmt(block.tools)}`,
+    tools.length && `Tools: ${fmt(tools)}`,
   ].filter(Boolean) as string[];
 }
 
@@ -1145,10 +1162,12 @@ export async function classRules5etools(k: string): Promise<ClassRules> {
       .map((s) => ({ source: SOURCE, key: key(s.shortName, s.source, s.className, s.classSource), name: s.name, sourceLabel: label(ds, s.source) })),
     proficiencies: profStrings(cls.startingProficiencies),
     skillChoices: skillChoices(cls.startingProficiencies?.skills),
+    toolChoices: classToolChoices(cls.startingProficiencies?.toolProficiencies, "class-tools"),
     multiclass: {
       requirements: req ? { any: !!req.or, scores: req.or ? req.or[0] : req } : null,
       proficiencies: profStrings(mc.proficienciesGained),
       skillChoices: skillChoices(mc.proficienciesGained?.skills),
+      toolChoices: classToolChoices(mc.proficienciesGained?.toolProficiencies, "mc-tools"),
     },
     startingEquipment: startingEquipment(cls),
     levels: Array.from({ length: 20 }, (_, i): LevelRules => {

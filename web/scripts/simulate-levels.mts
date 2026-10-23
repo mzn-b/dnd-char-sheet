@@ -25,6 +25,7 @@ const { maxPrepared, profBonus, totalLevel, hpMax } = await import("../src/lib/r
 const { prereqContext, unmetRequirement } = await import("../src/lib/prereqs.ts");
 const { withRequired } = await import("../src/lib/apply.ts");
 const { featureDuration } = await import("../src/lib/featureDuration.ts");
+const { hasToolProficiency } = await import("../src/lib/textChoices.ts");
 const { effectiveScore } = await import("../src/lib/modifiers.ts");
 import type { Character, ClassRules, ContentSummary, Selections, SubclassRules } from "../src/lib/types.ts";
 
@@ -167,7 +168,8 @@ async function simulate(rules: ClassRules, sub: ContentSummary) {
       const featureSel: Record<string, Selections> = {};
       newFeatures.forEach((f, i) => {
         const sel: Selections = {};
-        for (const ch of featureDetails[i]?.choices ?? []) {
+        // Like the wizard: a specialist's second tool only when the first is already known.
+        for (const ch of (featureDetails[i]?.choices ?? []).filter((x) => !x.ifProficient || hasToolProficiency(c.proficienciesAndLanguages, x.ifProficient))) {
           if (!ch.options.length) note(level, `${f.name}: choice "${ch.label}" has no options`);
           const req = ch.required ?? [];
           const free = ch.options.filter((o) => !req.includes(o.key) && !unmetRequirement(o, ctx(), rules.name) && !(ch.kind === "expertise" && !ch.grantsProficiency && (preview.skills[o.key] ?? 1) < 1));

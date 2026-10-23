@@ -51,3 +51,36 @@ describe("attack ↔ weapon link", () => {
     expect(attackAbility(c, typed).ability).toBe("int");
   });
 });
+
+describe("Battle Smith kit", () => {
+  it("offers another artisan's tool only as a fallback for smith's tools", async () => {
+    const { textChoices, hasToolProficiency } = await import("../textChoices");
+    const ch = textChoices("When you adopt this specialization at 3rd level, you gain proficiency with smith's tools. If you already have this proficiency, you gain proficiency with one other type of artisan's tools of your choice.");
+    expect(ch).toHaveLength(1);
+    expect(ch[0].ifProficient).toBe("smith's tools");
+    expect(ch[0].options.some((o) => o.key === "smith's tools")).toBe(false);
+    expect(hasToolProficiency("Tools: thieves' tools, tinker's tools, Smith's tools", "smith's tools")).toBe(true);
+    expect(hasToolProficiency("Tools: thieves' tools, tinker's tools", "smith's tools")).toBe(false);
+  });
+  it("creates a Steel Defender that follows level and Intelligence", async () => {
+    const { syncSteelDefender } = await import("../steelDefender");
+    const c = battleSmith();
+    c.features.push({ id: "sd", name: "Steel Defender", origin: "Artificer 3", kind: "subclass", description: "" });
+    syncSteelDefender(c);
+    const d = c.companions!.find((p) => p.derived === "steel-defender")!;
+    // 2 + INT 4 + 5 × 3
+    expect(d.hp.max).toBe(21);
+    expect(d.ac).toBe(15);
+    expect(d.monster!.actions[0].text).toMatch(/\+6 to hit.*1d8 \+ 2 force/);
+    d.hp.current = 10;
+    c.classes[0].level = 15;
+    syncSteelDefender(c);
+    expect(d.hp.max).toBe(81);
+    expect(d.hp.current).toBe(70);
+    expect(d.ac).toBe(17);
+    expect(d.monster!.reactions[0].text).toMatch(/1d4 \+ 4 force/);
+    c.features = c.features.filter((f) => f.name !== "Steel Defender");
+    syncSteelDefender(c);
+    expect(c.companions).toEqual([]);
+  });
+});

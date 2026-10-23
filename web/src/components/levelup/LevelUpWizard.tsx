@@ -10,6 +10,7 @@ import {
   type OptionSpellSelections,
 } from "../../lib/apply";
 import { uid } from "../../lib/defaults";
+import { hasToolProficiency } from "../../lib/textChoices";
 import { applyDetectedUses } from "../../lib/uses";
 import { ABILITY_NAMES, baseAbilityMod, fmt, meetsRequirements, mod, ordinal, requirementText, skillName, totalLevel } from "../../lib/rules";
 import {
@@ -45,6 +46,8 @@ export function LevelUpWizard({
   const [hpMode, setHpMode] = useState<"average" | "roll">(opts.hpMethod === "roll" ? "roll" : "average");
   const [hpRoll, setHpRoll] = useState<number | null>(null);
   const [skillPicks, setSkillPicks] = useState<string[]>([]);
+  /** Tools picked with the class (artificer's artisan's tools, bard's instruments). */
+  const [toolSel, setToolSel] = useState<Selections>({});
   const [subclass, setSubclass] = useState<ContentSummary | null>(null);
   const [featureSel, setFeatureSel] = useState<Record<string, Selections>>({});
   const [progressionSel, setProgressionSel] = useState<Record<string, string[]>>({});
@@ -95,7 +98,12 @@ export function LevelUpWizard({
       staleTime: Infinity,
     })),
   });
-  const detailOf = (i: number) => featureDetails[i]?.data as ContentDetail | undefined;
+  // A choice that only applies when the character already has the proficiency (a specialist's second tool).
+  const detailOf = (i: number) => {
+    const det = featureDetails[i]?.data as ContentDetail | undefined;
+    if (!det?.choices?.some((ch) => ch.ifProficient)) return det;
+    return { ...det, choices: det.choices.filter((ch) => !ch.ifProficient || hasToolProficiency(c.proficienciesAndLanguages, ch.ifProficient)) };
+  };
   const featDetail = useQuery({
     queryKey: ["detail", "feat", feat?.source, feat?.key],
     queryFn: () => api.detail("feat", feat!.source, feat!.key),
@@ -114,7 +122,12 @@ export function LevelUpWizard({
   }, [plan, rules, allClassRules, c.abilities]);
 
   const skillChoices = plan?.isNewClass ? (plan.isFirstLevelOverall ? rules?.skillChoices : rules?.multiclass.skillChoices) : null;
-  const profLines = plan?.isNewClass ? (plan.isFirstLevelOverall ? rules?.proficiencies : rules?.multiclass.proficiencies) ?? [] : [];
+  const toolChoices = plan?.isNewClass ? (plan.isFirstLevelOverall ? rules?.toolChoices : rules?.multiclass.toolChoices) ?? [] : [];
+  const toolNames = toolChoices.flatMap((ch) => (toolSel[ch.id] ?? []).map((k) => ch.options.find((o) => o.key === k)?.name ?? k));
+  const profLines = [
+    ...(plan?.isNewClass ? (plan.isFirstLevelOverall ? rules?.proficiencies : rules?.multiclass.proficiencies) ?? [] : []),
+    ...(toolNames.length ? [`Tools: ${toolNames.join(", ")}`] : []),
+  ];
 
   const steps: StepId[] = useMemo(() => {
     if (!plan) return queue ? [] : ["class"];
@@ -202,6 +215,7 @@ export function LevelUpWizard({
   const warnings = [
     ...(opts.strictMulticlass === false ? [] : multiclassProblems.map((p) => `Multiclass prerequisite not met: ${p}`)),
     skillChoices && skillPicks.length < skillChoices.count && `${skillChoices.count - skillPicks.length} class skill(s) left to choose`,
+    ...unfinishedChoices(toolChoices, toolSel).map((ch) => ch.label),
     plan?.needsSubclass && !subclass && `No ${rules?.subclassTitle ?? "subclass"} chosen`,
     ...newFeatures.flatMap((f, i) => unfinishedChoices(detailOf(i)?.choices, featureSel[f.key] ?? {}).map((ch) => `${f.name}: ${ch.label}`)),
     ...(plan?.progressions ?? []).filter((p) => (progressionSel[p.name]?.length ?? 0) < p.gained).map((p) => `${p.name}: ${p.gained - (progressionSel[p.name]?.length ?? 0)} left to choose`),
@@ -303,6 +317,7 @@ export function LevelUpWizard({
             {profLines.map((l) => <li key={l}>{l}</li>)}
             {!profLines.length && !plan.isFirstLevelOverall && <li className="text-ink-400">No armor or weapon proficiencies.</li>}
           </ul>
+          {toolChoices.length > 0 && <ChoiceList choices={toolChoices} character={c} selections={toolSel} onChange={setToolSel} />}
           {skillChoices && (
             <ChoicePicker
               character={c}

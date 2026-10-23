@@ -5,6 +5,7 @@ import {
   type OptionSpellSelections,
 } from "../../lib/apply";
 import { uid } from "../../lib/defaults";
+import { syncSteelDefender } from "../../lib/steelDefender";
 import { applyGrants, resolveGrants } from "../../lib/grants";
 import { applyDetectedUses } from "../../lib/uses";
 import { mod, skillName, totalLevel } from "../../lib/rules";
@@ -273,6 +274,9 @@ export function applyLevelUp(d: Character, rules: ClassRules, plan: LevelPlan, p
   if (added.length) summary.push(`Spells granted: ${added.join(", ")}`);
 
   Object.assign(d.spellcasting, recomputeSlots(d.classes, entry, plan.spellcasting, d.spellcasting));
+
+  // The Steel Defender's HP and attacks grow with the level (and appear at Battle Smith 3).
+  syncSteelDefender(d);
 
   d.levelHistory.push({ classKey: rules.index, className: rules.name, level: plan.newLevel, hpGained: picks.hpGain, summary, at: new Date().toISOString(), snapshot: buildBefore });
   return summary;

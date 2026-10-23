@@ -168,6 +168,8 @@ const PASSIVES: { match: RegExp; when: ReminderWhen; text: (c: Character) => str
   { match: /^metamagic/i, when: "turnStart", text: (c) => `Metamagic (sorcery points): ${picks(c, /^metamagic/i)}` },
   // PHB p. 109: when you reduce a hostile creature to 0 hit points.
   { match: /^dark one['’]s blessing$/i, when: "hit", text: (c) => `Dark One's Blessing: if this drops a hostile creature to 0 HP, gain ${Math.max(1, abilityMod(c, "cha") + (c.classes.find((k) => k.name === "Warlock")?.level ?? 0))} temporary HP (Cha + warlock level)` },
+  // Tasha's p. 14: it only Dodges unless commanded.
+  { match: /^steel defender$/i, when: "turnStart", text: () => "Steel Defender: takes its turn right after yours; use a bonus action to command it (Force-Empowered Rend, Repair, Dash…), otherwise it takes the Dodge action" },
   { match: /^repelling blast$/i, when: "hit", text: () => "Repelling Blast: push the target 10 ft with each Eldritch Blast beam" },
   { match: /^sneak attack$/i, when: "hit", text: (c) => `Sneak Attack: +${Math.ceil((c.classes.find((k) => k.name === "Rogue")?.level ?? 1) / 2)}d6 once per turn (advantage, or an ally next to the target; finesse/ranged weapon)` },
   { match: /^divine smite$/i, when: "hit", text: () => "Divine Smite: on a melee hit, spend a slot for 2d8 radiant (+1d8 per slot above 1st, max 5d8; +1d8 vs undead/fiends)" },
@@ -398,6 +400,7 @@ function initiativeNote(c: Character, p: Companion): string {
     case "steed":
       return `Your steed${named("steed")}: acts on your initiative while you ride and control it; if it acts independently, roll its initiative`;
     case "companion":
+      if (p.derived === "steel-defender") return `Your Steel Defender: shares your initiative and takes its turn right after yours`;
       if (has(/^(drake companion|drakewarden|primal companion)$/i)) return `Your companion${named("companion")}: shares your initiative and takes its turn right after yours`;
       if (has(/^ranger'?s companion$/i)) return `Your companion${named("companion")}: acts on your turn when you command it (no initiative of its own)`;
       return `Your companion${named("companion")}: roll its initiative, unless its feature says it shares yours`;

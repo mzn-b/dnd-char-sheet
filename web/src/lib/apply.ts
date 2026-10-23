@@ -105,9 +105,15 @@ export function removeProficiencyLine(d: Character, line: string) {
   d.proficienciesAndLanguages = d.proficienciesAndLanguages.split("\n").filter((l) => l && l !== line).join("\n");
 }
 
+/** Add a "Tools: smith's tools" line unless everything in it is already there (in any case or line). */
 export function addProficiencyLine(d: Character, line: string) {
   const lines = d.proficienciesAndLanguages.split("\n").filter(Boolean);
-  if (!lines.includes(line)) d.proficienciesAndLanguages = [...lines, line].join("\n");
+  if (lines.includes(line)) return;
+  const [prefix, rest] = line.includes(":") ? [line.slice(0, line.indexOf(":")), line.slice(line.indexOf(":") + 1)] : ["", line];
+  const items = (text: string) => text.split(/,\s*/).map((x) => x.trim().toLowerCase()).filter(Boolean);
+  const have = new Set(lines.filter((l) => l.toLowerCase().startsWith(`${prefix.toLowerCase()}:`)).flatMap((l) => items(l.slice(l.indexOf(":") + 1))));
+  if (prefix && items(rest).every((x) => have.has(x))) return;
+  d.proficienciesAndLanguages = [...lines, line].join("\n");
 }
 
 const KIND_ORIGIN: Record<string, Feature["kind"]> = { race: "race", background: "background", feat: "feat" };
