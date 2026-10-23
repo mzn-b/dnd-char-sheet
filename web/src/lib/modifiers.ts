@@ -1,4 +1,15 @@
-import { ABILITIES, type Ability, type Attack, type Character, type Item } from "./types";
+import { ABILITIES, type Ability, type Attack, type Character, type Item, type ItemBonuses } from "./types";
+import { infusionBonuses } from "./infusions";
+
+/** Numeric item bonuses added together (ability maps are merged). */
+function sumBonuses(a: ItemBonuses | undefined, b: ItemBonuses | undefined): ItemBonuses {
+  const out: ItemBonuses = { ...a };
+  for (const [k, v] of Object.entries(b ?? {}) as [keyof ItemBonuses, ItemBonuses[keyof ItemBonuses]][]) {
+    if (typeof v === "number") (out as Record<string, number>)[k] = ((out as Record<string, number | undefined>)[k] ?? 0) + v;
+    else if (v) (out as Record<string, unknown>)[k] = { ...(out[k] as object), ...v };
+  }
+  return out;
+}
 import { featureParts } from "./featureSections";
 
 /**
@@ -55,10 +66,13 @@ export const itemActive = (i: Item) => (!i.attunement || !!i.attuned) && (i.equi
 function itemModifiers(c: Character): Modifier[] {
   const out: Modifier[] = [];
   for (const i of c.equipment) {
-    const b = i.data?.bonuses;
+    // An infusion's bonuses stack with the item's own (an infused +1 weapon).
+    const inf = infusionBonuses(c, i);
+    const own = i.data?.bonuses;
+    const b: ItemBonuses | undefined = own || inf ? sumBonuses(own, inf) : undefined;
     if (!b || !itemActive(i)) continue;
     const add = (target: string, value: number | undefined, extra: Partial<Modifier> = {}) => {
-      if (value) out.push({ id: `item:${i.id}:${target}`, target, value, source: i.name, kind: "item", ...extra });
+      if (value) out.push({ id: `item:${i.id}:${target}`, target, value, source: i.infusion ? `${i.name} (${i.infusion.name})` : i.name, kind: "item", ...extra });
     };
     // Bonuses that only matter while worn need the item equipped; weapon bonuses apply when attacking with it.
     if (i.equipped) {

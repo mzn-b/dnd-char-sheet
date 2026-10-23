@@ -5,6 +5,7 @@ import { attackFromItem, itemFromDetail, resolveItem } from "../../lib/items";
 import { genericOptions } from "../../lib/genericItems";
 import { attunedCount, attunementMax, carrying } from "../../lib/rules";
 import { itemActive, targetLabel } from "../../lib/modifiers";
+import { infuse, infusedCount, infusionRule, knownInfusions, maxInfusedItems, uninfuse } from "../../lib/infusions";
 import type { Character, ContentSummary, Item, PackItem } from "../../lib/types";
 import type { Update } from "../../lib/useCharacter";
 import { ContentDetailView, ContentPicker } from "../ContentBrowser";
@@ -23,6 +24,15 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
   const capacity = load.capacity;
   const attuned = attunedCount(c);
   const wealthGp = COINS.reduce((s, k) => s + c.currency[k] * COIN_VALUE_CP[k], 0) / 100;
+  const infusions = knownInfusions(c);
+  const infusedMax = maxInfusedItems(c);
+  const infused = infusedCount(c);
+  const setInfusion = (id: string, name: string) =>
+    update((d) => {
+      const it = d.equipment.find((x) => x.id === id)!;
+      if (name) infuse(it, name);
+      else uninfuse(it);
+    });
   const edit = (id: string, patch: Partial<Item>) => update((d) => void Object.assign(d.equipment.find((i) => i.id === id)!, patch));
 
   const addFromRules = async (picked: ContentSummary[]) => {
@@ -93,6 +103,11 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
         title="Equipment"
         action={
           <div className="flex items-center gap-1">
+            {infusedMax > 0 && (infusions.length ? (
+              <span className={`mr-2 text-xs ${infused > infusedMax ? "text-blood-500" : "text-arcane-400"}`} title="Infused items (Infuse Item). Use ✧ on an item to infuse it.">✧ {infused}/{infusedMax} infused</span>
+            ) : (
+              <span className="mr-2 text-xs text-ink-400" title="Infusions are chosen when you level up (Infusions). On an older sheet, add them on the Features tab.">✧ no infusions known</span>
+            ))}
             <span className={`mr-2 text-xs ${attuned > attunementMax(c) ? "text-blood-500" : "text-ink-400"}`} title="Attuned magic items">✦ {attuned}/{attunementMax(c)} attuned</span>
             <button className="btn-ghost px-2 py-0.5 text-xs" onClick={() => setPicking(true)}>Browse items</button>
             <button
@@ -140,6 +155,7 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
                 {i.data?.armor && <span className="chip px-1.5 py-0">{i.data.armor.type === "shield" ? `+${i.data.armor.base} AC` : `AC ${i.data.armor.base} ${i.data.armor.type}`}</span>}
                 {i.data?.weapon && <span className="chip px-1.5 py-0">{i.data.weapon.damage} {i.data.weapon.damageType}</span>}
                 {i.data?.rarity && <span className="chip px-1.5 py-0 capitalize">{i.data.rarity}</span>}
+                {i.infusion && <span className="chip border-arcane-500/60 px-1.5 py-0 text-arcane-400" title="Artificer infusion">✧ {i.infusion.name}</span>}
                 {i.charges && (
                   <span className="flex items-center gap-1">charges <Pips max={i.charges.max} used={i.charges.used} onChange={(u) => edit(i.id, { charges: { ...i.charges!, used: u } })} /></span>
                 )}
@@ -149,6 +165,9 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
             <NumberField value={i.weight} min={0} onChange={(n) => edit(i.id, { weight: n })} />
             <TextField value={i.notes} placeholder="—" onChange={(v) => edit(i.id, { notes: v })} />
             <div className="flex gap-0.5">
+              {infusions.length > 0 && (
+                <InfuseMenu item={i} known={infusions.map((x) => x.name)} full={infused >= infusedMax} onPick={(name) => setInfusion(i.id, name)} />
+              )}
               {i.attunement && (
                 <button
                   className={`btn-ghost px-1.5 py-0.5 text-xs ${i.attuned ? "text-accent-400" : "text-ink-600"}`}
@@ -223,6 +242,51 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
         </Modal>
       )}
     </div>
+  );
+}
+
+/** Put a known infusion into an item (only ones it can hold), or take it out. */
+function InfuseMenu({ item, known, full, onPick }: { item: Item; known: string[]; full: boolean; onPick: (name: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const pick = (name: string) => {
+    onPick(name);
+    setOpen(false);
+  };
+  return (
+    <span className="relative">
+      <button
+        className={`btn-ghost px-1.5 py-0.5 text-xs ${item.infusion ? "text-arcane-400" : "text-arcane-400/60 hover:text-arcane-400"}`}
+        title={item.infusion ? `Infused: ${item.infusion.name}` : "Infuse this item"}
+        onClick={() => setOpen(!open)}
+      >
+        ✧
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-30 mt-1 w-72 rounded-lg border border-ink-700 bg-ink-900 p-1 text-xs shadow-xl" onMouseLeave={() => setOpen(false)}>
+          <div className="px-2 py-1 text-ink-400">Infuse {item.name || "this item"}</div>
+          {known.map((name) => {
+            const rule = infusionRule(name);
+            const fits = !rule || rule.fits(item);
+            const current = item.infusion?.name === name;
+            const blocked = !fits || (full && !item.infusion);
+            return (
+              <button
+                key={name}
+                disabled={blocked || current}
+                className={`block w-full rounded px-2 py-1 text-left hover:bg-ink-800 disabled:opacity-50 disabled:hover:bg-transparent ${current ? "text-arcane-400" : ""}`}
+                onClick={() => pick(name)}
+              >
+                {current ? "✓ " : ""}{name}
+                {!fits ? <span className="ml-1 text-ink-600">needs {rule!.target}</span> : full && !item.infusion ? <span className="ml-1 text-ink-600">all infusions in use</span> : null}
+              </button>
+            );
+          })}
+          {item.infusion && (
+            <button className="block w-full rounded px-2 py-1 text-left text-blood-500 hover:bg-ink-800" onClick={() => pick("")}>Remove infusion</button>
+          )}
+        </div>
+      )}
+    </span>
   );
 }
 

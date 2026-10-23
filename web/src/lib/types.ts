@@ -249,6 +249,8 @@ export interface Item {
   charges?: { max: number; used: number };
   /** Rules data (armor, weapon stats) captured when the item was added. */
   data?: ItemData;
+  /** Artificer infusion in this item (Enhanced Weapon…); attunement and charges it added are undone with it. */
+  infusion?: { name: string; addedAttunement?: boolean; addedCharges?: boolean };
 }
 
 /** A choice made inside a feature (a Fighting Style, an Invocation, an expertise skill…). */
