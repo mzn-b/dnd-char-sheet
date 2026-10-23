@@ -25,15 +25,16 @@ export function itemFromDetail(det: ContentDetail, qty = 1): Item {
  * match exists, so armor and weapons work right away.
  */
 export async function resolveItem(name: string, qty: number): Promise<Item> {
+  const det = await itemDetailByName(name).catch(() => null);
+  return det ? itemFromDetail(det, qty) : { id: uid(), name, qty, weight: 0, equipped: false, notes: "" };
+}
+
+/** The rules entry for an item named in starting equipment ("Scale mail", "Arrows (20)"), if there's an exact match. */
+export async function itemDetailByName(name: string): Promise<ContentDetail | null> {
   const clean = name.replace(/\s*\(\d+\)$/, "").trim();
-  try {
-    const results = await api.search("item", { q: clean });
-    const match = results.find((r) => r.name.toLowerCase() === clean.toLowerCase()) ?? results.find((r) => r.name.toLowerCase() === name.toLowerCase());
-    if (match) return itemFromDetail(await api.detail("item", match.source, match.key), qty);
-  } catch {
-    /* fall through to a plain entry */
-  }
-  return { id: uid(), name, qty, weight: 0, equipped: false, notes: "" };
+  const results = await api.search("item", { q: clean });
+  const match = results.find((r) => r.name.toLowerCase() === clean.toLowerCase()) ?? results.find((r) => r.name.toLowerCase() === name.toLowerCase());
+  return match ? api.detail("item", match.source, match.key) : null;
 }
 
 /**

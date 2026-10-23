@@ -15,6 +15,7 @@ import { RuleOptionsEditor } from "../components/RuleOptions";
 import { BookPicker, CORE_BOOKS } from "../components/BookPicker";
 import { BooksContext, useBookFilter } from "../lib/books";
 import { ChoiceList, unfinishedChoices } from "../components/ChoicePicker";
+import { ItemStats } from "../components/ItemStats";
 import { mergeOwned, ownedFromEffects, ownedFromSelections, type Owned } from "../lib/proficiencies";
 import { ContentBrowser, contentId } from "../components/ContentBrowser";
 import { RULES_VERSION } from "../lib/resync";
@@ -390,6 +391,11 @@ export default function CharacterCreator() {
                     >
                       {g.options.length > 1 && <span className="mr-1 text-ink-400">{o.label}</span>}
                       {o.items.map((it) => `${it.qty > 1 ? `${it.qty}× ` : ""}${it.name}`).join(", ")}
+                      {o.items.map((it) => (
+                        <span key={it.name} className="mt-0.5 block">
+                          <ItemStats name={it.name} scores={finalScores} label={o.items.length > 1 ? it.name : undefined} />
+                        </span>
+                      ))}
                     </button>
                   ))}
                 </div>
@@ -420,6 +426,7 @@ export default function CharacterCreator() {
                             {options.map((name) => <option key={name}>{name}</option>)}
                           </select>
                         ))}
+                        {picks.filter(Boolean).map((name, n) => <span key={n} className="w-full pl-1"><ItemStats name={name} scores={finalScores} label={name} /></span>)}
                       </div>
                     );
                   });
