@@ -3,7 +3,7 @@ import { abilityMod, critRange, fmt, profBonus, wildShapeForm } from "../../lib/
 import { attackFromItem } from "../../lib/items";
 import { genericOptions } from "../../lib/genericItems";
 import { EntryRow } from "../StatBlock";
-import { attackModifiers, describe, isRangedAttack } from "../../lib/modifiers";
+import { attackModifiers, describe, isRangedAttack, weaponItem } from "../../lib/modifiers";
 import { multiattackCount, spendEconomy, type ActionKind } from "../../lib/economy";
 import { ActionBadge } from "../ActionBadge";
 import { ABILITIES, type Attack, type Character, type Item } from "../../lib/types";
@@ -44,6 +44,7 @@ export function AttackRolls({ c, a, size = "text-sm", update }: { c: Character; 
   const extra = activeRollBonus(c, "attack");
   return (
     <span className="inline-flex items-center gap-1">
+      {attackAbility(c, a).reason && <span className="text-[10px] font-semibold text-arcane-400" title={attackAbility(c, a).reason}>INT</span>}
       <RollButton
         expression={d20(attackBonus(c, a)) + (extra ? `+${extra.dice}` : "")}
         label={`${a.name || "Attack"}: to hit${extra ? ` (+${extra.names.join(", ")})` : ""}`}
@@ -200,6 +201,15 @@ export function AttacksPanel({ c, update }: { c: Character; update: Update }) {
                   </select>
                 </label>
                 <label className="flex items-end gap-2 pb-2"><input type="checkbox" className="accent-accent-500" checked={isRangedAttack(c, a)} onChange={(e) => edit(a.id, { ranged: e.target.checked })} />Ranged</label>
+                <label className="col-span-2 space-y-0.5" title="The inventory weapon this attack uses: its magic bonuses, infusion and properties apply">
+                  <span className="label">Weapon</span>
+                  <select className="field-boxed" value={weaponItem(c, a)?.id ?? ""} onChange={(e) => edit(a.id, { itemId: e.target.value || undefined })}>
+                    <option value="">Not linked to an item</option>
+                    {c.equipment.filter((i) => i.data?.weapon || i.id === a.itemId).map((i) => (
+                      <option key={i.id} value={i.id}>{i.name}{i.infusion ? ` (✧ ${i.infusion.name})` : ""}</option>
+                    ))}
+                  </select>
+                </label>
                 {attackHint(c, a) && <p className="col-span-full whitespace-pre-line text-xs text-emerald-400">Automatic: {attackHint(c, a)}</p>}
                 <label className="col-span-full space-y-0.5"><span className="label">Notes</span><TextField className="field-boxed" value={a.notes} placeholder="Versatile (1d10), finesse…" onChange={(v) => edit(a.id, { notes: v })} /></label>
                 <button className="btn-danger col-span-full justify-self-end py-0.5 text-xs" onClick={() => update((d) => void (d.attacks = d.attacks.filter((x) => x.id !== a.id)))}>Remove</button>

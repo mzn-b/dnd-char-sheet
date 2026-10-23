@@ -210,8 +210,15 @@ function scoreFrom(base: number, mods: Modifier[], a: Ability) {
 export const effectiveScore = (c: Character, a: Ability) => scoreFrom(c.abilities[a], activeModifiers(c), a);
 
 /** Item-linked weapon bonus for an attack (matched by itemId, else by name). */
+/** "Crossbow, light" and "Light Crossbow" are the same weapon: compare the words, in any order. */
+const weaponWords = (name: string) => name.toLowerCase().replace(/[^a-z0-9+ ]+/g, " ").split(/\s+/).filter(Boolean).sort().join(" ");
+
+/** The inventory weapon an attack is made with: its linked item, or a weapon of the same name. */
 export function weaponItem(c: Character, a: Attack): Item | undefined {
-  return (a.itemId && c.equipment.find((i) => i.id === a.itemId)) || c.equipment.find((i) => !!i.data?.weapon && i.name.toLowerCase() === a.name.toLowerCase().trim());
+  const linked = a.itemId ? c.equipment.find((i) => i.id === a.itemId) : undefined;
+  if (linked) return linked;
+  const words = weaponWords(a.name);
+  return words ? c.equipment.find((i) => !!i.data?.weapon && weaponWords(i.name) === words) : undefined;
 }
 
 /** A magic weapon: infused, a rarity above mundane, or a magic bonus of its own (+1 Longsword). */

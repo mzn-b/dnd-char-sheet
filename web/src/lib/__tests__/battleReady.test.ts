@@ -40,3 +40,14 @@ describe("Battle Ready", () => {
     expect(attackAbility(strong, attack).ability).toBe("str");
   });
 });
+
+describe("attack ↔ weapon link", () => {
+  it("matches an unlinked attack to the weapon by name in any word order", () => {
+    const c = battleSmith();
+    const xb: Item = { id: "xb", name: "Light Crossbow", qty: 1, weight: 5, equipped: true, notes: "", data: { weapon: { damage: "1d8", damageType: "piercing", properties: ["Ammunition"], ranged: true, finesse: false } } };
+    infuse(xb, "Repeating Shot");
+    c.equipment = [xb];
+    const typed: Attack = { id: "t", name: "Crossbow, light", ability: "dex", proficient: true, bonus: 0, damage: "1d8", damageType: "piercing", notes: "" };
+    expect(attackAbility(c, typed).ability).toBe("int");
+  });
+});
