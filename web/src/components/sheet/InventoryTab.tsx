@@ -12,6 +12,12 @@ import { ContentDetailView, ContentPicker } from "../ContentBrowser";
 import { Modal, NumberField, Pips, Section, TextField } from "../ui";
 
 const COINS = ["cp", "sp", "ep", "gp", "pp"] as const;
+/**
+ * Inventory columns, shared by the header and every row (each row is its own grid). Text columns can shrink
+ * below their content and the buttons column has a fixed width, so a long name or an extra button
+ * (attunement) doesn't shift a row out of line.
+ */
+const ROW_COLS = "grid-cols-[2rem_minmax(0,1fr)_3.5rem_3.5rem_minmax(0,1fr)_9rem]";
 const COIN_VALUE_CP = { cp: 1, sp: 10, ep: 50, gp: 100, pp: 1000 };
 
 export function InventoryTab({ c, update }: { c: Character; update: Update }) {
@@ -119,12 +125,12 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
           </div>
         }
       >
-        <div className="grid grid-cols-[2rem_1fr_3.5rem_3.5rem_1fr_auto] gap-1 px-1 text-[10px] uppercase tracking-wider text-ink-600">
-          <span title="Equipped / worn">Eq</span><span>Item</span><span>Qty</span><span>Wt</span><span>Notes</span><span />
+        <div className={`grid ${ROW_COLS} gap-1 px-1 text-[10px] uppercase tracking-wider text-ink-600`}>
+          <span title="Equipped / worn">Eq</span><span>Item</span><span className="text-center">Qty</span><span className="text-center">Wt</span><span>Notes</span><span />
         </div>
         {c.equipment.length === 0 && <p className="p-2 text-sm text-ink-600">Your pack is empty.</p>}
         {c.equipment.map((i) => (
-          <div key={i.id} className="grid grid-cols-[2rem_1fr_3.5rem_3.5rem_1fr_auto] items-center gap-1 rounded px-1 py-0.5 hover:bg-ink-850">
+          <div key={i.id} className={`grid ${ROW_COLS} items-center gap-1 rounded px-1 py-0.5 hover:bg-ink-850`}>
             <input type="checkbox" className="accent-accent-500" checked={i.equipped} onChange={(e) => toggleEquip(i, e.target.checked)} />
             <div className="min-w-0">
               <div className="flex items-center">
@@ -161,10 +167,10 @@ export function InventoryTab({ c, update }: { c: Character; update: Update }) {
                 )}
               </div>
             </div>
-            <NumberField value={i.qty} min={0} onChange={(n) => edit(i.id, { qty: n })} />
-            <NumberField value={i.weight} min={0} onChange={(n) => edit(i.id, { weight: n })} />
+            <NumberField className="field text-center" value={i.qty} min={0} onChange={(n) => edit(i.id, { qty: n })} />
+            <NumberField className="field text-center" value={i.weight} min={0} onChange={(n) => edit(i.id, { weight: n })} />
             <TextField value={i.notes} placeholder="—" onChange={(v) => edit(i.id, { notes: v })} />
-            <div className="flex gap-0.5">
+            <div className="flex justify-end gap-0.5">
               {infusions.length > 0 && (
                 <InfuseMenu item={i} known={infusions.map((x) => x.name)} full={infused >= infusedMax} onPick={(name) => setInfusion(i.id, name)} />
               )}
