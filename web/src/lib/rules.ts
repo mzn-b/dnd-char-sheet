@@ -342,6 +342,27 @@ export const LASTING_SPELLS = /^mage armor$/i;
 export const effectActive = (c: Character, name: string) =>
   [...(c.lastingEffects ?? []), ...(c.combat?.effects ?? [])].some((e) => e.name.toLowerCase() === name.toLowerCase());
 
+const ABILITY_BY_WORD: Record<string, Ability> = { strength: "str", dexterity: "dex", constitution: "con", intelligence: "int", wisdom: "wis", charisma: "cha" };
+
+/**
+ * Natural armor from race traits, read from their text: Autognome's Armored Casing and Thri-kreen's
+ * Chameleon Carapace (13 + Dex while unarmored), Lizardfolk (13 + Dex), Loxodon (12 + Con), Locathah
+ * (12 + Dex), Tortle's shell (17, no Dex). `overArmor`: usable instead of worn armor that gives less.
+ */
+export function naturalArmor(c: Character): { name: string; base: number; ability?: Ability; overArmor: boolean }[] {
+  const out: { name: string; base: number; ability?: Ability; overArmor: boolean }[] = [];
+  for (const p of featureParts(c)) {
+    if (p.feature.kind !== "race") continue;
+    const text = p.text.replace(/\*\*?/g, "");
+    const formula = text.match(/(?:aren't|are not) wearing armor, your (?:carapace gives you a )?(?:base )?(?:Armor Class|AC) (?:is|of) (\d+) \+ (?:your )?(Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma) modifier/i);
+    const flat = text.match(/base AC of (\d+) \(your Dexterity modifier doesn't affect this number\)/i);
+    const overArmor = /if the armor you wear would leave you with a lower AC/i.test(text);
+    if (formula) out.push({ name: p.name, base: Number(formula[1]), ability: ABILITY_BY_WORD[formula[2].toLowerCase()], overArmor });
+    else if (flat) out.push({ name: p.name, base: Number(flat[1]), overArmor: false });
+  }
+  return out;
+}
+
 /** In-combat effects that raise AC while active (PHB). */
 const AC_EFFECTS: [string, number][] = [["Shield", 5], ["Shield of Faith", 2], ["Haste", 2]];
 
@@ -358,11 +379,22 @@ export function armorClassBreakdown(c: Character): AcBreakdown {
   const classNames = c.classes.map((k) => k.name.toLowerCase());
   const parts: string[] = [];
   let total: number;
+  const natural = naturalArmor(c);
+  const naturalPart = (n: (typeof natural)[number]): [number, string[]] => [
+    n.base + (n.ability ? abilityMod(c, n.ability) : 0),
+    [`${n.name} ${n.base}`, ...(n.ability ? [`${n.ability[0].toUpperCase()}${n.ability.slice(1)} ${fmt(abilityMod(c, n.ability))}`] : [])],
+  ];
   if (armor) {
     const a = armor.data!.armor!;
     const dexPart = a.type === "light" ? dex : a.type === "medium" ? Math.min(dex, hasModifier(c, "medArmorDex") && dex >= 3 ? 3 : 2) : 0;
     total = a.base + dexPart;
     parts.push(`${armor.name} ${a.base}`, ...(a.type !== "heavy" ? [`Dex ${fmt(dexPart)}`] : []));
+    // Lizardfolk, Loxodon, Locathah: natural armor when the worn armor would give less.
+    const better = natural.filter((n) => n.overArmor).map(naturalPart).sort((x, y) => y[0] - x[0])[0];
+    if (better && better[0] > total) {
+      total = better[0];
+      parts.splice(0, parts.length, ...better[1]);
+    }
   } else {
     const options: [number, string[]][] = [[10 + dex, ["Base 10", `Dex ${fmt(dex)}`]]];
     // Multiclassing: Unarmored Defense comes only from the first of these classes you took.
@@ -370,6 +402,8 @@ export function armorClassBreakdown(c: Character): AcBreakdown {
     if (unarmored === "barbarian") options.push([10 + dex + abilityMod(c, "con"), ["Unarmored Defense 10", `Dex ${fmt(dex)}`, `Con ${fmt(abilityMod(c, "con"))}`]]);
     if (unarmored === "monk" && !shield) options.push([10 + dex + abilityMod(c, "wis"), ["Unarmored Defense 10", `Dex ${fmt(dex)}`, `Wis ${fmt(abilityMod(c, "wis"))}`]]);
     if (c.classes.some((k) => /draconic/i.test(k.subclass?.name ?? ""))) options.push([13 + dex, ["Draconic Resilience 13", `Dex ${fmt(dex)}`]]);
+    // Racial natural armor (only one way of calculating AC applies: the best is used).
+    for (const n of natural) options.push(naturalPart(n));
     // Mage Armor: 13 + Dex while you aren't wearing armor (a shield is fine).
     if (effectActive(c, "Mage Armor")) options.push([13 + dex, ["Mage Armor 13", `Dex ${fmt(dex)}`]]);
     const best = options.sort((a, b) => b[0] - a[0])[0];

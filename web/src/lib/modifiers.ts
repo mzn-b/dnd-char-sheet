@@ -131,6 +131,15 @@ function featureModifiers(c: Character, chaMod: number, wisMod: number): Modifie
     add("fast-movement", "Fast Movement", "speed", 10);
   if (classLevel(c, "ranger") >= 6 && has(names, "roving")) add("roving", "Roving", "speed", 5);
   if (has(names, "archery")) add("archery", "Archery", "attack:ranged", 2);
+  // Race traits with a flat AC bonus: Warforged's Integrated Protection (+1). Conditional ones ("until you emerge",
+  // "while…") aren't always on.
+  for (const p of featureParts(c)) {
+    if (p.feature.kind !== "race") continue;
+    for (const sentence of p.text.replace(/\*\*?/g, "").split(/(?<=[.!?])\s+/)) {
+      const m = sentence.match(/(?:gain|granting you) a \+(\d) bonus to (?:Armor Class|AC)\b/i);
+      if (m && !/\b(until|while|when|if)\b/i.test(sentence)) add(`race-ac:${p.name}`, p.name, "ac", Number(m[1]));
+    }
+  }
   if (has(names, "defense", "defence")) add("defense", "Defense", "ac:armored", 1);
   // Dual Wielder: +1 AC while wielding a separate melee weapon in each hand (two equipped melee weapons).
   const meleeWeapons = c.equipment.filter((i) => i.equipped && i.data?.weapon && !i.data.weapon.ranged);
